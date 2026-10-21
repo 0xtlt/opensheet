@@ -3,9 +3,9 @@
 //! notes how it was called, and the tests read those notes. No job goes
 //! to a printer.
 
+use super::Cmd;
 use super::print::{PrintDialog, Used};
 use super::printer::{self, Sides, Tool};
-use super::Cmd;
 use crate::app::ExcelApp;
 use gpui::{Entity, Modifiers, TestAppContext, VisualTestContext, point, px};
 use std::path::{Path, PathBuf};
@@ -36,7 +36,11 @@ impl StandIns {
         };
         let lpoptions = "case \"$*\" in\n  *'HP_LaserJet_Pro -l') echo 'Duplex/Two-Sided: None *DuplexNoTumble DuplexTumble';;\n  *' -l') echo 'PageSize/Media Size: *A4 Letter';;\n  *HP_LaserJet_Pro*) echo \"copies=1 printer-info='HP LaserJet Pro' printer-is-shared=false\";;\n  *) echo 'copies=1 printer-info=Canon';;\nesac";
         let scripts = [
-            (Tool::Lp, "lp", "echo 'request id is HP_LaserJet_Pro-1 (1 file(s))'"),
+            (
+                Tool::Lp,
+                "lp",
+                "echo 'request id is HP_LaserJet_Pro-1 (1 file(s))'",
+            ),
             (Tool::Lpstat, "lpstat", lpstat),
             (Tool::Lpoptions, "lpoptions", lpoptions),
             (Tool::Open, "open", "true"),
@@ -53,7 +57,10 @@ impl StandIns {
     /// How a stand-in was called, once for each call: its arguments.
     fn calls(&self, name: &str) -> Vec<String> {
         let log = std::fs::read_to_string(self.dir.join("log")).unwrap_or_default();
-        log.lines().filter_map(|line| line.strip_prefix(name)?.strip_prefix(' ')).map(str::to_string).collect()
+        log.lines()
+            .filter_map(|line| line.strip_prefix(name)?.strip_prefix(' '))
+            .map(str::to_string)
+            .collect()
     }
 }
 
@@ -89,11 +96,17 @@ fn redraw(cx: &mut VisualTestContext) {
 
 /// File ▸ Print: the Print screen.
 fn print_screen(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<PrintDialog> {
-    app.update_in(cx, |app, window, cx| app.run_command(Cmd::Print, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        app.run_command(Cmd::Print, window, cx)
+    });
     redraw(cx);
-    app.update(cx, |app, _| app.front_modal_view().expect("the Print screen").downcast::<PrintDialog>())
-        .ok()
-        .expect("the Print screen")
+    app.update(cx, |app, _| {
+        app.front_modal_view()
+            .expect("the Print screen")
+            .downcast::<PrintDialog>()
+    })
+    .ok()
+    .expect("the Print screen")
 }
 
 fn dialogs(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> usize {
@@ -101,7 +114,10 @@ fn dialogs(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> usize {
 }
 
 fn press_print(cx: &mut VisualTestContext) {
-    let at = cx.debug_bounds("print-button").expect("the Print button").center();
+    let at = cx
+        .debug_bounds("print-button")
+        .expect("the Print button")
+        .center();
     cx.simulate_click(at, Modifiers::none());
     redraw(cx);
 }
@@ -113,11 +129,21 @@ fn a_job_goes_to_the_printer_chosen(cx: &mut TestAppContext) {
     let screen = print_screen(&app, cx);
     // The printers of the system under their names for people; the
     // default one is chosen.
-    assert_eq!(screen.update(cx, |screen, _| screen.printer_titles()), vec!["HP LaserJet Pro", "Canon"]);
-    assert_eq!(screen.update(cx, |screen, _| screen.chosen()).as_deref(), Some("Canon_TS5000"));
+    assert_eq!(
+        screen.update(cx, |screen, _| screen.printer_titles()),
+        vec!["HP LaserJet Pro", "Canon"]
+    );
+    assert_eq!(
+        screen.update(cx, |screen, _| screen.chosen()).as_deref(),
+        Some("Canon_TS5000")
+    );
     // That one prints on one side: nothing about two sides is offered.
     assert!(!screen.update(cx, |screen, _| screen.offers_two_sided()));
-    assert!(tools.calls("lpoptions").contains(&"-p Canon_TS5000 -l".to_string()));
+    assert!(
+        tools
+            .calls("lpoptions")
+            .contains(&"-p Canon_TS5000 -l".to_string())
+    );
 
     // The other one prints on both.
     screen.update(cx, |screen, cx| screen.choose_printer(0, cx));
@@ -149,7 +175,10 @@ fn a_job_goes_to_the_printer_chosen(cx: &mut TestAppContext) {
     // Next time: the same printer, and the settings of that job as a
     // preset.
     let screen = print_screen(&app, cx);
-    assert_eq!(screen.update(cx, |screen, _| screen.chosen()).as_deref(), Some("HP_LaserJet_Pro"));
+    assert_eq!(
+        screen.update(cx, |screen, _| screen.chosen()).as_deref(),
+        Some("HP_LaserJet_Pro")
+    );
     assert!(screen.update(cx, |screen, _| screen.has_last_used()));
     let default = screen.update(cx, |screen, cx| screen.settings_now(cx));
     assert_eq!(default, Used::default());
@@ -165,7 +194,10 @@ fn a_job_goes_to_the_printer_chosen(cx: &mut TestAppContext) {
         }
     );
     screen.update(cx, |screen, cx| screen.apply_preset(0, cx));
-    assert_eq!(screen.update(cx, |screen, cx| screen.settings_now(cx)), Used::default());
+    assert_eq!(
+        screen.update(cx, |screen, cx| screen.settings_now(cx)),
+        Used::default()
+    );
 }
 
 #[gpui::test]
@@ -173,7 +205,11 @@ fn without_a_printer_the_system_says_what_to_do(cx: &mut TestAppContext) {
     let tools = StandIns::new(false);
     let (app, cx) = open(cx);
     let screen = print_screen(&app, cx);
-    assert!(screen.update(cx, |screen, _| screen.printer_titles()).is_empty());
+    assert!(
+        screen
+            .update(cx, |screen, _| screen.printer_titles())
+            .is_empty()
+    );
     assert_eq!(screen.update(cx, |screen, _| screen.chosen()), None);
     press_print(cx);
     // A message over the Print screen, and no job.
@@ -187,14 +223,25 @@ fn without_a_printer_the_system_says_what_to_do(cx: &mut TestAppContext) {
     screen.update(cx, |screen, cx| screen.preview_it(cx));
     let calls = tools.calls("open");
     assert_eq!(calls.len(), 1);
-    assert!(calls[0].starts_with("-a Preview ") && calls[0].ends_with(".pdf"), "{calls:?}");
+    assert!(
+        calls[0].starts_with("-a Preview ") && calls[0].ends_with(".pdf"),
+        "{calls:?}"
+    );
 }
 
 #[gpui::test]
 fn a_test_without_stand_ins_runs_no_command(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     let screen = print_screen(&app, cx);
-    assert!(screen.update(cx, |screen, _| screen.printer_titles()).is_empty());
+    assert!(
+        screen
+            .update(cx, |screen, _| screen.printer_titles())
+            .is_empty()
+    );
     press_print(cx);
-    assert_eq!(dialogs(&app, cx), 2, "the message about setting a printer up");
+    assert_eq!(
+        dialogs(&app, cx),
+        2,
+        "the message about setting a printer up"
+    );
 }

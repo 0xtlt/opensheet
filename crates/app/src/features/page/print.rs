@@ -14,8 +14,8 @@ use crate::text_input::TextInput;
 use crate::theme::{self, c, ca};
 use crate::widgets::{self, Button, Checkbox, NumberField, ScrollArea, Select, dialog, label};
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, FontWeight, Pixels, Render, SharedString, Window, canvas, div, fill,
-    point, prelude::*, px, size,
+    AnyElement, App, Bounds, Context, Entity, FontWeight, Pixels, Render, SharedString, Window,
+    canvas, div, fill, point, prelude::*, px, size,
 };
 use opensheet_engine::page::{MarginPreset, Margins, Orientation, PageSetup, PaperSize};
 use opensheet_engine::{Locale, Rect};
@@ -99,7 +99,13 @@ pub(crate) fn apply_scaling(setup: &mut PageSetup, index: usize) {
 fn file_stem(title: &str) -> String {
     let clean: String = title
         .chars()
-        .map(|ch| if matches!(ch, '/' | ':' | '\\' | '\0') { '-' } else { ch })
+        .map(|ch| {
+            if matches!(ch, '/' | ':' | '\\' | '\0') {
+                '-'
+            } else {
+                ch
+            }
+        })
         .collect();
     let clean = clean.trim().trim_end_matches(".xlsx").to_string();
     if clean.is_empty() {
@@ -158,7 +164,12 @@ pub(super) struct PrintDialog {
     preview: Option<Preview>,
 }
 
-fn job<'a>(app: &ExcelApp, what: usize, ignore_area: bool, painter: &'a PaperPainter) -> PrintJob<'a> {
+fn job<'a>(
+    app: &ExcelApp,
+    what: usize,
+    ignore_area: bool,
+    painter: &'a PaperPainter,
+) -> PrintJob<'a> {
     let what = match what {
         1 => PrintWhat::Workbook,
         2 => PrintWhat::Selection {
@@ -250,7 +261,8 @@ impl PrintDialog {
             let scene = render_page(&app.wb, &job, &plan, page);
             let sheet = plan.sheet_of(page).unwrap_or(app.sheet);
             let m = &app.wb.sheets[sheet].page.margins;
-            let margins = [m.left, m.top, m.right, m.bottom, m.header, m.footer].map(|inches| inches * 72.0);
+            let margins =
+                [m.left, m.top, m.right, m.bottom, m.header, m.footer].map(|inches| inches * 72.0);
             Some((Key { page, ..key }, plan, scene, margins))
         });
         if let Some(Some((key, plan, scene, margins))) = fresh {
@@ -280,7 +292,10 @@ impl PrintDialog {
     }
 
     fn copies(&self, cx: &App) -> u32 {
-        self.copies.read(cx).number().map_or(1, |n| n.clamp(1.0, 999.0) as u32)
+        self.copies
+            .read(cx)
+            .number()
+            .map_or(1, |n| n.clamp(1.0, 999.0) as u32)
     }
 
     /// The PDF of the job and the title it prints under; `None` (after
@@ -311,8 +326,9 @@ impl PrintDialog {
     }
 
     fn tell(&self, message: SharedString, cx: &mut Context<Self>) {
-        self.modal
-            .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+        self.modal.update_app(cx, |app, cx| {
+            app.alert(Alert::new("OpenSheet", message).warning(), cx)
+        });
     }
 
     /// Write the PDF where the system's tools can read it.
@@ -331,7 +347,10 @@ impl PrintDialog {
     }
 
     fn remember(&self, cx: &mut Context<Self>) {
-        let printer = self.printers.get(self.target).map(|printer| printer.name.clone());
+        let printer = self
+            .printers
+            .get(self.target)
+            .map(|printer| printer.name.clone());
         let show_margins = self.show_margins;
         let last_used = self.last_used;
         self.modal.update_app(cx, |app, _| {
@@ -350,7 +369,8 @@ impl PrintDialog {
     /// Whether the printer chosen prints on both sides (false until it
     /// has answered).
     fn can_print_both_sides(&self) -> bool {
-        self.printer().is_some_and(|printer| self.two_sided.get(&printer.name) == Some(&true))
+        self.printer()
+            .is_some_and(|printer| self.two_sided.get(&printer.name) == Some(&true))
     }
 
     /// Ask the printer chosen what it can do, once, away from the window.
@@ -403,7 +423,8 @@ impl PrintDialog {
         self.preset = Some(index);
         self.sides = used.sides;
         self.collate = used.collate;
-        self.copies.update(cx, |input, cx| input.set_text(used.copies.to_string(), cx));
+        self.copies
+            .update(cx, |input, cx| input.set_text(used.copies.to_string(), cx));
         cx.notify();
     }
 
@@ -412,7 +433,11 @@ impl PrintDialog {
         Used {
             copies: self.copies(cx),
             collate: self.collate,
-            sides: if self.can_print_both_sides() { self.sides } else { Sides::One },
+            sides: if self.can_print_both_sides() {
+                self.sides
+            } else {
+                Sides::One
+            },
         }
     }
 
@@ -425,7 +450,8 @@ impl PrintDialog {
 
     fn finish(&mut self, status: String, window: &mut Window, cx: &mut Context<Self>) {
         self.remember(cx);
-        self.modal.update_app(cx, |app, cx| app.set_status(status, cx));
+        self.modal
+            .update_app(cx, |app, cx| app.set_status(status, cx));
         self.modal.close(window, cx);
     }
 
@@ -451,10 +477,20 @@ impl PrintDialog {
         match Tool::Lp.run(&arguments) {
             Ok(out) if out.status.success() => {
                 self.last_used = Some(used);
-                let status = format!("{} {}", t("Sent to printer", "Envoyé à l'imprimante"), printer.title);
+                let status = format!(
+                    "{} {}",
+                    t("Sent to printer", "Envoyé à l'imprimante"),
+                    printer.title
+                );
                 self.finish(status, window, cx);
             }
-            Ok(out) => self.tell(String::from_utf8_lossy(&out.stderr).trim().to_string().into(), cx),
+            Ok(out) => self.tell(
+                String::from_utf8_lossy(&out.stderr)
+                    .trim()
+                    .to_string()
+                    .into(),
+                cx,
+            ),
             Err(err) => self.tell(err.to_string().into(), cx),
         }
     }
@@ -465,7 +501,11 @@ impl PrintDialog {
         };
         let dir = self
             .modal
-            .read_app(cx, |app| app.path.as_ref().and_then(|p| p.parent().map(PathBuf::from)))
+            .read_app(cx, |app| {
+                app.path
+                    .as_ref()
+                    .and_then(|p| p.parent().map(PathBuf::from))
+            })
             .flatten()
             .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Documents")))
             .unwrap_or_else(|| PathBuf::from("."));
@@ -497,7 +537,11 @@ impl PrintDialog {
         let Some((path, _)) = self.temp_file(cx) else {
             return;
         };
-        let arguments = ["-a".to_string(), "Preview".to_string(), path.to_string_lossy().into_owned()];
+        let arguments = [
+            "-a".to_string(),
+            "Preview".to_string(),
+            path.to_string_lossy().into_owned(),
+        ];
         if let Err(err) = Tool::Open.run(&arguments) {
             self.tell(err.to_string().into(), cx);
         }
@@ -505,7 +549,12 @@ impl PrintDialog {
     }
 
     /// Change the page setup of the sheet shown: the preview follows.
-    fn set(&mut self, label: &'static str, cx: &mut Context<Self>, f: impl FnOnce(&mut PageSetup) + 'static) {
+    fn set(
+        &mut self,
+        label: &'static str,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut PageSetup) + 'static,
+    ) {
         self.modal.update_app(cx, |app, cx| {
             change(app, label, cx, f);
         });
@@ -527,7 +576,9 @@ impl PrintDialog {
         last_margins: Option<Margins>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let names = |list: &[&'static str]| -> Vec<SharedString> { list.iter().map(|name| (*name).into()).collect() };
+        let names = |list: &[&'static str]| -> Vec<SharedString> {
+            list.iter().map(|name| (*name).into()).collect()
+        };
         let heading = |text: &'static str| {
             div()
                 .pt(px(4.))
@@ -539,7 +590,11 @@ impl PrintDialog {
 
         // The printers of the system, as its own print panel lists them;
         // the last entry leads to where one is added.
-        let mut targets: Vec<SharedString> = self.printers.iter().map(|printer| printer.title.clone().into()).collect();
+        let mut targets: Vec<SharedString> = self
+            .printers
+            .iter()
+            .map(|printer| printer.title.clone().into())
+            .collect();
         if targets.is_empty() {
             targets.push(t("No Printer Selected", "Aucune imprimante").into());
         }
@@ -551,7 +606,12 @@ impl PrintDialog {
         }
         let both_sides = self.can_print_both_sides();
         let row = |text: &'static str, control: AnyElement| {
-            div().flex().items_center().gap(px(8.)).child(label(text).w(px(86.))).child(control)
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(label(text).w(px(86.)))
+                .child(control)
         };
 
         let paper = setup.paper_size(locale);
@@ -571,7 +631,11 @@ impl PrintDialog {
             t("Wide Margins", "Marges larges"),
             t("Narrow Margins", "Marges étroites"),
         ]);
-        let mut margin_values = vec![Some(Margins::NORMAL), Some(Margins::WIDE), Some(Margins::NARROW)];
+        let mut margin_values = vec![
+            Some(Margins::NORMAL),
+            Some(Margins::WIDE),
+            Some(Margins::NARROW),
+        ];
         if let Some(last) = last_margins.filter(|m| m.preset().is_none()) {
             margin_names.push(
                 t(
@@ -599,17 +663,32 @@ impl PrintDialog {
         let mut scalings = names(&[
             t("No Scaling", "Pas de mise à l'échelle"),
             t("Fit Sheet on One Page", "Ajuster la feuille à une page"),
-            t("Fit All Columns on One Page", "Ajuster toutes les colonnes à une page"),
-            t("Fit All Rows on One Page", "Ajuster toutes les lignes à une page"),
+            t(
+                "Fit All Columns on One Page",
+                "Ajuster toutes les colonnes à une page",
+            ),
+            t(
+                "Fit All Rows on One Page",
+                "Ajuster toutes les lignes à une page",
+            ),
         ]);
         let scaling = scaling_index(setup).unwrap_or_else(|| {
             scalings.push(t("Custom Scaling", "Mise à l'échelle personnalisée").into());
             4
         });
-        scalings.push(t("Custom Scaling Options…", "Options de mise à l'échelle personnalisée…").into());
+        scalings.push(
+            t(
+                "Custom Scaling Options…",
+                "Options de mise à l'échelle personnalisée…",
+            )
+            .into(),
+        );
         let scaling_options = scalings.len() - 1;
 
-        let nothing = self.preview.as_ref().is_some_and(|p| p.plan.pages.is_empty());
+        let nothing = self
+            .preview
+            .as_ref()
+            .is_some_and(|p| p.plan.pages.is_empty());
         div()
             .w(px(wide + 10.0))
             .flex_none()
@@ -622,28 +701,35 @@ impl PrintDialog {
                     .items_center()
                     .gap(px(12.))
                     .child(
-                        div().flex_none().debug_selector(|| "print-button".to_string()).child(
-                            Button::new("print", t("Print", "Imprimer"))
-                                .primary()
-                                .width(96.0)
-                                .disabled(nothing)
-                                .on_click(cx.listener(Self::print)),
-                        ),
+                        div()
+                            .flex_none()
+                            .debug_selector(|| "print-button".to_string())
+                            .child(
+                                Button::new("print", t("Print", "Imprimer"))
+                                    .primary()
+                                    .width(96.0)
+                                    .disabled(nothing)
+                                    .on_click(cx.listener(Self::print)),
+                            ),
                     )
                     .child(label(t("Copies:", "Copies :")))
                     .child(NumberField::new("copies", &self.copies).width(60.0)),
             )
             .child(heading(t("Printer", "Imprimante")))
             .child(
-                Select::new("target", targets, Some(self.target.min(add_printer.saturating_sub(1))))
-                    .width(wide)
-                    .on_change(cx.listener(move |this, ix: &usize, _, cx| {
-                        if *ix == add_printer {
-                            this.add_printer(cx);
-                        } else {
-                            this.choose_printer(*ix, cx);
-                        }
-                    })),
+                Select::new(
+                    "target",
+                    targets,
+                    Some(self.target.min(add_printer.saturating_sub(1))),
+                )
+                .width(wide)
+                .on_change(cx.listener(move |this, ix: &usize, _, cx| {
+                    if *ix == add_printer {
+                        this.add_printer(cx);
+                    } else {
+                        this.choose_printer(*ix, cx);
+                    }
+                })),
             )
             .child(row(
                 t("Presets:", "Préréglages :"),
@@ -717,8 +803,14 @@ impl PrintDialog {
                 Select::new(
                     "collate",
                     names(&[
-                        t("Collated  1,2,3  1,2,3  1,2,3", "Assemblées  1,2,3  1,2,3  1,2,3"),
-                        t("Uncollated  1,1,1  2,2,2  3,3,3", "Non assemblées  1,1,1  2,2,2  3,3,3"),
+                        t(
+                            "Collated  1,2,3  1,2,3  1,2,3",
+                            "Assemblées  1,2,3  1,2,3  1,2,3",
+                        ),
+                        t(
+                            "Uncollated  1,1,1  2,2,2  3,3,3",
+                            "Non assemblées  1,1,1  2,2,2  3,3,3",
+                        ),
                     ]),
                     Some(if self.collate { 0 } else { 1 }),
                 )
@@ -755,20 +847,28 @@ impl PrintDialog {
                 })),
             )
             .child(
-                Select::new("paper", paper_names, papers.iter().position(|p| *p == paper))
-                    .width(wide)
-                    .on_change(cx.listener(move |this, ix: &usize, _, cx| {
-                        if let Some(paper) = papers.get(*ix).copied() {
-                            this.set(t("Paper Size", "Format du papier"), cx, move |s| s.paper = Some(paper));
-                        }
-                    })),
+                Select::new(
+                    "paper",
+                    paper_names,
+                    papers.iter().position(|p| *p == paper),
+                )
+                .width(wide)
+                .on_change(cx.listener(move |this, ix: &usize, _, cx| {
+                    if let Some(paper) = papers.get(*ix).copied() {
+                        this.set(t("Paper Size", "Format du papier"), cx, move |s| {
+                            s.paper = Some(paper)
+                        });
+                    }
+                })),
             )
             .child(
                 Select::new("margins", margin_names, margin_index)
                     .width(wide)
                     .on_change(cx.listener(move |this, ix: &usize, window, cx| {
                         match margin_values.get(*ix).copied().flatten() {
-                            Some(margins) => this.set(t("Margins", "Marges"), cx, move |s| s.margins = margins),
+                            Some(margins) => {
+                                this.set(t("Margins", "Marges"), cx, move |s| s.margins = margins)
+                            }
                             None => this.open_setup(setup::TAB_MARGINS, window, cx),
                         }
                     })),
@@ -793,7 +893,9 @@ impl PrintDialog {
                     .text_color(c(0x0F6CBD))
                     .hover(|s| s.underline())
                     .child(t("Page Setup", "Mise en page"))
-                    .on_click(cx.listener(|this, _, window, cx| this.open_setup(setup::TAB_PAGE, window, cx))),
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.open_setup(setup::TAB_PAGE, window, cx)
+                    })),
             )
             .child(div().flex_1())
             .child(
@@ -805,7 +907,11 @@ impl PrintDialog {
                         Button::new("open-preview", t("Open in Preview", "Ouvrir dans Aperçu"))
                             .width(wide)
                             .disabled(nothing)
-                            .on_click(cx.listener(|this, unit: &(), _, cx| this.open_in_preview(unit, cx))),
+                            .on_click(
+                                cx.listener(|this, unit: &(), _, cx| {
+                                    this.open_in_preview(unit, cx)
+                                }),
+                            ),
                     )
                     .child(
                         Button::new("save-pdf", t("Save as PDF…", "Enregistrer au format PDF…"))
@@ -820,7 +926,8 @@ impl PrintDialog {
     /// Page Setup opens over the Print screen, which follows what it
     /// changes.
     fn open_setup(&mut self, tab: usize, window: &mut Window, cx: &mut Context<Self>) {
-        self.modal.update_app(cx, |app, cx| setup::open(app, tab, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| setup::open(app, tab, window, cx));
     }
 
     /// The page shown, on the grey of the preview.
@@ -837,7 +944,8 @@ impl PrintDialog {
         let Some(preview) = &self.preview else {
             return area.into_any_element();
         };
-        let (Some(scene), Some(paper)) = (preview.scene.clone(), preview.plan.paper(self.page)) else {
+        let (Some(scene), Some(paper)) = (preview.scene.clone(), preview.plan.paper(self.page))
+        else {
             return area
                 .flex()
                 .items_center()
@@ -880,9 +988,15 @@ impl PrintDialog {
                     while done < length {
                         let piece = 4.0f32.min(length - done);
                         let (origin, extent) = if vertical {
-                            (bounds.origin + point(px(at), px(done)), size(px(1.), px(piece)))
+                            (
+                                bounds.origin + point(px(at), px(done)),
+                                size(px(1.), px(piece)),
+                            )
                         } else {
-                            (bounds.origin + point(px(done), px(at)), size(px(piece), px(1.)))
+                            (
+                                bounds.origin + point(px(done), px(at)),
+                                size(px(piece), px(1.)),
+                            )
                         };
                         window.paint_quad(fill(Bounds::new(origin, extent), ink));
                         done += 7.0;
@@ -907,8 +1021,10 @@ impl PrintDialog {
                 .child(sheet)
                 .into_any_element()
         } else {
-            area.child(ScrollArea::new("page-scroll", AREA.1 - 2.0).child(div().p(px(16.)).child(sheet)))
-                .into_any_element()
+            area.child(
+                ScrollArea::new("page-scroll", AREA.1 - 2.0).child(div().p(px(16.)).child(sheet)),
+            )
+            .into_any_element()
         }
     }
 
@@ -941,7 +1057,11 @@ impl PrintDialog {
                 .child(widgets::icon(
                     icon_name,
                     12.0,
-                    if enabled { theme::TEXT } else { theme::TEXT_DISABLED },
+                    if enabled {
+                        theme::TEXT
+                    } else {
+                        theme::TEXT_DISABLED
+                    },
                 ))
         };
         div()
@@ -988,12 +1108,15 @@ impl PrintDialog {
                 })),
             )
             .child(
-                toggle("zoom-page", t("Zoom to Page", "Zoom sur la page"), !self.whole_page).on_click(cx.listener(
-                    |this, _, _, cx| {
-                        this.whole_page = !this.whole_page;
-                        cx.notify();
-                    },
-                )),
+                toggle(
+                    "zoom-page",
+                    t("Zoom to Page", "Zoom sur la page"),
+                    !self.whole_page,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.whole_page = !this.whole_page;
+                    cx.notify();
+                })),
             )
             .into_any_element()
     }
@@ -1003,7 +1126,10 @@ impl PrintDialog {
 #[cfg(test)]
 impl PrintDialog {
     pub(super) fn printer_titles(&self) -> Vec<String> {
-        self.printers.iter().map(|printer| printer.title.clone()).collect()
+        self.printers
+            .iter()
+            .map(|printer| printer.title.clone())
+            .collect()
     }
 
     pub(super) fn chosen(&self) -> Option<String> {
@@ -1022,9 +1148,17 @@ impl PrintDialog {
         self.last_used.is_some()
     }
 
-    pub(super) fn set_job(&mut self, copies: u32, pages: Option<(u32, u32)>, cx: &mut Context<Self>) {
-        self.copies.update(cx, |input, cx| input.set_text(copies.to_string(), cx));
-        let (from, to) = pages.map(|(from, to)| (from.to_string(), to.to_string())).unwrap_or_default();
+    pub(super) fn set_job(
+        &mut self,
+        copies: u32,
+        pages: Option<(u32, u32)>,
+        cx: &mut Context<Self>,
+    ) {
+        self.copies
+            .update(cx, |input, cx| input.set_text(copies.to_string(), cx));
+        let (from, to) = pages
+            .map(|(from, to)| (from.to_string(), to.to_string()))
+            .unwrap_or_default();
         self.from.update(cx, |input, cx| input.set_text(from, cx));
         self.to.update(cx, |input, cx| input.set_text(to, cx));
         cx.notify();
@@ -1081,7 +1215,10 @@ mod tests {
         let mut setup = PageSetup::default();
         assert_eq!(scaling_index(&setup), Some(0));
         apply_scaling(&mut setup, 2);
-        assert_eq!((setup.fit_to_page, setup.fit_width, setup.fit_height), (true, 1, 0));
+        assert_eq!(
+            (setup.fit_to_page, setup.fit_width, setup.fit_height),
+            (true, 1, 0)
+        );
         assert_eq!(scaling_index(&setup), Some(2));
         apply_scaling(&mut setup, 3);
         assert_eq!(scaling_index(&setup), Some(3));

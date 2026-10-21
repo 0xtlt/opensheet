@@ -57,7 +57,11 @@ fn tile(side: u32, pale: [u8; 3], dark: [u8; 3]) -> Vec<u8> {
     // 8 bits a channel, RGB.
     header.extend_from_slice(&[8, 2, 0, 0, 0]);
     let mut out = b"\x89PNG\r\n\x1a\n".to_vec();
-    for (kind, data) in [(b"IHDR", header.as_slice()), (b"IDAT", stream.as_slice()), (b"IEND", &[])] {
+    for (kind, data) in [
+        (b"IHDR", header.as_slice()),
+        (b"IDAT", stream.as_slice()),
+        (b"IEND", &[]),
+    ] {
         out.extend_from_slice(&(data.len() as u32).to_be_bytes());
         let mut chunk = kind.to_vec();
         chunk.extend_from_slice(data);
@@ -79,7 +83,9 @@ fn jpeg() -> Vec<u8> {
 }
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -94,15 +100,26 @@ fn sample() -> Workbook {
     wb.add_sheet(1);
     wb.add_sheet(2);
     let paper = tile(48, [0xFF, 0xF8, 0xE1], [0xE0, 0xC0, 0x80]);
-    for (name, text) in [("B2", "Month"), ("C2", "Units"), ("B3", "Jan"), ("C3", "12"), ("B4", "Feb"), ("C4", "15")] {
+    for (name, text) in [
+        ("B2", "Month"),
+        ("C2", "Units"),
+        ("B3", "Jan"),
+        ("C3", "12"),
+        ("B4", "Feb"),
+        ("C4", "15"),
+    ] {
         enter(&mut wb, 0, name, text);
     }
-    wb.update_style(0, Rect::parse("E2:F4").unwrap(), &|s| s.fill = Some(opensheet_engine::Color(0xC6E0B4)));
+    wb.update_style(0, Rect::parse("E2:F4").unwrap(), &|s| {
+        s.fill = Some(opensheet_engine::Color(0xC6E0B4))
+    });
     enter(&mut wb, 0, "E2", "Filled cells hide the background");
-    wb.add_table(0, Rect::parse("B2:C4").unwrap(), true).expect("a table");
+    wb.add_table(0, Rect::parse("B2:C4").unwrap(), true)
+        .expect("a table");
     assert!(wb.set_sheet_background(0, Picture::new(paper.clone())));
     assert!(wb.set_sheet_background(1, Picture::new(jpeg())));
-    wb.add_picture(1, paper, (2, 2)).expect("the same image as a picture");
+    wb.add_picture(1, paper, (2, 2))
+        .expect("the same image as a picture");
     wb.commit("backgrounds");
     wb
 }
@@ -123,27 +140,58 @@ fn backgrounds_round_trip() {
     let first = part(&bytes, "xl/worksheets/sheet1.xml");
     assert!(first.contains("<picture r:id=\"rId2\"/><tableParts count=\"1\"><tablePart r:id=\"rId1\"/></tableParts></worksheet>"), "{first}");
     let second = part(&bytes, "xl/worksheets/sheet2.xml");
-    assert!(second.contains("<drawing r:id=\"rId1\"/><picture r:id=\"rId2\"/></worksheet>"), "{second}");
+    assert!(
+        second.contains("<drawing r:id=\"rId1\"/><picture r:id=\"rId2\"/></worksheet>"),
+        "{second}"
+    );
     assert!(!part(&bytes, "xl/worksheets/sheet3.xml").contains("<picture"));
 
     // One file for the image two sheets show, another for the JPEG.
     let image = "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image";
     let rels = part(&bytes, "xl/worksheets/_rels/sheet1.xml.rels");
-    assert!(rels.contains(&format!("<Relationship Id=\"rId2\" Type=\"{image}\" Target=\"../media/image1.png\"/>")), "{rels}");
+    assert!(
+        rels.contains(&format!(
+            "<Relationship Id=\"rId2\" Type=\"{image}\" Target=\"../media/image1.png\"/>"
+        )),
+        "{rels}"
+    );
     let rels = part(&bytes, "xl/worksheets/_rels/sheet2.xml.rels");
-    assert!(rels.contains(&format!("<Relationship Id=\"rId2\" Type=\"{image}\" Target=\"../media/image2.jpeg\"/>")), "{rels}");
-    assert!(part(&bytes, "xl/drawings/_rels/drawing1.xml.rels").contains("Target=\"../media/image1.png\""));
-    let media: Vec<String> = part_names(&bytes).into_iter().filter(|name| name.starts_with("xl/media/")).collect();
+    assert!(
+        rels.contains(&format!(
+            "<Relationship Id=\"rId2\" Type=\"{image}\" Target=\"../media/image2.jpeg\"/>"
+        )),
+        "{rels}"
+    );
+    assert!(
+        part(&bytes, "xl/drawings/_rels/drawing1.xml.rels")
+            .contains("Target=\"../media/image1.png\"")
+    );
+    let media: Vec<String> = part_names(&bytes)
+        .into_iter()
+        .filter(|name| name.starts_with("xl/media/"))
+        .collect();
     assert_eq!(media.len(), 2, "{media:?}");
     let types = part(&bytes, "[Content_Types].xml");
-    assert!(types.contains("<Default Extension=\"png\" ContentType=\"image/png\"/>"), "{types}");
-    assert!(types.contains("<Default Extension=\"jpeg\" ContentType=\"image/jpeg\"/>"), "{types}");
+    assert!(
+        types.contains("<Default Extension=\"png\" ContentType=\"image/png\"/>"),
+        "{types}"
+    );
+    assert!(
+        types.contains("<Default Extension=\"jpeg\" ContentType=\"image/jpeg\"/>"),
+        "{types}"
+    );
 
     let loaded = load(&bytes);
     for (before, after) in wb.sheets.iter().zip(&loaded.sheets) {
         assert_eq!(before.background, after.background, "{}", before.name);
     }
-    assert_eq!(loaded.sheets[1].background.as_ref().map(|p| (p.format, p.pixels)), Some((ImageFormat::Jpeg, (30, 15))));
+    assert_eq!(
+        loaded.sheets[1]
+            .background
+            .as_ref()
+            .map(|p| (p.format, p.pixels)),
+        Some((ImageFormat::Jpeg, (30, 15)))
+    );
     assert!(!loaded.modified && !loaded.can_undo());
     // A second trip changes nothing.
     let again = to_bytes(&loaded);
@@ -163,9 +211,13 @@ fn a_background_written_by_excel_is_read() {
         "{DECL}<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\"><Default Extension=\"png\" ContentType=\"image/png\"/><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/><Override PartName=\"/xl/worksheets/sheet2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/></Types>"
     );
     let rels = |list: &[(&str, &str, &str)]| {
-        let mut xml = format!("{DECL}<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">");
+        let mut xml = format!(
+            "{DECL}<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
+        );
         for (id, kind, target) in list {
-            xml.push_str(&format!("<Relationship Id=\"{id}\" Type=\"{REL}/{kind}\" Target=\"{target}\"/>"));
+            xml.push_str(&format!(
+                "<Relationship Id=\"{id}\" Type=\"{REL}/{kind}\" Target=\"{target}\"/>"
+            ));
         }
         xml.push_str("</Relationships>");
         xml
@@ -182,19 +234,34 @@ fn a_background_written_by_excel_is_read() {
     let image = tile(8, [255, 255, 255], [0, 0, 0]);
     let text_parts: Vec<(String, String)> = vec![
         ("[Content_Types].xml".into(), content_types),
-        ("_rels/.rels".into(), rels(&[("rId1", "officeDocument", "xl/workbook.xml")])),
+        (
+            "_rels/.rels".into(),
+            rels(&[("rId1", "officeDocument", "xl/workbook.xml")]),
+        ),
         ("xl/workbook.xml".into(), workbook),
         (
             "xl/_rels/workbook.xml.rels".into(),
-            rels(&[("rId1", "worksheet", "worksheets/sheet1.xml"), ("rId2", "worksheet", "worksheets/sheet2.xml")]),
+            rels(&[
+                ("rId1", "worksheet", "worksheets/sheet1.xml"),
+                ("rId2", "worksheet", "worksheets/sheet2.xml"),
+            ]),
         ),
         ("xl/worksheets/sheet1.xml".into(), sheet("rId1")),
-        ("xl/worksheets/_rels/sheet1.xml.rels".into(), rels(&[("rId1", "image", "../media/image1.png")])),
+        (
+            "xl/worksheets/_rels/sheet1.xml.rels".into(),
+            rels(&[("rId1", "image", "../media/image1.png")]),
+        ),
         // A relationship to nothing, and to something that is no image.
         ("xl/worksheets/sheet2.xml".into(), sheet("rId7")),
-        ("xl/worksheets/_rels/sheet2.xml.rels".into(), rels(&[("rId7", "image", "../media/gone.png")])),
+        (
+            "xl/worksheets/_rels/sheet2.xml.rels".into(),
+            rels(&[("rId7", "image", "../media/gone.png")]),
+        ),
     ];
-    let borrowed: Vec<(&str, &str)> = text_parts.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
+    let borrowed: Vec<(&str, &str)> = text_parts
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect();
     // The image goes into the archive as bytes.
     let mut zip = zip::ZipArchive::new(Cursor::new(package(&borrowed))).unwrap();
     let mut out = zip::ZipWriter::new(Cursor::new(Vec::new()));
@@ -210,7 +277,10 @@ fn a_background_written_by_excel_is_read() {
 
     let wb = load(&bytes);
     let background = wb.sheets[0].background.as_ref().expect("the background");
-    assert_eq!((background.format, background.pixels, &*background.data), (ImageFormat::Png, (8, 8), image.as_slice()));
+    assert_eq!(
+        (background.format, background.pixels, &*background.data),
+        (ImageFormat::Png, (8, 8), image.as_slice())
+    );
     assert_eq!(wb.sheets[1].background, None);
     assert_eq!(wb.sheets[0].drawings.len(), 0);
 }

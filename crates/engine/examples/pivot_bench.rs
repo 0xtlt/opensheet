@@ -13,7 +13,10 @@ const ROWS: u32 = 100_000;
 /// Fill sheet 0 with `ROWS` records: Region, Product, Year, Sales, Units.
 fn source(regions: u32, products: u32) -> Workbook {
     let mut wb = Workbook::new(Locale::en());
-    for (c, name) in ["Region", "Product", "Year", "Sales", "Units"].iter().enumerate() {
+    for (c, name) in ["Region", "Product", "Year", "Sales", "Units"]
+        .iter()
+        .enumerate()
+    {
         wb.set_content(0, 0, c as u32, Content::Value(Value::text(name)));
     }
     // A small generator, so that the data is the same on every run.
@@ -37,8 +40,18 @@ fn source(regions: u32, products: u32) -> Workbook {
             1,
             Content::Value(Value::text(format!("Product {}", next(products)))),
         );
-        wb.set_content(0, r, 2, Content::Value(Value::Number(2015.0 + next(10) as f64)));
-        wb.set_content(0, r, 3, Content::Value(Value::Number(next(100_000) as f64 / 100.0)));
+        wb.set_content(
+            0,
+            r,
+            2,
+            Content::Value(Value::Number(2015.0 + next(10) as f64)),
+        );
+        wb.set_content(
+            0,
+            r,
+            3,
+            Content::Value(Value::Number(next(100_000) as f64 / 100.0)),
+        );
         wb.set_content(0, r, 4, Content::Value(Value::Number(next(50) as f64)));
     }
     wb.commit("data");

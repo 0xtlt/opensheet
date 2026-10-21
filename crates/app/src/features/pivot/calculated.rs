@@ -16,16 +16,28 @@ use opensheet_engine::pivot::{ListLabels, PivotError};
 /// The drop-down of the ribbon button.
 pub(super) fn menu(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let has_items = active_pivot(app).is_some_and(|p| !p.cache.calc_items.is_empty());
-    let has_any = has_items || active_pivot(app).is_some_and(|p| p.cache.fields.iter().any(|f| f.formula.is_some()));
+    let has_any = has_items
+        || active_pivot(app).is_some_and(|p| p.cache.fields.iter().any(|f| f.formula.is_some()));
     let unavailable = |text: &'static str| entry(text, |_, _, _| {}).disabled(true);
     let entries = vec![
         entry(t("Calculated Field...", "Champ calculé..."), open_field),
-        entry(t("Calculated Item...", "Élément calculé..."), open_item).disabled(item_field(app).is_none()),
-        entry(t("Solve Order...", "Ordre de résolution..."), open_solve_order).disabled(!has_items),
+        entry(t("Calculated Item...", "Élément calculé..."), open_item)
+            .disabled(item_field(app).is_none()),
+        entry(
+            t("Solve Order...", "Ordre de résolution..."),
+            open_solve_order,
+        )
+        .disabled(!has_items),
         entry(t("List Formulas", "Liste des formules"), list_formulas).disabled(!has_any),
         crate::app::MenuEntry::separator(),
-        unavailable(t("Create Set Based on Row Items...", "Créer un jeu d’après les éléments de ligne...")),
-        unavailable(t("Create Set Based on Column Items...", "Créer un jeu d’après les éléments de colonne...")),
+        unavailable(t(
+            "Create Set Based on Row Items...",
+            "Créer un jeu d’après les éléments de ligne...",
+        )),
+        unavailable(t(
+            "Create Set Based on Column Items...",
+            "Créer un jeu d’après les éléments de colonne...",
+        )),
         unavailable(t("Manage Sets...", "Gérer les jeux...")),
     ];
     app.open_command_menu(entries, 300.0, window, cx);
@@ -37,11 +49,18 @@ pub(super) fn item_field(app: &ExcelApp) -> Option<usize> {
     let cell = active_cell(app)?;
     let pivot = active_pivot(app)?;
     let field = cell.field.or(cell.fields.first().copied())?;
-    matches!(pivot.axis_of(field), Some(opensheet_engine::pivot::Area::Rows | opensheet_engine::pivot::Area::Columns)).then_some(field)
+    matches!(
+        pivot.axis_of(field),
+        Some(opensheet_engine::pivot::Area::Rows | opensheet_engine::pivot::Area::Columns)
+    )
+    .then_some(field)
 }
 
 fn refuse(app: &mut ExcelApp, err: &PivotError, cx: &mut Cx) {
-    app.alert(Alert::new("OpenSheet", logic::error_text(err)).warning(), cx);
+    app.alert(
+        Alert::new("OpenSheet", logic::error_text(err)).warning(),
+        cx,
+    );
 }
 
 /// What the dialog edits: the calculated fields of the cache, or the
@@ -77,7 +96,11 @@ fn existing(app: &ExcelApp, pivot: u32, kind: Kind) -> Vec<(u32, String, String)
         return Vec::new();
     };
     match kind {
-        Kind::Field => p.calculated_fields(locale).into_iter().map(|(f, name, formula)| (f as u32, name, formula)).collect(),
+        Kind::Field => p
+            .calculated_fields(locale)
+            .into_iter()
+            .map(|(f, name, formula)| (f as u32, name, formula))
+            .collect(),
         Kind::Item(field) => p.calculated_items(field, locale),
     }
 }
@@ -93,11 +116,17 @@ fn open(app: &mut ExcelApp, kind: Kind, window: &mut Window, cx: &mut Cx) {
         return;
     }
     let pivot = p.id;
-    let fields: Vec<SharedString> = (0..p.fields.len()).map(|f| p.field_caption(f).to_string().into()).collect();
+    let fields: Vec<SharedString> = (0..p.fields.len())
+        .map(|f| p.field_caption(f).to_string().into())
+        .collect();
     let (items, field_name): (Vec<SharedString>, SharedString) = match kind {
         Kind::Field => (Vec::new(), SharedString::default()),
         Kind::Item(field) => (
-            p.cache.item_names(field).into_iter().map(SharedString::from).collect(),
+            p.cache
+                .item_names(field)
+                .into_iter()
+                .map(SharedString::from)
+                .collect(),
             p.field_caption(field).to_string().into(),
         ),
     };
@@ -108,10 +137,18 @@ fn open(app: &mut ExcelApp, kind: Kind, window: &mut Window, cx: &mut Cx) {
         Kind::Item(_) => t("Formula", "Formule"),
     };
     let taken = |name: &str| {
-        fields.iter().chain(&items).any(|known| known.to_lowercase() == name.to_lowercase())
-            || list.iter().any(|(_, known, _)| known.to_lowercase() == name.to_lowercase())
+        fields
+            .iter()
+            .chain(&items)
+            .any(|known| known.to_lowercase() == name.to_lowercase())
+            || list
+                .iter()
+                .any(|(_, known, _)| known.to_lowercase() == name.to_lowercase())
     };
-    let proposed = (1..).map(|n| format!("{stem}{n}")).find(|name| !taken(name)).unwrap_or_default();
+    let proposed = (1..)
+        .map(|n| format!("{stem}{n}"))
+        .find(|name| !taken(name))
+        .unwrap_or_default();
     app.open_modal(window, cx, move |modal, _, cx| CalcDialog {
         modal,
         pivot,
@@ -139,15 +176,22 @@ pub(super) fn open_item(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 
 /// A name as a formula writes it.
 fn in_formula(name: &str) -> String {
-    let plain = name.chars().all(|ch| ch.is_alphanumeric() || ch == '_') && name.chars().next().is_some_and(char::is_alphabetic);
-    if plain { name.to_string() } else { format!("'{}'", name.replace('\'', "''")) }
+    let plain = name.chars().all(|ch| ch.is_alphanumeric() || ch == '_')
+        && name.chars().next().is_some_and(char::is_alphabetic);
+    if plain {
+        name.to_string()
+    } else {
+        format!("'{}'", name.replace('\'', "''"))
+    }
 }
 
 impl CalcDialog {
     /// The calculated field or item the Name box names, if there is one.
     fn named(&self, cx: &Context<Self>) -> Option<&(u32, String, String)> {
         let name = self.name.read(cx).text().trim().to_lowercase();
-        self.existing.iter().find(|(_, known, _)| known.to_lowercase() == name)
+        self.existing
+            .iter()
+            .find(|(_, known, _)| known.to_lowercase() == name)
     }
 
     /// "Add" or "Modify": store what the two boxes hold. True when it was
@@ -162,8 +206,14 @@ impl CalcDialog {
         };
         let done = self.modal.update_app(cx, |app, cx| {
             let outcome = perform(app, label, window, cx, move |app, overwrite| match kind {
-                Kind::Field => app.wb.pivot_set_calculated_field(pivot, &name, &formula, overwrite).map(|_| ()),
-                Kind::Item(field) => app.wb.pivot_set_calculated_item(pivot, field, &name, &formula, overwrite).map(|_| ()),
+                Kind::Field => app
+                    .wb
+                    .pivot_set_calculated_field(pivot, &name, &formula, overwrite)
+                    .map(|_| ()),
+                Kind::Item(field) => app
+                    .wb
+                    .pivot_set_calculated_item(pivot, field, &name, &formula, overwrite)
+                    .map(|_| ()),
             });
             (outcome == super::Outcome::Done, existing(app, pivot, kind))
         });
@@ -181,15 +231,27 @@ impl CalcDialog {
         };
         let (pivot, kind) = (self.pivot, self.kind);
         let list = self.modal.update_app(cx, |app, cx| {
-            perform(app, t("Delete", "Supprimer"), window, cx, move |app, overwrite| match kind {
-                Kind::Field => app.wb.pivot_delete_calculated_field(pivot, at as usize, overwrite),
-                Kind::Item(field) => app.wb.pivot_delete_calculated_item(pivot, field, at, overwrite),
-            });
+            perform(
+                app,
+                t("Delete", "Supprimer"),
+                window,
+                cx,
+                move |app, overwrite| match kind {
+                    Kind::Field => {
+                        app.wb
+                            .pivot_delete_calculated_field(pivot, at as usize, overwrite)
+                    }
+                    Kind::Item(field) => app
+                        .wb
+                        .pivot_delete_calculated_item(pivot, field, at, overwrite),
+                },
+            );
             existing(app, pivot, kind)
         });
         self.existing = list.unwrap_or_default();
         self.name.update(cx, |input, cx| input.set_text("", cx));
-        self.formula.update(cx, |input, cx| input.set_text("= 0", cx));
+        self.formula
+            .update(cx, |input, cx| input.set_text("= 0", cx));
         cx.notify();
     }
 
@@ -210,7 +272,8 @@ impl CalcDialog {
     /// The formula of the name just picked in the Name box.
     fn show_named(&mut self, cx: &mut Context<Self>) {
         if let Some((_, _, formula)) = self.named(cx).cloned() {
-            self.formula.update(cx, |input, cx| input.set_text(format!("={formula}"), cx));
+            self.formula
+                .update(cx, |input, cx| input.set_text(format!("={formula}"), cx));
         }
     }
 
@@ -228,12 +291,25 @@ impl Render for CalcDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let title: SharedString = match self.kind {
             Kind::Field => t("Insert Calculated Field", "Insertion d'un champ calculé").into(),
-            Kind::Item(_) => t("Insert Calculated Item in \"{}\"", "Insérer un élément calculé dans «\u{a0}{}\u{a0}»").replace("{}", &self.field_name).into(),
+            Kind::Item(_) => t(
+                "Insert Calculated Item in \"{}\"",
+                "Insérer un élément calculé dans «\u{a0}{}\u{a0}»",
+            )
+            .replace("{}", &self.field_name)
+            .into(),
         };
         let known = self.named(cx).is_some();
-        let names: Vec<SharedString> = self.existing.iter().map(|(_, name, _)| name.clone().into()).collect();
+        let names: Vec<SharedString> = self
+            .existing
+            .iter()
+            .map(|(_, name, _)| name.clone().into())
+            .collect();
         let picked = self.existing.clone();
-        let list = |id: &'static str, entries: &[SharedString], at: Option<usize>, item: bool, cx: &mut Context<Self>| {
+        let list = |id: &'static str,
+                    entries: &[SharedString],
+                    at: Option<usize>,
+                    item: bool,
+                    cx: &mut Context<Self>| {
             let labels = entries.to_vec();
             ListBox::new(id, entries.to_vec(), at)
                 .width(200.0)
@@ -265,7 +341,13 @@ impl Render for CalcDialog {
                 }
             }));
         let mut lists = div().flex().gap(px(12.)).child(
-            div().flex().flex_col().gap(px(4.)).child(label(t("Fields:", "Champs\u{a0}:"))).child(field_list).child(div().flex().child(insert_field)),
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .child(label(t("Fields:", "Champs\u{a0}:")))
+                .child(field_list)
+                .child(div().flex().child(insert_field)),
         );
         if matches!(self.kind, Kind::Item(_)) {
             let item_list = list("items", &self.items.clone(), self.item_at, true, cx);
@@ -277,7 +359,13 @@ impl Render for CalcDialog {
                     }
                 }));
             lists = lists.child(
-                div().flex().flex_col().gap(px(4.)).child(label(t("Items:", "Éléments\u{a0}:"))).child(item_list).child(div().flex().child(insert_item)),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .child(label(t("Items:", "Éléments\u{a0}:")))
+                    .child(item_list)
+                    .child(div().flex().child(insert_item)),
             );
         }
         let buttons = div()
@@ -285,11 +373,18 @@ impl Render for CalcDialog {
             .flex_col()
             .gap(px(6.))
             .child(
-                Button::new("add", if known { t("Modify", "Modifier") } else { t("Add", "Ajouter") })
-                    .width(90.0)
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.add(window, cx);
-                    })),
+                Button::new(
+                    "add",
+                    if known {
+                        t("Modify", "Modifier")
+                    } else {
+                        t("Add", "Ajouter")
+                    },
+                )
+                .width(90.0)
+                .on_click(cx.listener(|this, _, window, cx| {
+                    this.add(window, cx);
+                })),
             )
             .child(
                 Button::new("delete", t("Delete", "Supprimer"))
@@ -298,7 +393,11 @@ impl Render for CalcDialog {
                     .on_click(cx.listener(|this, _, window, cx| this.delete(window, cx))),
             );
         dialog(&self.modal, title)
-            .width(if matches!(self.kind, Kind::Item(_)) { 580.0 } else { 470.0 })
+            .width(if matches!(self.kind, Kind::Item(_)) {
+                580.0
+            } else {
+                470.0
+            })
             .on_ok(cx.listener(Self::ok))
             .child(
                 div()
@@ -311,15 +410,21 @@ impl Render for CalcDialog {
                             .gap(px(8.))
                             .child(labeled(
                                 t("Name:", "Nom\u{a0}:"),
-                                ComboBox::new("name", &self.name, names).width(250.0).on_pick(cx.listener(move |this, ix: &usize, _, cx| {
-                                    if let Some((_, name, _)) = picked.get(*ix) {
-                                        let name = name.clone();
-                                        this.name.update(cx, |input, cx| input.set_text(name, cx));
-                                        this.show_named(cx);
-                                    }
-                                })),
+                                ComboBox::new("name", &self.name, names)
+                                    .width(250.0)
+                                    .on_pick(cx.listener(move |this, ix: &usize, _, cx| {
+                                        if let Some((_, name, _)) = picked.get(*ix) {
+                                            let name = name.clone();
+                                            this.name
+                                                .update(cx, |input, cx| input.set_text(name, cx));
+                                            this.show_named(cx);
+                                        }
+                                    })),
                             ))
-                            .child(labeled(t("Formula:", "Formule\u{a0}:"), TextField::new(&self.formula).width(250.0))),
+                            .child(labeled(
+                                t("Formula:", "Formule\u{a0}:"),
+                                TextField::new(&self.formula).width(250.0),
+                            )),
                     )
                     .child(buttons),
             )
@@ -341,7 +446,12 @@ pub(super) struct SolveOrder {
 
 fn solve_lines(app: &ExcelApp, pivot: u32) -> Vec<SharedString> {
     let locale = app.wb.locale;
-    app.wb.pivot(pivot).map_or(Vec::new(), |(_, p)| p.solve_order(locale).into_iter().map(SharedString::from).collect())
+    app.wb.pivot(pivot).map_or(Vec::new(), |(_, p)| {
+        p.solve_order(locale)
+            .into_iter()
+            .map(SharedString::from)
+            .collect()
+    })
 }
 
 pub(super) fn open_solve_order(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
@@ -369,9 +479,13 @@ impl SolveOrder {
         order.swap(at, to);
         let pivot = self.pivot;
         let lines = self.modal.update_app(cx, |app, cx| {
-            perform(app, t("Solve Order", "Ordre de résolution"), window, cx, move |app, overwrite| {
-                app.wb.pivot_set_solve_order(pivot, &order, overwrite)
-            });
+            perform(
+                app,
+                t("Solve Order", "Ordre de résolution"),
+                window,
+                cx,
+                move |app, overwrite| app.wb.pivot_set_solve_order(pivot, &order, overwrite),
+            );
             solve_lines(app, pivot)
         });
         self.lines = lines.unwrap_or_default();
@@ -387,9 +501,16 @@ impl SolveOrder {
                 Some((item.field, p.cache.calc_item_index(item)?))
             });
             if let Some((field, x)) = target {
-                perform(app, t("Delete", "Supprimer"), window, cx, move |app, overwrite| {
-                    app.wb.pivot_delete_calculated_item(pivot, field, x, overwrite)
-                });
+                perform(
+                    app,
+                    t("Delete", "Supprimer"),
+                    window,
+                    cx,
+                    move |app, overwrite| {
+                        app.wb
+                            .pivot_delete_calculated_item(pivot, field, x, overwrite)
+                    },
+                );
             }
             solve_lines(app, pivot)
         });
@@ -467,13 +588,22 @@ pub(super) fn list_formulas(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx
             t("Note:", "Remarque\u{a0}:").to_string(),
             format!(
                 "{} {}",
-                t("When a cell is updated by more than one formula,", "Lorsqu'une cellule est mise à jour par plusieurs formules,"),
-                t("the value is set by the formula with the last solve order.", "la valeur est établie par la dernière formule dans l'ordre de résolution.")
+                t(
+                    "When a cell is updated by more than one formula,",
+                    "Lorsqu'une cellule est mise à jour par plusieurs formules,"
+                ),
+                t(
+                    "the value is set by the formula with the last solve order.",
+                    "la valeur est établie par la dernière formule dans l'ordre de résolution."
+                )
             ),
             String::new(),
             format!(
                 "{} {}",
-                t("To change the solve order for multiple calculated items or fields,", "Pour modifier l'ordre de résolution de plusieurs champs ou éléments calculés,"),
+                t(
+                    "To change the solve order for multiple calculated items or fields,",
+                    "Pour modifier l'ordre de résolution de plusieurs champs ou éléments calculés,"
+                ),
                 t(
                     "on the Options tab, in the Calculations group, click Fields, Items, & Sets, and then click Solve Order.",
                     "dans l’onglet Options, groupe Calculs, cliquez sur Champs, éléments et jeux, puis sur Ordre de résolution."

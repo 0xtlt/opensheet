@@ -9,11 +9,12 @@ use crate::theme::{self, c, ca};
 use crate::view::icon;
 use crate::widgets::{self, Button};
 use gpui::{
-    AnyElement, AnyView, App, Context, Entity, FocusHandle, Focusable, FontWeight, MouseButton, MouseDownEvent,
-    MouseMoveEvent, Pixels, Point, Render, SharedString, WeakEntity, Window, div, prelude::*, px,
+    AnyElement, AnyView, App, Context, Entity, FocusHandle, Focusable, FontWeight, MouseButton,
+    MouseDownEvent, MouseMoveEvent, Pixels, Point, Render, SharedString, WeakEntity, Window, div,
+    prelude::*, px,
 };
 use opensheet_engine::Rect;
-use opensheet_engine::refs::{col_to_letters, MAX_COLS, MAX_ROWS};
+use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, col_to_letters};
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
@@ -52,7 +53,8 @@ impl RefStyle {
     /// The text of a reference to `rect` on the sheet named `sheet`.
     pub fn format(&self, rect: Rect, sheet: &str) -> String {
         let dollar = if self.absolute { "$" } else { "" };
-        let cell = |row: u32, col: u32| format!("{dollar}{}{dollar}{}", col_to_letters(col), row + 1);
+        let cell =
+            |row: u32, col: u32| format!("{dollar}{}{dollar}{}", col_to_letters(col), row + 1);
         let mut out = String::new();
         if self.equals {
             out.push('=');
@@ -64,11 +66,19 @@ impl RefStyle {
         if rect.c0 == 0 && rect.c1 == MAX_COLS - 1 {
             out.push_str(&format!("{dollar}{}:{dollar}{}", rect.r0 + 1, rect.r1 + 1));
         } else if rect.r0 == 0 && rect.r1 == MAX_ROWS - 1 {
-            out.push_str(&format!("{dollar}{}:{dollar}{}", col_to_letters(rect.c0), col_to_letters(rect.c1)));
+            out.push_str(&format!(
+                "{dollar}{}:{dollar}{}",
+                col_to_letters(rect.c0),
+                col_to_letters(rect.c1)
+            ));
         } else if rect.is_single() {
             out.push_str(&cell(rect.r0, rect.c0));
         } else {
-            out.push_str(&format!("{}:{}", cell(rect.r0, rect.c0), cell(rect.r1, rect.c1)));
+            out.push_str(&format!(
+                "{}:{}",
+                cell(rect.r0, rect.c0),
+                cell(rect.r1, rect.c1)
+            ));
         }
         out
     }
@@ -114,7 +124,11 @@ impl Modal {
     /// });
     /// self.modal.close(window, cx);
     /// ```
-    pub fn update_app<R>(&self, cx: &mut App, f: impl FnOnce(&mut ExcelApp, &mut Context<ExcelApp>) -> R) -> Option<R> {
+    pub fn update_app<R>(
+        &self,
+        cx: &mut App,
+        f: impl FnOnce(&mut ExcelApp, &mut Context<ExcelApp>) -> R,
+    ) -> Option<R> {
         self.app.update(cx, f).ok()
     }
 
@@ -125,9 +139,17 @@ impl Modal {
 
     /// A text field for `widgets::RefEdit`: while it has the keyboard,
     /// selecting cells on the sheet writes their reference into it.
-    pub fn ref_input<V: 'static>(&self, style: RefStyle, text: impl Into<String>, cx: &mut Context<V>) -> Entity<TextInput> {
+    pub fn ref_input<V: 'static>(
+        &self,
+        style: RefStyle,
+        text: impl Into<String>,
+        cx: &mut Context<V>,
+    ) -> Entity<TextInput> {
         let field = widgets::input(cx, text);
-        self.shared.ref_inputs.borrow_mut().push((field.downgrade(), style));
+        self.shared
+            .ref_inputs
+            .borrow_mut()
+            .push((field.downgrade(), style));
         field
     }
 }
@@ -225,7 +247,11 @@ struct MessageBox {
 
 impl MessageBox {
     fn press(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        let action = self.alert.buttons.get(index).and_then(|(_, action)| action.clone());
+        let action = self
+            .alert
+            .buttons
+            .get(index)
+            .and_then(|(_, action)| action.clone());
         self.modal.close(window, cx);
         if let Some(action) = action {
             self.modal.update_app(cx, |app, cx| action(app, window, cx));
@@ -286,7 +312,9 @@ impl Render for MessageBox {
                             .text_size(px(12.5))
                             .line_height(px(18.))
                             .children(self.alert.message.split('\n').map(|line| {
-                                div().min_h(px(8.)).child(SharedString::from(line.to_string()))
+                                div()
+                                    .min_h(px(8.))
+                                    .child(SharedString::from(line.to_string()))
                             })),
                     ),
             )
@@ -308,7 +336,13 @@ impl ExcelApp {
         }
     }
 
-    fn push_modal(&mut self, view: AnyView, modal: Modal, restore: Option<FocusHandle>, cx: &mut Context<Self>) {
+    fn push_modal(
+        &mut self,
+        view: AnyView,
+        modal: Modal,
+        restore: Option<FocusHandle>,
+        cx: &mut Context<Self>,
+    ) {
         self.popup = None;
         self.modals.push(ModalEntry {
             view,
@@ -366,7 +400,10 @@ impl ExcelApp {
         }
         let modal = self.new_modal(cx);
         let handle = modal.clone();
-        let view = cx.new(|_| MessageBox { modal: handle, alert });
+        let view = cx.new(|_| MessageBox {
+            modal: handle,
+            alert,
+        });
         self.push_modal(view.into(), modal, None, cx);
     }
 
@@ -389,8 +426,17 @@ impl ExcelApp {
     }
 
     /// Close a given dialog and everything opened over it.
-    pub(crate) fn close_modal_of(&mut self, focus: &FocusHandle, window: &mut Window, cx: &mut Context<Self>) {
-        let Some(index) = self.modals.iter().position(|entry| entry.modal.focus == *focus) else {
+    pub(crate) fn close_modal_of(
+        &mut self,
+        focus: &FocusHandle,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(index) = self
+            .modals
+            .iter()
+            .position(|entry| entry.modal.focus == *focus)
+        else {
             return;
         };
         while self.modals.len() > index {
@@ -399,18 +445,31 @@ impl ExcelApp {
     }
 
     /// The range field of the dialog in front that has the keyboard.
-    fn focused_ref_input(&self, window: &Window, cx: &App) -> Option<(Entity<TextInput>, RefStyle)> {
+    fn focused_ref_input(
+        &self,
+        window: &Window,
+        cx: &App,
+    ) -> Option<(Entity<TextInput>, RefStyle)> {
         let entry = self.modals.last()?;
         let fields = entry.modal.shared.ref_inputs.borrow();
         fields.iter().find_map(|(field, style)| {
             let field = field.upgrade()?;
-            field.read(cx).focus_handle(cx).is_focused(window).then_some((field, *style))
+            field
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
+                .then_some((field, *style))
         })
     }
 
     /// A press beside the dialog: nothing happens, unless a range field is
     /// waiting for cells and the press is on the sheet.
-    fn modal_backdrop_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn modal_backdrop_down(
+        &mut self,
+        ev: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // Whatever happens, the dialog keeps the keyboard.
         window.prevent_default();
         let Some((field, style)) = self.focused_ref_input(window, cx) else {
@@ -435,7 +494,11 @@ impl ExcelApp {
 
     /// The layer of open dialogs: each one over a veil that keeps the
     /// mouse away from what is behind it.
-    pub(crate) fn render_modals(&mut self, window: &mut Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(crate) fn render_modals(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         // A dialog that just opened takes the keyboard, then hands it to
         // its first control once that control exists.
         if let Some(entry) = self.modals.last_mut() {
@@ -501,7 +564,13 @@ impl ExcelApp {
     /// let view = cx.new(|cx| FieldList::new(cx.weak_entity() /* of the app */, ...));
     /// app.open_pane("pivot-fields", t("PivotTable Fields", "Champs de tableau croisé dynamique"), view, cx);
     /// ```
-    pub fn open_pane(&mut self, id: &'static str, title: impl Into<SharedString>, view: impl Into<AnyView>, cx: &mut Context<Self>) {
+    pub fn open_pane(
+        &mut self,
+        id: &'static str,
+        title: impl Into<SharedString>,
+        view: impl Into<AnyView>,
+        cx: &mut Context<Self>,
+    ) {
         let entry = PaneEntry {
             id,
             title: title.into(),
@@ -574,9 +643,19 @@ impl ExcelApp {
                         .min_w(px(0.))
                         .max_w(px(150.))
                         .border_b_2()
-                        .border_color(if on { c(theme::ACCENT) } else { gpui::transparent_black() })
-                        .when(on, |d| d.font_weight(FontWeight::SEMIBOLD).text_color(c(theme::ACCENT_DARK)))
-                        .when(!on, |d| d.text_color(c(theme::TEXT_MUTED)).hover(|s| s.bg(c(theme::HOVER))))
+                        .border_color(if on {
+                            c(theme::ACCENT)
+                        } else {
+                            gpui::transparent_black()
+                        })
+                        .when(on, |d| {
+                            d.font_weight(FontWeight::SEMIBOLD)
+                                .text_color(c(theme::ACCENT_DARK))
+                        })
+                        .when(!on, |d| {
+                            d.text_color(c(theme::TEXT_MUTED))
+                                .hover(|s| s.bg(c(theme::HOVER)))
+                        })
                         .child(div().min_w(px(0.)).truncate().child(pane.title.clone()))
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.active_pane = i;
@@ -607,8 +686,14 @@ impl ExcelApp {
                 .on_action(|_: &widgets::FocusPrev, window, _| window.focus_prev())
                 .on_action(|_: &crate::text_input::Tab, window, _| window.focus_next())
                 .on_action(|_: &crate::text_input::ShiftTab, window, _| window.focus_prev())
-                .on_action(cx.listener(|this, _: &widgets::Dismiss, window, _| window.focus(&this.grid_focus)))
-                .on_action(cx.listener(|this, _: &crate::text_input::Escape, window, _| window.focus(&this.grid_focus)))
+                .on_action(cx.listener(|this, _: &widgets::Dismiss, window, _| {
+                    window.focus(&this.grid_focus)
+                }))
+                .on_action(
+                    cx.listener(|this, _: &crate::text_input::Escape, window, _| {
+                        window.focus(&this.grid_focus)
+                    }),
+                )
                 .child(
                     div()
                         .h(px(34.))
@@ -652,7 +737,13 @@ impl ExcelApp {
                             .children(tabs),
                     )
                 })
-                .child(div().flex_1().min_h(px(0.)).overflow_hidden().child(active.view.clone()))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_h(px(0.))
+                        .overflow_hidden()
+                        .child(active.view.clone()),
+                )
                 // The left border is the handle that resizes the pane.
                 .child(
                     div()
@@ -666,7 +757,8 @@ impl ExcelApp {
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, ev: &MouseDownEvent, _, cx| {
-                                this.pane_resize = Some((f32::from(ev.position.x), this.pane_width));
+                                this.pane_resize =
+                                    Some((f32::from(ev.position.x), this.pane_width));
                                 cx.stop_propagation();
                             }),
                         ),

@@ -48,8 +48,8 @@ use crate::app::ExcelApp;
 use crate::theme::{self, c};
 use crate::view::icon;
 use gpui::{
-    AnyElement, AvailableSpace, Bounds, MouseButton, Pixels, WeakEntity, Window, WindowId, canvas, div, point, prelude::*,
-    px, size,
+    AnyElement, AvailableSpace, Bounds, MouseButton, Pixels, WeakEntity, Window, WindowId, canvas,
+    div, point, prelude::*, px, size,
 };
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -93,26 +93,88 @@ fn excel_order(tab: &str) -> &'static [(usize, Mode)] {
         // Cells 5, Editing 6. Styles stacks its three buttons first, the
         // labels beside Paste go, then those of Editing, Cells and
         // Alignment; Editing is the first to fold, Clipboard the last.
-        "1" => &[(4, S), (0, S), (6, C), (5, C), (2, S), (4, C), (6, F), (5, F), (3, F), (2, F), (1, F), (0, F)],
+        "1" => &[
+            (4, S),
+            (0, S),
+            (6, C),
+            (5, C),
+            (2, S),
+            (4, C),
+            (6, F),
+            (5, F),
+            (3, F),
+            (2, F),
+            (1, F),
+            (0, F),
+        ],
         // Insert: Tables 0, Illustrations 1, Charts 2, PivotChart 3,
         // Sparklines 4, Filters 5, Links 6, Comments 7, Text 8, Symbols 9.
-        "2" => &[(8, S), (9, S), (1, S), (2, S), (5, S), (8, C), (9, C), (1, C), (2, C), (8, F), (9, F), (1, F), (2, F), (0, F)],
+        "2" => &[
+            (8, S),
+            (9, S),
+            (1, S),
+            (2, S),
+            (5, S),
+            (8, C),
+            (9, C),
+            (1, C),
+            (2, C),
+            (8, F),
+            (9, F),
+            (1, F),
+            (2, F),
+            (0, F),
+        ],
         // Draw: Drawing Tools 0, Pens 1, Convert 2, Replay 3.
         "3" => &[(1, S), (0, S), (2, S), (1, C), (0, F), (2, F)],
         // Page Layout: Themes 0, Page Setup 1, Scale to Fit 2, Sheet
         // Options 3, Arrange 4. Excel for Mac has no Arrange group on
         // this tab: ours gives way first, and the rest follows Excel,
         // where Page Setup keeps its large buttons the longest.
-        "4" => &[(4, S), (4, C), (4, F), (0, S), (0, C), (0, F), (3, F), (2, F), (1, S), (1, C)],
+        "4" => &[
+            (4, S),
+            (4, C),
+            (4, F),
+            (0, S),
+            (0, C),
+            (0, F),
+            (3, F),
+            (2, F),
+            (1, S),
+            (1, C),
+        ],
         // Formulas: Function Library 0, Defined Names 1, Formula
         // Auditing 2, Calculation 3.
         "5" => &[(3, S), (0, S), (2, S), (0, C), (1, F), (2, F), (0, F)],
         // Data: Get & Transform Data 0, Sort & Filter 1, Data Tools 2,
         // Forecast 3, Outline 4.
-        "6" => &[(0, S), (4, S), (2, S), (4, C), (0, C), (2, C), (4, F), (1, S), (2, F), (1, F)],
+        "6" => &[
+            (0, S),
+            (4, S),
+            (2, S),
+            (4, C),
+            (0, C),
+            (2, C),
+            (4, F),
+            (1, S),
+            (2, F),
+            (1, F),
+        ],
         // Review: Proofing 0, Accessibility 1, Language 2, Comments 3,
         // Notes 4, Protect 5.
-        "7" => &[(3, S), (4, S), (0, S), (3, C), (4, C), (5, S), (5, F), (1, F), (3, F), (4, F), (0, F)],
+        "7" => &[
+            (3, S),
+            (4, S),
+            (0, S),
+            (3, C),
+            (4, C),
+            (5, S),
+            (5, F),
+            (1, F),
+            (3, F),
+            (4, F),
+            (0, F),
+        ],
         // View: Workbook Views 0, Show 1, Zoom 2, Window 3, Macros 4.
         "8" => &[(4, F), (1, F), (0, S), (3, F), (0, F), (2, F)],
         // Automate: Scripting Tools 0, Office Scripts 1.
@@ -310,7 +372,9 @@ pub fn close_panel() -> bool {
 pub fn toggle_group(group: usize) {
     with(|state| {
         let key = state.fit.key.clone();
-        let just_closed = state.closed.take().is_some_and(|(closed, at)| closed == group && at.elapsed() < Duration::from_millis(400));
+        let just_closed = state.closed.take().is_some_and(|(closed, at)| {
+            closed == group && at.elapsed() < Duration::from_millis(400)
+        });
         state.open = match &state.open {
             Some((_, open)) if *open == group => None,
             _ if just_closed => None,
@@ -350,7 +414,10 @@ pub fn large_form() -> (LargeForm, usize) {
 /// full.)
 pub fn level() -> u8 {
     with(|state| {
-        let mode = state.build.as_ref().and_then(|build| build.modes.get(build.index).copied());
+        let mode = state
+            .build
+            .as_ref()
+            .and_then(|build| build.modes.get(build.index).copied());
         match mode {
             Some(Mode::Stacked) => 2,
             Some(Mode::Compact) => 4,
@@ -445,7 +512,8 @@ pub fn next_group(label: &'static str) -> Slot {
             mode,
             index,
             icon,
-            open: mode == Mode::Folded && open.is_some_and(|(key, group)| key == build.key && group == index),
+            open: mode == Mode::Folded
+                && open.is_some_and(|(key, group)| key == build.key && group == index),
         }
     })
 }
@@ -546,8 +614,8 @@ pub fn folded_button(label: &'static str, slot: &Slot) -> gpui::Stateful<gpui::D
                     },
                     |_, _, _, _| {},
                 )
-                    .absolute()
-                    .size_full(),
+                .absolute()
+                .size_full(),
             )
         })
         .on_click(move |_, window, _| {
@@ -567,7 +635,12 @@ fn build(
     height: Pixels,
     window: &mut Window,
     cx: &mut gpui::App,
-) -> (Vec<(AnyElement, Pixels)>, f32, Vec<Larges>, Vec<&'static str>) {
+) -> (
+    Vec<(AnyElement, Pixels)>,
+    f32,
+    Vec<Larges>,
+    Vec<&'static str>,
+) {
     with(|state| {
         state.panel = None;
         state.build = Some(Build {
@@ -583,15 +656,28 @@ fn build(
             icon: None,
         });
     });
-    let groups = app.update(cx, |app, cx| app.ribbon_groups(window, cx)).unwrap_or_default();
-    let (counted, labels) = with(|state| state.build.take().map(|build| (build.counted, build.labels))).unwrap_or_default();
+    let groups = app
+        .update(cx, |app, cx| app.ribbon_groups(window, cx))
+        .unwrap_or_default();
+    let (counted, labels) = with(|state| {
+        state
+            .build
+            .take()
+            .map(|build| (build.counted, build.labels))
+    })
+    .unwrap_or_default();
     let space = size(AvailableSpace::MinContent, AvailableSpace::Definite(height));
     let mut total = 0.0;
     let measured = groups
         .into_iter()
         .map(|group| {
             // The groups fill the height of the ribbon.
-            let mut element = div().h(height).flex().flex_none().child(group).into_any_element();
+            let mut element = div()
+                .h(height)
+                .flex()
+                .flex_none()
+                .child(group)
+                .into_any_element();
             let width = element.layout_as_root(space, window, cx).width;
             total += f32::from(width);
             (element, width)
@@ -646,7 +732,11 @@ pub fn fitted(app: WeakEntity<ExcelApp>, key: String, available: f32) -> impl In
                     let last = plan.steps.last_mut().expect("a step was just taken");
                     // Folding hides a group: it has to be worth it (a
                     // group of one button gains nothing to speak of).
-                    let gain = if last.mode == Mode::Folded { MIN_FOLD_GAIN } else { 0.5 };
+                    let gain = if last.mode == Mode::Folded {
+                        MIN_FOLD_GAIN
+                    } else {
+                        0.5
+                    };
                     if total > before - gain {
                         last.useless = true;
                         // What was built shows the step: build without it.
@@ -690,12 +780,18 @@ pub fn fitted(app: WeakEntity<ExcelApp>, key: String, available: f32) -> impl In
             let widths = groups.iter().map(|(_, width)| f32::from(*width)).collect();
             // The element was sized for the last layout: when the width to
             // scroll changes, the window is laid out again.
-            if (total > available + 0.5 || last_fit_width(available) > available) && (last_fit_width(available) - total.max(available)).abs() > 0.5 {
+            if (total > available + 0.5 || last_fit_width(available) > available)
+                && (last_fit_width(available) - total.max(available)).abs() > 0.5
+            {
                 window.refresh();
             }
             with(|state| {
                 // A group that is no longer folded has no drop-down.
-                if state.open.as_ref().is_some_and(|(_, group)| modes.get(*group) != Some(&Mode::Folded)) {
+                if state
+                    .open
+                    .as_ref()
+                    .is_some_and(|(_, group)| modes.get(*group) != Some(&Mode::Folded))
+                {
                     state.open = None;
                     state.panel = None;
                 }
@@ -737,7 +833,13 @@ pub fn fitted(app: WeakEntity<ExcelApp>, key: String, available: f32) -> impl In
 /// The width the ribbon's content takes: the window's, or more when the
 /// last layout could not fit the tab.
 fn last_fit_width(available: f32) -> f32 {
-    with(|state| if state.fit.total > available + 0.5 { state.fit.total } else { available })
+    with(|state| {
+        if state.fit.total > available + 0.5 {
+            state.fit.total
+        } else {
+            available
+        }
+    })
 }
 
 /// The drop-down of the open folded group, painted over the window: put

@@ -114,13 +114,24 @@ pub enum TimeLevel {
 }
 
 impl TimeLevel {
-    pub const ALL: [TimeLevel; 4] = [TimeLevel::Years, TimeLevel::Quarters, TimeLevel::Months, TimeLevel::Days];
+    pub const ALL: [TimeLevel; 4] = [
+        TimeLevel::Years,
+        TimeLevel::Quarters,
+        TimeLevel::Months,
+        TimeLevel::Days,
+    ];
 
     /// As the list of the timeline names it.
     pub fn label(self, locale: &Locale) -> &'static str {
         let names: [&str; 5] = match self {
             TimeLevel::Years => ["YEARS", "ANNÉES", "AÑOS", "JAHRE", "ANNI"],
-            TimeLevel::Quarters => ["QUARTERS", "TRIMESTRES", "TRIMESTRES", "QUARTALE", "TRIMESTRI"],
+            TimeLevel::Quarters => [
+                "QUARTERS",
+                "TRIMESTRES",
+                "TRIMESTRES",
+                "QUARTALE",
+                "TRIMESTRI",
+            ],
             TimeLevel::Months => ["MONTHS", "MOIS", "MESES", "MONATE", "MESI"],
             TimeLevel::Days => ["DAYS", "JOURS", "DÍAS", "TAGE", "GIORNI"],
         };
@@ -129,7 +140,10 @@ impl TimeLevel {
 }
 
 fn lang(locale: &Locale) -> usize {
-    ["en", "fr", "es", "de", "it"].iter().position(|id| *id == locale.id).unwrap_or(0)
+    ["en", "fr", "es", "de", "it"]
+        .iter()
+        .position(|id| *id == locale.id)
+        .unwrap_or(0)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -178,7 +192,9 @@ fn first_of_month(year: i64, month: u32) -> f64 {
 }
 
 fn month_title(locale: &Locale, month: u32) -> String {
-    locale.months_short[(month as usize + 11) % 12].trim_end_matches('.').to_string()
+    locale.months_short[(month as usize + 11) % 12]
+        .trim_end_matches('.')
+        .to_string()
 }
 
 /// The periods of a level covering the days `start..=end`.
@@ -200,7 +216,11 @@ pub fn periods(level: TimeLevel, start: f64, end: f64, locale: &Locale) -> Vec<P
         TimeLevel::Quarters => {
             let (mut year, mut q) = (y0, (m0 - 1) / 3);
             while (year, q) <= (y1, (m1 - 1) / 3) {
-                let next = if q == 3 { first_of_month(year + 1, 1) } else { first_of_month(year, q * 3 + 4) };
+                let next = if q == 3 {
+                    first_of_month(year + 1, 1)
+                } else {
+                    first_of_month(year, q * 3 + 4)
+                };
                 out.push(Period {
                     start: first_of_month(year, q * 3 + 1),
                     end: next - 1.0,
@@ -219,7 +239,11 @@ pub fn periods(level: TimeLevel, start: f64, end: f64, locale: &Locale) -> Vec<P
                     label: month_title(locale, month).to_uppercase(),
                     group: (month == 1 || out.is_empty()).then(|| year.to_string()),
                 });
-                (year, month) = if month == 12 { (year + 1, 1) } else { (year, month + 1) };
+                (year, month) = if month == 12 {
+                    (year + 1, 1)
+                } else {
+                    (year, month + 1)
+                };
             }
         }
         TimeLevel::Days => {
@@ -254,7 +278,9 @@ pub fn span_label(level: TimeLevel, start: f64, end: f64, locale: &Locale) -> St
     match level {
         TimeLevel::Years if ys == ye => ys.to_string(),
         TimeLevel::Years => format!("{ys} - {ye}"),
-        TimeLevel::Quarters if (ys, (ms - 1) / 3) == (ye, (me - 1) / 3) => format!("{} {ys}", quarter(ms)),
+        TimeLevel::Quarters if (ys, (ms - 1) / 3) == (ye, (me - 1) / 3) => {
+            format!("{} {ys}", quarter(ms))
+        }
         TimeLevel::Quarters if ys == ye => format!("{} - {} {ys}", quarter(ms), quarter(me)),
         TimeLevel::Quarters => format!("{} {ys} - {} {ye}", quarter(ms), quarter(me)),
         TimeLevel::Months if (ys, ms) == (ye, me) => format!("{} {ys}", month(ms)),
@@ -289,16 +315,26 @@ pub enum SlicerError {
 /// A name for a file's slicer cache: what is not a letter or a digit
 /// becomes "_".
 fn cache_name(prefix: &str, name: &str) -> String {
-    let body: String = name.chars().map(|ch| if ch.is_alphanumeric() { ch } else { '_' }).collect();
+    let body: String = name
+        .chars()
+        .map(|ch| if ch.is_alphanumeric() { ch } else { '_' })
+        .collect();
     format!("{prefix}{body}")
 }
 
 fn unique(base: String, taken: &[String], separator: &str) -> String {
-    let has = |name: &str| taken.iter().any(|t| t.eq_ignore_ascii_case(name) || t.to_lowercase() == name.to_lowercase());
+    let has = |name: &str| {
+        taken
+            .iter()
+            .any(|t| t.eq_ignore_ascii_case(name) || t.to_lowercase() == name.to_lowercase())
+    };
     if !has(&base) {
         return base;
     }
-    (1..).map(|n| format!("{base}{separator}{n}")).find(|name| !has(name)).unwrap_or(base)
+    (1..)
+        .map(|n| format!("{base}{separator}{n}"))
+        .find(|name| !has(name))
+        .unwrap_or(base)
 }
 
 /// The items of a table column as a slicer lists them.
@@ -315,7 +351,10 @@ impl Workbook {
 
     /// Every slicer of the workbook with the index of its sheet.
     pub fn slicers(&self) -> impl Iterator<Item = (usize, &Slicer)> {
-        self.sheets.iter().enumerate().flat_map(|(si, sh)| sh.slicers.iter().map(move |s| (si, s)))
+        self.sheets
+            .iter()
+            .enumerate()
+            .flat_map(|(si, sh)| sh.slicers.iter().map(move |s| (si, s)))
     }
 
     pub fn slicer(&self, id: u32) -> Option<(usize, &Slicer)> {
@@ -323,7 +362,10 @@ impl Workbook {
     }
 
     pub fn timelines(&self) -> impl Iterator<Item = (usize, &Timeline)> {
-        self.sheets.iter().enumerate().flat_map(|(si, sh)| sh.timelines.iter().map(move |t| (si, t)))
+        self.sheets
+            .iter()
+            .enumerate()
+            .flat_map(|(si, sh)| sh.timelines.iter().map(move |t| (si, t)))
     }
 
     pub fn timeline(&self, id: u32) -> Option<(usize, &Timeline)> {
@@ -331,7 +373,10 @@ impl Workbook {
     }
 
     fn slicer_names(&self) -> Vec<String> {
-        self.slicers().map(|(_, s)| s.name.clone()).chain(self.timelines().map(|(_, t)| t.name.clone())).collect()
+        self.slicers()
+            .map(|(_, s)| s.name.clone())
+            .chain(self.timelines().map(|(_, t)| t.name.clone()))
+            .collect()
     }
 
     fn slicer_cache_names(&self) -> Vec<String> {
@@ -356,7 +401,10 @@ impl Workbook {
         let Some((_, p)) = self.pivot(pivot) else {
             return Vec::new();
         };
-        self.pivots().filter(|(_, q)| std::sync::Arc::ptr_eq(&p.cache, &q.cache)).map(|(si, q)| (si, q.id)).collect()
+        self.pivots()
+            .filter(|(_, q)| std::sync::Arc::ptr_eq(&p.cache, &q.cache))
+            .map(|(si, q)| (si, q.id))
+            .collect()
     }
 
     // ---- slicers -----------------------------------------------------------
@@ -365,7 +413,11 @@ impl Workbook {
         let name = unique(caption.to_string(), &self.slicer_names(), " ");
         Slicer {
             id: self.slicers().map(|(_, s)| s.id).max().unwrap_or(0) + 1,
-            cache_name: unique(cache_name("Slicer_", caption), &self.slicer_cache_names(), ""),
+            cache_name: unique(
+                cache_name("Slicer_", caption),
+                &self.slicer_cache_names(),
+                "",
+            ),
             name,
             caption: caption.to_string(),
             source,
@@ -387,7 +439,13 @@ impl Workbook {
     }
 
     /// Put a slicer for a field of a PivotTable on `sheet`; returns its id.
-    pub fn add_pivot_slicer(&mut self, sheet: usize, pivot: u32, field: usize, anchor: (u32, u32)) -> Option<u32> {
+    pub fn add_pivot_slicer(
+        &mut self,
+        sheet: usize,
+        pivot: u32,
+        field: usize,
+        anchor: (u32, u32),
+    ) -> Option<u32> {
         let (_, p) = self.pivot(pivot)?;
         let name = p.cache.fields.get(field)?.name.clone();
         let caption = p.field_caption(field).to_string();
@@ -400,7 +458,13 @@ impl Workbook {
     }
 
     /// Put a slicer for a column of a table on `sheet`; returns its id.
-    pub fn add_table_slicer(&mut self, sheet: usize, table: u32, column: usize, anchor: (u32, u32)) -> Option<u32> {
+    pub fn add_table_slicer(
+        &mut self,
+        sheet: usize,
+        table: u32,
+        column: usize,
+        anchor: (u32, u32),
+    ) -> Option<u32> {
         let (_, t) = self.table_by_id(table)?;
         let name = t.columns.get(column)?.name.clone();
         let source = SlicerSource::Table {
@@ -493,7 +557,10 @@ impl Workbook {
             items: Vec::new(),
             days: Vec::new(),
         };
-        let Some(range) = self.table(sheet, table).and_then(|t| t.column_range(col_id as usize)) else {
+        let Some(range) = self
+            .table(sheet, table)
+            .and_then(|t| t.column_range(col_id as usize))
+        else {
             return out;
         };
         let mut seen: HashMap<String, ()> = HashMap::new();
@@ -521,7 +588,9 @@ impl Workbook {
 
     /// The buttons of a slicer, in the order it shows them.
     pub fn slicer_items(&self, id: u32) -> Vec<SlicerItem> {
-        self.slicer(id).map(|(_, slicer)| self.slicer_items_of(slicer)).unwrap_or_default()
+        self.slicer(id)
+            .map(|(_, slicer)| self.slicer_items_of(slicer))
+            .unwrap_or_default()
     }
 
     /// The buttons a slicer set up like `slicer` shows (a file lists them
@@ -536,11 +605,23 @@ impl Workbook {
                     return Vec::new();
                 };
                 let with_data = p.items_with_data(f);
-                let page = p.page_fields.iter().find(|pf| pf.field == f).and_then(|pf| pf.item);
+                let page = p
+                    .page_fields
+                    .iter()
+                    .find(|pf| pf.field == f)
+                    .and_then(|pf| pf.item);
                 // Periods and intervals keep the order of the calendar.
-                let ranged = p.cache.fields[f].group.as_ref().is_some_and(|g| g.kind != GroupKind::Discrete);
+                let ranged = p.cache.fields[f]
+                    .group
+                    .as_ref()
+                    .is_some_and(|g| g.kind != GroupKind::Discrete);
                 for it in &p.fields[f].items {
-                    let value = p.cache.items(f).get(it.x as usize).cloned().unwrap_or(Value::Empty);
+                    let value = p
+                        .cache
+                        .items(f)
+                        .get(it.x as usize)
+                        .cloned()
+                        .unwrap_or(Value::Empty);
                     items.push((
                         SlicerItem {
                             x: it.x,
@@ -551,7 +632,11 @@ impl Workbook {
                             },
                             has_data: with_data.get(it.x as usize).copied().unwrap_or(false),
                         },
-                        if ranged { Value::Number(it.x as f64) } else { value },
+                        if ranged {
+                            Value::Number(it.x as f64)
+                        } else {
+                            value
+                        },
                         false,
                     ));
                 }
@@ -563,7 +648,9 @@ impl Workbook {
                 let column = self.column_items(si, table, col_id);
                 let scope = FilterScope::Table(table);
                 let dropdown = self.filter_dropdown(si, scope, col_id);
-                let own = self.auto_filter(si, scope).and_then(|f| f.columns.get(&col_id));
+                let own = self
+                    .auto_filter(si, scope)
+                    .and_then(|f| f.columns.get(&col_id));
                 for (x, ((text, value), day)) in column.items.iter().zip(&column.days).enumerate() {
                     // What the button of the column lists is what the
                     // other columns' filters let through.
@@ -577,16 +664,21 @@ impl Workbook {
                             .and_then(|year| year.months.iter().find(|month| month.month == *m))
                             .and_then(|month| month.days.iter().find(|day| day.day == *dd))
                             .map(|day| day.checked),
-                        (Some(d), None) => {
-                            d.items.iter().find(|i| i.text.to_lowercase() == text.to_lowercase()).map(|i| i.checked)
-                        }
+                        (Some(d), None) => d
+                            .items
+                            .iter()
+                            .find(|i| i.text.to_lowercase() == text.to_lowercase())
+                            .map(|i| i.checked),
                     };
                     let selected = listed.unwrap_or_else(|| match own {
                         None => true,
                         Some(Criteria::Values(v)) => match day {
                             _ if text.is_empty() => v.blanks,
                             Some((y, m, d)) => v.dates.contains(&DateGroup::day(*y, *m, *d)),
-                            None => v.values.iter().any(|t| t.to_lowercase() == text.to_lowercase()),
+                            None => v
+                                .values
+                                .iter()
+                                .any(|t| t.to_lowercase() == text.to_lowercase()),
                         },
                         Some(_) => false,
                     });
@@ -609,14 +701,25 @@ impl Workbook {
             }
         }
         // A custom list that holds every label gives the order.
-        let list = slicer.custom_lists.then(|| self.custom_lists()).and_then(|lists| {
-            lists.into_iter().find(|list| {
-                items
-                    .iter()
-                    .all(|(it, _, blank)| *blank || list.iter().any(|entry| entry.to_lowercase() == it.label.to_lowercase()))
+        let list = slicer
+            .custom_lists
+            .then(|| self.custom_lists())
+            .and_then(|lists| {
+                lists.into_iter().find(|list| {
+                    items.iter().all(|(it, _, blank)| {
+                        *blank
+                            || list
+                                .iter()
+                                .any(|entry| entry.to_lowercase() == it.label.to_lowercase())
+                    })
+                })
+            });
+        let rank = |label: &str| {
+            list.as_ref().and_then(|l| {
+                l.iter()
+                    .position(|e| e.to_lowercase() == label.to_lowercase())
             })
-        });
-        let rank = |label: &str| list.as_ref().and_then(|l| l.iter().position(|e| e.to_lowercase() == label.to_lowercase()));
+        };
         items.sort_by(|(a, av, ab), (b, bv, bb)| {
             // Blanks close the list whichever way it is sorted.
             ab.cmp(bb).then_with(|| {
@@ -626,10 +729,15 @@ impl Workbook {
                         (Value::Empty, Value::Empty) => std::cmp::Ordering::Equal,
                         (Value::Empty, _) => std::cmp::Ordering::Greater,
                         (_, Value::Empty) => std::cmp::Ordering::Less,
-                        _ => sort_order(av, bv, false).then_with(|| collate(&a.label, &b.label, false)),
+                        _ => sort_order(av, bv, false)
+                            .then_with(|| collate(&a.label, &b.label, false)),
                     },
                 };
-                if slicer.descending { order.reverse() } else { order }
+                if slicer.descending {
+                    order.reverse()
+                } else {
+                    order
+                }
             })
         });
         let mut out: Vec<SlicerItem> = items.into_iter().map(|(it, _, _)| it).collect();
@@ -647,24 +755,40 @@ impl Workbook {
             return false;
         };
         match &slicer.source {
-            SlicerSource::Pivot { pivots, field } => self.sliced_pivot(pivots, field).is_some_and(|(p, f)| {
-                p.fields[f].items.iter().any(|it| it.hidden)
-                    || p.page_fields.iter().any(|pf| pf.field == f && pf.item.is_some())
-            }),
-            SlicerSource::Table { .. } => self.slicer_column(slicer).is_some_and(|(si, table, col_id)| {
-                self.auto_filter(si, FilterScope::Table(table)).is_some_and(|f| f.columns.contains_key(&col_id))
-            }),
+            SlicerSource::Pivot { pivots, field } => {
+                self.sliced_pivot(pivots, field).is_some_and(|(p, f)| {
+                    p.fields[f].items.iter().any(|it| it.hidden)
+                        || p.page_fields
+                            .iter()
+                            .any(|pf| pf.field == f && pf.item.is_some())
+                })
+            }
+            SlicerSource::Table { .. } => {
+                self.slicer_column(slicer)
+                    .is_some_and(|(si, table, col_id)| {
+                        self.auto_filter(si, FilterScope::Table(table))
+                            .is_some_and(|f| f.columns.contains_key(&col_id))
+                    })
+            }
         }
     }
 
     /// Show exactly the items `selected` (see `SlicerItem::x`) in what the
     /// slicer filters; none, or all of them, clears the filter. With
     /// `overwrite`, the reports may cover cells holding data.
-    pub fn slicer_select(&mut self, id: u32, selected: &[u32], overwrite: bool) -> Result<(), PivotError> {
+    pub fn slicer_select(
+        &mut self,
+        id: u32,
+        selected: &[u32],
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let (_, slicer) = self.slicer(id).ok_or(PivotError::NoSuchPivot)?;
         match slicer.source.clone() {
             SlicerSource::Pivot { pivots, field } => {
-                let live: Vec<u32> = pivots.into_iter().filter(|p| self.pivot(*p).is_some()).collect();
+                let live: Vec<u32> = pivots
+                    .into_iter()
+                    .filter(|p| self.pivot(*p).is_some())
+                    .collect();
                 let all = selected.is_empty();
                 self.pivot_update_many(&live, overwrite, |p| {
                     let Some(f) = p.cache.field_index(&field) else {
@@ -681,15 +805,19 @@ impl Workbook {
                 })
             }
             SlicerSource::Table { .. } => {
-                let (si, table, col_id) = self.slicer_column(slicer).ok_or(PivotError::NoSuchField)?;
+                let (si, table, col_id) =
+                    self.slicer_column(slicer).ok_or(PivotError::NoSuchField)?;
                 let column = self.column_items(si, table, col_id);
-                let all = selected.is_empty() || (0..column.items.len() as u32).all(|x| selected.contains(&x));
+                let all = selected.is_empty()
+                    || (0..column.items.len() as u32).all(|x| selected.contains(&x));
                 let criteria = (!all).then(|| {
                     let mut filter = ValueFilter::default();
                     for x in selected {
                         match (column.items.get(*x as usize), column.days.get(*x as usize)) {
                             (Some((text, _)), _) if text.is_empty() => filter.blanks = true,
-                            (Some(_), Some(Some((y, m, d)))) => filter.dates.push(DateGroup::day(*y, *m, *d)),
+                            (Some(_), Some(Some((y, m, d)))) => {
+                                filter.dates.push(DateGroup::day(*y, *m, *d))
+                            }
                             (Some((text, _)), _) => filter.values.push(text.clone()),
                             _ => {}
                         }
@@ -712,15 +840,28 @@ impl Workbook {
     /// Connect a slicer to these PivotTables and to no other ("Report
     /// Connections"). Those that join take the slicer's selection; those
     /// that leave keep theirs.
-    pub fn slicer_connect(&mut self, id: u32, pivots: &[u32], overwrite: bool) -> Result<(), PivotError> {
+    pub fn slicer_connect(
+        &mut self,
+        id: u32,
+        pivots: &[u32],
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let (si, slicer) = self.slicer(id).ok_or(PivotError::NoSuchPivot)?;
         let SlicerSource::Pivot { pivots: old, field } = slicer.source.clone() else {
             return Err(PivotError::NoSuchPivot);
         };
-        let joining: Vec<u32> = pivots.iter().copied().filter(|p| !old.contains(p)).collect();
+        let joining: Vec<u32> = pivots
+            .iter()
+            .copied()
+            .filter(|p| !old.contains(p))
+            .collect();
         // What the slicer shows now is what the newcomers must show.
         let state = self.sliced_pivot(&old, &field).map(|(p, f)| {
-            let page = p.page_fields.iter().find(|pf| pf.field == f).and_then(|pf| pf.item);
+            let page = p
+                .page_fields
+                .iter()
+                .find(|pf| pf.field == f)
+                .and_then(|pf| pf.item);
             let values = p.cache.items(f);
             p.fields[f]
                 .items
@@ -761,7 +902,13 @@ impl Workbook {
     // ---- timelines ---------------------------------------------------------
 
     /// Put a timeline for a date field of a PivotTable on `sheet`.
-    pub fn add_timeline(&mut self, sheet: usize, pivot: u32, field: usize, anchor: (u32, u32)) -> Result<u32, SlicerError> {
+    pub fn add_timeline(
+        &mut self,
+        sheet: usize,
+        pivot: u32,
+        field: usize,
+        anchor: (u32, u32),
+    ) -> Result<u32, SlicerError> {
         let (_, p) = self.pivot(pivot).ok_or(SlicerError::NotFound)?;
         if sheet >= self.sheets.len() {
             return Err(SlicerError::NotFound);
@@ -775,7 +922,11 @@ impl Workbook {
         let timeline = Timeline {
             id,
             name: unique(caption.clone(), &self.slicer_names(), " "),
-            cache_name: unique(cache_name("NativeTimeline_", &caption), &self.slicer_cache_names(), ""),
+            cache_name: unique(
+                cache_name("NativeTimeline_", &caption),
+                &self.slicer_cache_names(),
+                "",
+            ),
             caption,
             pivots: vec![pivot],
             field: cf.name.clone(),
@@ -864,11 +1015,16 @@ impl Workbook {
             Value::Number(n) => Some(n.floor()),
             _ => None,
         });
-        let (lo, hi) = dates.fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), d| (lo.min(d), hi.max(d)));
+        let (lo, hi) = dates.fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), d| {
+            (lo.min(d), hi.max(d))
+        });
         if lo > hi {
             return None;
         }
-        Some((first_of_month(serial_to_ymd(lo).0, 1), first_of_month(serial_to_ymd(hi).0 + 1, 1) - 1.0))
+        Some((
+            first_of_month(serial_to_ymd(lo).0, 1),
+            first_of_month(serial_to_ymd(hi).0 + 1, 1) - 1.0,
+        ))
     }
 
     /// The days the timeline limits its field to, first and last
@@ -881,10 +1037,20 @@ impl Workbook {
 
     /// Limit the field of a timeline to the days `start..=end` in every
     /// PivotTable it is connected to; `None` clears the filter.
-    pub fn timeline_select(&mut self, id: u32, days: Option<(f64, f64)>, overwrite: bool) -> Result<(), PivotError> {
+    pub fn timeline_select(
+        &mut self,
+        id: u32,
+        days: Option<(f64, f64)>,
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let (_, timeline) = self.timeline(id).ok_or(PivotError::NoSuchPivot)?;
         let field = timeline.field.clone();
-        let live: Vec<u32> = timeline.pivots.iter().copied().filter(|p| self.pivot(*p).is_some()).collect();
+        let live: Vec<u32> = timeline
+            .pivots
+            .iter()
+            .copied()
+            .filter(|p| self.pivot(*p).is_some())
+            .collect();
         let days = days.map(|(a, b)| (a.min(b).floor(), a.max(b).floor()));
         self.pivot_update_many(&live, overwrite, |p| {
             if let Some(f) = p.cache.field_index(&field) {
@@ -894,11 +1060,20 @@ impl Workbook {
     }
 
     /// "Report Connections" of a timeline: see `slicer_connect`.
-    pub fn timeline_connect(&mut self, id: u32, pivots: &[u32], overwrite: bool) -> Result<(), PivotError> {
+    pub fn timeline_connect(
+        &mut self,
+        id: u32,
+        pivots: &[u32],
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let (si, timeline) = self.timeline(id).ok_or(PivotError::NoSuchPivot)?;
         let (old, field) = (timeline.pivots.clone(), timeline.field.clone());
         let days = self.timeline_selection(id);
-        let joining: Vec<u32> = pivots.iter().copied().filter(|p| !old.contains(p)).collect();
+        let joining: Vec<u32> = pivots
+            .iter()
+            .copied()
+            .filter(|p| !old.contains(p))
+            .collect();
         self.pivot_update_many(&joining, overwrite, |p| {
             if let Some(f) = p.cache.field_index(&field) {
                 p.set_date_filter(f, days);
@@ -938,9 +1113,13 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     for anchor in anchors {
         match edit {
             StructuralEdit::InsertRows { at, count } => anchor.0 = shift(anchor.0, true, at, count),
-            StructuralEdit::DeleteRows { at, count } => anchor.0 = shift(anchor.0, false, at, count),
+            StructuralEdit::DeleteRows { at, count } => {
+                anchor.0 = shift(anchor.0, false, at, count)
+            }
             StructuralEdit::InsertCols { at, count } => anchor.1 = shift(anchor.1, true, at, count),
-            StructuralEdit::DeleteCols { at, count } => anchor.1 = shift(anchor.1, false, at, count),
+            StructuralEdit::DeleteCols { at, count } => {
+                anchor.1 = shift(anchor.1, false, at, count)
+            }
         }
     }
 }
@@ -952,7 +1131,8 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     let Some(from) = wb.sheet_index(original) else {
         return;
     };
-    let pair = |old: Vec<u32>, new: Vec<u32>| -> HashMap<u32, u32> { old.into_iter().zip(new).collect() };
+    let pair =
+        |old: Vec<u32>, new: Vec<u32>| -> HashMap<u32, u32> { old.into_iter().zip(new).collect() };
     let pivots = pair(
         wb.sheets[from].pivots.iter().map(|p| p.id).collect(),
         wb.sheets[copy].pivots.iter().map(|p| p.id).collect(),
@@ -979,7 +1159,9 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
                     *id = pivots.get(id).copied().unwrap_or(*id);
                 }
             }
-            SlicerSource::Table { table, .. } => *table = tables.get(table).copied().unwrap_or(*table),
+            SlicerSource::Table { table, .. } => {
+                *table = tables.get(table).copied().unwrap_or(*table)
+            }
         }
     }
     for timeline in &mut sh.timelines {
@@ -1029,7 +1211,9 @@ mod tests {
             sheet: wb.sheets[0].name.clone(),
             range: Rect::new(0, 0, 6, 3),
         };
-        let id = wb.pivot_create(source, PivotDestination::NewSheet { index: 1 }, false).unwrap();
+        let id = wb
+            .pivot_create(source, PivotDestination::NewSheet { index: 1 }, false)
+            .unwrap();
         wb.pivot_update(id, false, |p| {
             p.add_field(0, Area::Rows, None, Locale::en());
             p.add_field(3, Area::Values, None, Locale::en());
@@ -1039,12 +1223,20 @@ mod tests {
         (wb, id)
     }
 
-    fn column(wb: &Workbook, sheet: usize, col: u32, rows: std::ops::RangeInclusive<u32>) -> Vec<String> {
+    fn column(
+        wb: &Workbook,
+        sheet: usize,
+        col: u32,
+        rows: std::ops::RangeInclusive<u32>,
+    ) -> Vec<String> {
         rows.map(|r| wb.display_text(sheet, r, col).text).collect()
     }
 
     fn labels(wb: &Workbook, id: u32) -> Vec<(String, bool, bool)> {
-        wb.slicer_items(id).into_iter().map(|i| (i.label, i.selected, i.has_data)).collect()
+        wb.slicer_items(id)
+            .into_iter()
+            .map(|i| (i.label, i.selected, i.has_data))
+            .collect()
     }
 
     #[test]
@@ -1053,29 +1245,52 @@ mod tests {
         let id = wb.add_pivot_slicer(1, pivot, 0, (2, 5)).unwrap();
         wb.commit("slicer");
         let slicer = wb.slicer(id).unwrap().1;
-        assert_eq!((slicer.name.as_str(), slicer.cache_name.as_str()), ("Region", "Slicer_Region"));
+        assert_eq!(
+            (slicer.name.as_str(), slicer.cache_name.as_str()),
+            ("Region", "Slicer_Region")
+        );
         assert_eq!(
             labels(&wb, id),
-            [("East".to_string(), true, true), ("North".to_string(), true, true), ("West".to_string(), true, true)]
+            [
+                ("East".to_string(), true, true),
+                ("North".to_string(), true, true),
+                ("West".to_string(), true, true)
+            ]
         );
         assert!(!wb.slicer_filtered(id));
 
         let west = wb.slicer_items(id)[2].x;
         wb.slicer_select(id, &[west], false).unwrap();
         wb.commit("slice");
-        assert_eq!(column(&wb, 1, 0, 2..=4), ["Row Labels", "West", "Grand Total"]);
+        assert_eq!(
+            column(&wb, 1, 0, 2..=4),
+            ["Row Labels", "West", "Grand Total"]
+        );
         assert_eq!(wb.display_text(1, 4, 1).text, "250");
         assert!(wb.slicer_filtered(id));
         assert_eq!(labels(&wb, id)[0], ("East".to_string(), false, true));
 
         // The drop-down of the field changes what the slicer shows.
-        wb.pivot_update(pivot, false, |p| p.set_item_hidden(0, 0, false)).unwrap();
+        wb.pivot_update(pivot, false, |p| p.set_item_hidden(0, 0, false))
+            .unwrap();
         wb.commit("filter");
-        assert_eq!(labels(&wb, id).iter().filter(|(_, selected, _)| *selected).count(), 2);
+        assert_eq!(
+            labels(&wb, id)
+                .iter()
+                .filter(|(_, selected, _)| *selected)
+                .count(),
+            2
+        );
 
         // One undo step per selection; clearing shows everything again.
         assert!(wb.undo());
-        assert_eq!(labels(&wb, id).iter().filter(|(_, selected, _)| *selected).count(), 1);
+        assert_eq!(
+            labels(&wb, id)
+                .iter()
+                .filter(|(_, selected, _)| *selected)
+                .count(),
+            1
+        );
         wb.slicer_select(id, &[], false).unwrap();
         wb.commit("clear");
         assert!(!wb.slicer_filtered(id));
@@ -1094,7 +1309,12 @@ mod tests {
         let product = wb.add_pivot_slicer(1, pivot, 1, (2, 5)).unwrap();
         let region = wb.add_pivot_slicer(1, pivot, 0, (2, 8)).unwrap();
         assert_eq!(wb.slicer(region).unwrap().1.name, "Region");
-        let plums = wb.slicer_items(product).iter().find(|i| i.label == "Plums").unwrap().x;
+        let plums = wb
+            .slicer_items(product)
+            .iter()
+            .find(|i| i.label == "Plums")
+            .unwrap()
+            .x;
         wb.slicer_select(product, &[plums], false).unwrap();
         wb.commit("slice");
         assert_eq!(column(&wb, 1, 0, 3..=4), ["North", "Grand Total"]);
@@ -1102,7 +1322,11 @@ mod tests {
         // The regions without plums are greyed out and listed last.
         assert_eq!(
             labels(&wb, region),
-            [("North".to_string(), true, true), ("East".to_string(), true, false), ("West".to_string(), true, false)]
+            [
+                ("North".to_string(), true, true),
+                ("East".to_string(), true, false),
+                ("West".to_string(), true, false)
+            ]
         );
         wb.update_slicer(region, |s| s.hide_no_data = true);
         assert_eq!(labels(&wb, region).len(), 1);
@@ -1111,7 +1335,10 @@ mod tests {
             s.no_data_last = false;
             s.descending = true;
         });
-        let order: Vec<String> = labels(&wb, region).into_iter().map(|(label, ..)| label).collect();
+        let order: Vec<String> = labels(&wb, region)
+            .into_iter()
+            .map(|(label, ..)| label)
+            .collect();
         assert_eq!(order, ["West", "North", "East"]);
     }
 
@@ -1119,7 +1346,17 @@ mod tests {
     fn one_slicer_drives_the_pivots_sharing_its_cache() {
         let (mut wb, first) = pivot();
         let source = wb.pivot(first).unwrap().1.source.clone();
-        let second = wb.pivot_create(source, PivotDestination::Existing { sheet: 1, row: 2, col: 10 }, false).unwrap();
+        let second = wb
+            .pivot_create(
+                source,
+                PivotDestination::Existing {
+                    sheet: 1,
+                    row: 2,
+                    col: 10,
+                },
+                false,
+            )
+            .unwrap();
         wb.pivot_update(second, false, |p| {
             p.add_field(1, Area::Rows, None, Locale::en());
             p.add_field(3, Area::Values, None, Locale::en());
@@ -1133,10 +1370,16 @@ mod tests {
         wb.slicer_select(id, &[east], false).unwrap();
         wb.commit("slice");
         // Not connected yet: the second report still shows every product.
-        assert_eq!(column(&wb, 1, 10, 3..=6), ["Apples", "Pears", "Plums", "Grand Total"]);
+        assert_eq!(
+            column(&wb, 1, 10, 3..=6),
+            ["Apples", "Pears", "Plums", "Grand Total"]
+        );
         wb.slicer_connect(id, &[first, second], false).unwrap();
         wb.commit("connect");
-        assert_eq!(column(&wb, 1, 10, 3..=5), ["Apples", "Pears", "Grand Total"]);
+        assert_eq!(
+            column(&wb, 1, 10, 3..=5),
+            ["Apples", "Pears", "Grand Total"]
+        );
         assert_eq!(wb.display_text(1, 5, 11).text, "370");
         wb.slicer_select(id, &[], false).unwrap();
         wb.commit("clear");
@@ -1153,7 +1396,12 @@ mod tests {
         let region = wb.add_table_slicer(0, table, 0, (0, 6)).unwrap();
         let product = wb.add_table_slicer(0, table, 1, (0, 9)).unwrap();
         wb.commit("slicers");
-        let east = wb.slicer_items(region).iter().find(|i| i.label == "East").unwrap().x;
+        let east = wb
+            .slicer_items(region)
+            .iter()
+            .find(|i| i.label == "East")
+            .unwrap()
+            .x;
         wb.slicer_select(region, &[east], false).unwrap();
         wb.commit("slice");
         let hidden: Vec<u32> = wb.sheets[0].filtered_rows.iter().copied().collect();
@@ -1162,13 +1410,21 @@ mod tests {
         // The other slicer greys what the first one leaves no row for.
         assert_eq!(
             labels(&wb, product),
-            [("Apples".to_string(), true, true), ("Pears".to_string(), true, true), ("Plums".to_string(), true, false)]
+            [
+                ("Apples".to_string(), true, true),
+                ("Pears".to_string(), true, true),
+                ("Plums".to_string(), true, false)
+            ]
         );
         // The button of the column and the slicer show the same filter.
         assert!(wb.set_filter_criteria(0, FilterScope::Table(table), 0, None));
         wb.commit("clear");
         assert!(!wb.slicer_filtered(region));
-        assert!(labels(&wb, region).iter().all(|(_, selected, data)| *selected && *data));
+        assert!(
+            labels(&wb, region)
+                .iter()
+                .all(|(_, selected, data)| *selected && *data)
+        );
         // Dates are chosen by day.
         let date = wb.add_table_slicer(0, table, 2, (0, 12)).unwrap();
         let first = wb.slicer_items(date)[0].clone();
@@ -1185,7 +1441,10 @@ mod tests {
         let b = wb.add_pivot_slicer(1, pivot, 0, (4, 8)).unwrap();
         wb.commit("slicers");
         let second = wb.slicer(b).unwrap().1;
-        assert_eq!((second.name.as_str(), second.cache_name.as_str()), ("Region 1", "Slicer_Region1"));
+        assert_eq!(
+            (second.name.as_str(), second.cache_name.as_str()),
+            ("Region 1", "Slicer_Region1")
+        );
         assert_eq!(wb.rename_slicer(b, "region"), Err(SlicerError::InvalidName));
         assert_eq!(wb.rename_slicer(b, "Zones"), Ok(()));
         wb.insert_rows(1, 0, 2);
@@ -1202,26 +1461,58 @@ mod tests {
     #[test]
     fn a_timeline_limits_the_dates_of_its_pivots() {
         let (mut wb, pivot) = pivot();
-        assert_eq!(wb.add_timeline(1, pivot, 0, (8, 0)), Err(SlicerError::NotADate));
+        assert_eq!(
+            wb.add_timeline(1, pivot, 0, (8, 0)),
+            Err(SlicerError::NotADate)
+        );
         let id = wb.add_timeline(1, pivot, 2, (8, 0)).unwrap();
         wb.commit("timeline");
         let timeline = wb.timeline(id).unwrap().1;
-        assert_eq!((timeline.name.as_str(), timeline.cache_name.as_str()), ("Date", "NativeTimeline_Date"));
+        assert_eq!(
+            (timeline.name.as_str(), timeline.cache_name.as_str()),
+            ("Date", "NativeTimeline_Date")
+        );
         let (start, end) = wb.timeline_bounds(id).unwrap();
-        assert_eq!((serial_to_ymd(start), serial_to_ymd(end)), ((2023, 1, 1), (2024, 12, 31)));
+        assert_eq!(
+            (serial_to_ymd(start), serial_to_ymd(end)),
+            ((2023, 1, 1), (2024, 12, 31))
+        );
         assert_eq!(wb.timeline_selection(id), None);
 
         // March 2023: one sale in the East, one in the West.
         let months = periods(TimeLevel::Months, start, end, Locale::en());
         assert_eq!(months.len(), 24);
-        assert_eq!((months[2].label.as_str(), months[0].group.as_deref()), ("MAR", Some("2023")));
-        wb.timeline_select(id, Some((months[2].start, months[2].end)), false).unwrap();
+        assert_eq!(
+            (months[2].label.as_str(), months[0].group.as_deref()),
+            ("MAR", Some("2023"))
+        );
+        wb.timeline_select(id, Some((months[2].start, months[2].end)), false)
+            .unwrap();
         wb.commit("march");
         assert_eq!(column(&wb, 1, 0, 3..=5), ["East", "West", "Grand Total"]);
         assert_eq!(wb.display_text(1, 5, 1).text, "350");
-        assert_eq!(wb.timeline_selection(id), Some((months[2].start, months[2].end)));
-        assert_eq!(span_label(TimeLevel::Months, months[2].start, months[2].end, Locale::en()), "Mar 2023");
-        assert_eq!(span_label(TimeLevel::Quarters, months[0].start, months[5].end, Locale::fr()), "T1 - T2 2023");
+        assert_eq!(
+            wb.timeline_selection(id),
+            Some((months[2].start, months[2].end))
+        );
+        assert_eq!(
+            span_label(
+                TimeLevel::Months,
+                months[2].start,
+                months[2].end,
+                Locale::en()
+            ),
+            "Mar 2023"
+        );
+        assert_eq!(
+            span_label(
+                TimeLevel::Quarters,
+                months[0].start,
+                months[5].end,
+                Locale::fr()
+            ),
+            "T1 - T2 2023"
+        );
 
         wb.timeline_select(id, None, false).unwrap();
         wb.commit("clear");
@@ -1239,16 +1530,28 @@ mod tests {
         let en = Locale::en();
         let start = date_to_serial(2023, 11, 20).unwrap();
         let end = date_to_serial(2024, 2, 3).unwrap();
-        let years: Vec<String> = periods(TimeLevel::Years, start, end, en).into_iter().map(|p| p.label).collect();
+        let years: Vec<String> = periods(TimeLevel::Years, start, end, en)
+            .into_iter()
+            .map(|p| p.label)
+            .collect();
         assert_eq!(years, ["2023", "2024"]);
         let quarters = periods(TimeLevel::Quarters, start, end, en);
-        assert_eq!(quarters.iter().map(|p| p.label.as_str()).collect::<Vec<_>>(), ["Q4", "Q1"]);
+        assert_eq!(
+            quarters
+                .iter()
+                .map(|p| p.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Q4", "Q1"]
+        );
         assert_eq!(quarters[1].group.as_deref(), Some("2024"));
         assert_eq!(serial_to_ymd(quarters[1].end), (2024, 3, 31));
         let days = periods(TimeLevel::Days, start, end, en);
         assert_eq!(days.len(), 76);
         assert_eq!(days[11].group.as_deref(), Some("DEC 2023"));
-        assert_eq!(span_label(TimeLevel::Days, start, start + 2.0, en), "20 - 22 Nov 2023");
+        assert_eq!(
+            span_label(TimeLevel::Days, start, start + 2.0, en),
+            "20 - 22 Nov 2023"
+        );
         assert_eq!(span_label(TimeLevel::Years, start, end, en), "2023 - 2024");
     }
 }

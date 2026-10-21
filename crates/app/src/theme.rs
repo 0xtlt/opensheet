@@ -1,7 +1,7 @@
 //! Colours and metrics of the interface.
 
-use gpui::{Hsla, Rgba, rgb};
 use crate::i18n::t;
+use gpui::{Hsla, Rgba, rgb};
 use opensheet_engine::style::{Font, ThemeFont};
 use opensheet_engine::{Color, Theme};
 use std::cell::RefCell;
@@ -130,7 +130,8 @@ fn role_suffix(role: ThemeFont) -> &'static str {
 /// The two entries a list of fonts begins with: the heading font and the
 /// body font of the theme, as Excel names them.
 pub fn theme_font_labels(theme: &Theme) -> [String; 2] {
-    [ThemeFont::Major, ThemeFont::Minor].map(|role| format!("{} {}", theme.font(role), role_suffix(role)))
+    [ThemeFont::Major, ThemeFont::Minor]
+        .map(|role| format!("{} {}", theme.font(role), role_suffix(role)))
 }
 
 /// What a font box shows for a font: its name, with "(Body)" or
@@ -148,7 +149,10 @@ pub fn font_label(font: &Font) -> String {
 pub fn set_font_choice(font: &mut Font, choice: &str, theme: &Theme) {
     let choice = choice.trim();
     let labels = theme_font_labels(theme);
-    for (role, label) in [ThemeFont::Major, ThemeFont::Minor].into_iter().zip(&labels) {
+    for (role, label) in [ThemeFont::Major, ThemeFont::Minor]
+        .into_iter()
+        .zip(&labels)
+    {
         if choice.eq_ignore_ascii_case(label) {
             font.name = theme.font(role).clone();
             font.theme = Some(role);

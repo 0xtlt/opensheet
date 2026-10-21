@@ -20,10 +20,13 @@ use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
 use crate::widgets::{ColorGrid, TextField};
 use fields::{Field, fill_of, line_of, line_of_mut, set_fill};
-use gpui::{AnyElement, Context, Entity, Focusable, Render, Subscription, WeakEntity, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, Context, Entity, Focusable, Render, Subscription, WeakEntity, Window, div,
+    prelude::*, px,
+};
 use opensheet_engine::chart::{Chart, Fill};
-use opensheet_engine::drawing::{Effects, Glow, ShadowPreset};
 use opensheet_engine::chart_layout::ChartElement;
+use opensheet_engine::drawing::{Effects, Glow, ShadowPreset};
 use opensheet_engine::style::Color;
 
 pub struct ChartFormat;
@@ -76,7 +79,9 @@ impl Command for Cmd {
             Cmd::FormatSelection => open_pane(app, window, cx),
             Cmd::ResetStyle => {
                 let element = app.chart_element();
-                app.edit_chart(self.label(), cx, move |chart| elements::reset(chart, element));
+                app.edit_chart(self.label(), cx, move |chart| {
+                    elements::reset(chart, element)
+                });
             }
             Cmd::ShapeFill | Cmd::ShapeOutline | Cmd::TextFill => {
                 let paints = match self {
@@ -87,7 +92,13 @@ impl Command for Cmd {
                 let current = app.selected_chart().and_then(|chart| {
                     let element = app.chart_element();
                     match paints {
-                        Paints::Outline => line_of(chart, element).map(|line| if line.shown == Some(false) { None } else { line.color }),
+                        Paints::Outline => line_of(chart, element).map(|line| {
+                            if line.shown == Some(false) {
+                                None
+                            } else {
+                                line.color
+                            }
+                        }),
                         Paints::Fill => fill_of(chart, element).map(|fill| match fill {
                             Fill::Solid(color) => Some(color),
                             _ => None,
@@ -140,7 +151,12 @@ fn effects_of(chart: &Chart, element: ChartElement) -> Option<Effects> {
 }
 
 /// Change the effects of the selected element, as one undo step.
-fn set_effects(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl Fn(&mut Effects) + 'static) {
+fn set_effects(
+    app: &mut ExcelApp,
+    label: &str,
+    cx: &mut Cx,
+    change: impl Fn(&mut Effects) + 'static,
+) {
     let element = app.chart_element();
     app.edit_chart(label, cx, move |chart| match element {
         ChartElement::ChartArea => change(&mut chart.chart_area.effects),
@@ -156,25 +172,34 @@ const GLOWS: [f32; 4] = [5.0, 8.0, 11.0, 18.0];
 /// each ticked when the selected element has it. Soft edges, bevels and
 /// reflections are not drawn on a chart and are greyed out.
 fn effects_menu(app: &ExcelApp) -> Vec<MenuEntry> {
-    let current = app.selected_chart().and_then(|chart| effects_of(chart, app.chart_element())).unwrap_or_default();
+    let current = app
+        .selected_chart()
+        .and_then(|chart| effects_of(chart, app.chart_element()))
+        .unwrap_or_default();
     let shadow_label = t("Shadow", "Ombre");
     let mut shadow = vec![
-        MenuEntry::new(t("No Shadow", "Aucune ombre"), move |app, _, cx| set_effects(app, shadow_label, cx, |effects| effects.shadow = None))
-            .checked(current.shadow.is_none()),
+        MenuEntry::new(t("No Shadow", "Aucune ombre"), move |app, _, cx| {
+            set_effects(app, shadow_label, cx, |effects| effects.shadow = None)
+        })
+        .checked(current.shadow.is_none()),
         MenuEntry::separator(),
     ];
     for preset in ShadowPreset::ALL {
         shadow.push(
             MenuEntry::new(preset.name(app.wb.locale), move |app, _, cx| {
-                set_effects(app, shadow_label, cx, move |effects| effects.shadow = Some(preset.shadow()));
+                set_effects(app, shadow_label, cx, move |effects| {
+                    effects.shadow = Some(preset.shadow())
+                });
             })
             .checked(current.shadow == Some(preset.shadow())),
         );
     }
     let glow_label = t("Glow", "Lumière");
     let mut glow = vec![
-        MenuEntry::new(t("No Glow", "Aucun éclat"), move |app, _, cx| set_effects(app, glow_label, cx, |effects| effects.glow = None))
-            .checked(current.glow.is_none()),
+        MenuEntry::new(t("No Glow", "Aucun éclat"), move |app, _, cx| {
+            set_effects(app, glow_label, cx, |effects| effects.glow = None)
+        })
+        .checked(current.glow.is_none()),
         MenuEntry::separator(),
     ];
     for radius in GLOWS {
@@ -185,9 +210,14 @@ fn effects_menu(app: &ExcelApp) -> Vec<MenuEntry> {
                     transparency: 0.6,
                     radius,
                 };
-                MenuEntry::new(format!("{} {n}", t("Accent", "Accentuation")), move |app, _, cx| {
-                    set_effects(app, glow_label, cx, move |effects| effects.glow = Some(made));
-                })
+                MenuEntry::new(
+                    format!("{} {n}", t("Accent", "Accentuation")),
+                    move |app, _, cx| {
+                        set_effects(app, glow_label, cx, move |effects| {
+                            effects.glow = Some(made)
+                        });
+                    },
+                )
                 .checked(current.glow == Some(made))
             })
             .collect();
@@ -214,8 +244,11 @@ fn element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
     elements::listed(chart, &data)
         .into_iter()
         .map(|element| {
-            MenuEntry::new(elements::element_name(chart, &data, element), move |a, _, cx| a.select_chart_element(element, cx))
-                .checked(element == current)
+            MenuEntry::new(
+                elements::element_name(chart, &data, element),
+                move |a, _, cx| a.select_chart_element(element, cx),
+            )
+            .checked(element == current)
         })
         .collect()
 }
@@ -341,8 +374,18 @@ struct FormatUi {
     size: Option<SizeFields>,
 }
 
-fn on_size_event(app: &mut ExcelApp, field: Field, input: &Entity<TextInput>, ev: &InputEvent, window: &mut Window, cx: &mut Cx) {
-    if !matches!(ev, InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred) {
+fn on_size_event(
+    app: &mut ExcelApp,
+    field: Field,
+    input: &Entity<TextInput>,
+    ev: &InputEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
+    if !matches!(
+        ev,
+        InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred
+    ) {
         return;
     }
     let text = input.read(cx).text().to_string();
@@ -350,9 +393,22 @@ fn on_size_event(app: &mut ExcelApp, field: Field, input: &Entity<TextInput>, ev
         let mut changed = chart.clone();
         // A field left as it reads is not a new size (it shows a rounded one).
         let reads = fields::value(chart, ChartElement::ChartArea, field, None, app.wb.locale);
-        if text != reads && fields::set(&mut changed, ChartElement::ChartArea, field, &text, app.wb.locale) && changed.size != chart.size {
+        if text != reads
+            && fields::set(
+                &mut changed,
+                ChartElement::ChartArea,
+                field,
+                &text,
+                app.wb.locale,
+            )
+            && changed.size != chart.size
+        {
             let size = changed.size;
-            app.edit_chart(t("Resize Chart", "Redimensionner le graphique"), cx, move |chart| chart.size = size);
+            app.edit_chart(
+                t("Resize Chart", "Redimensionner le graphique"),
+                cx,
+                move |chart| chart.size = size,
+            );
         }
     }
     if !matches!(ev, InputEvent::Blurred) {
@@ -363,13 +419,18 @@ fn on_size_event(app: &mut ExcelApp, field: Field, input: &Entity<TextInput>, ev
 
 /// The two fields, created on first use and showing the size of the
 /// selected chart unless the user is typing in them.
-fn size_fields(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> (Entity<TextInput>, Entity<TextInput>) {
+fn size_fields(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> (Entity<TextInput>, Entity<TextInput>) {
     if app.ext::<FormatUi>().is_none_or(|ui| ui.size.is_none()) {
         let make = |field: Field, window: &mut Window, cx: &mut Cx| {
             let input = cx.new(TextInput::new);
-            let subscription = cx.subscribe_in(&input, window, move |app, input, ev, window, cx| {
-                on_size_event(app, field, input, ev, window, cx)
-            });
+            let subscription =
+                cx.subscribe_in(&input, window, move |app, input, ev, window, cx| {
+                    on_size_event(app, field, input, ev, window, cx)
+                });
             (input, subscription)
         };
         let (height, on_height) = make(Field::Height, window, cx);
@@ -403,7 +464,13 @@ fn size_fields(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> (Entity<
 fn format_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
     let current = app
         .selected_chart()
-        .map(|chart| elements::element_name(chart, &app.wb.chart_data(app.sheet, chart), app.chart_element()))
+        .map(|chart| {
+            elements::element_name(
+                chart,
+                &app.wb.chart_data(app.sheet, chart),
+                app.chart_element(),
+            )
+        })
         .unwrap_or_default();
     let (height, width) = size_fields(app, window, cx);
     let size_row = |label: &'static str, input: &Entity<TextInput>| {
@@ -419,10 +486,17 @@ fn format_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Vec<AnyEl
         group(
             t("Current Selection", "Sélection active"),
             rows(vec![
-                app.combo("cf-element", current, 200.0, Cmd::Element.label(), cx, |this, window, cx| {
-                    let entries = element_menu(this);
-                    this.open_menu("cf-element", entries, 300.0, window, cx);
-                }),
+                app.combo(
+                    "cf-element",
+                    current,
+                    200.0,
+                    Cmd::Element.label(),
+                    cx,
+                    |this, window, cx| {
+                        let entries = element_menu(this);
+                        this.open_menu("cf-element", entries, 300.0, window, cx);
+                    },
+                ),
                 app.cmd_labeled("cf-format", Cmd::FormatSelection, false, cx),
                 app.cmd_labeled("cf-reset", Cmd::ResetStyle, false, cx),
             ]),
@@ -446,7 +520,10 @@ fn format_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Vec<AnyEl
             ]),
         )
         .into_any_element(),
-        div().h_full().child(app.arrange_group("ar", cx)).into_any_element(),
+        div()
+            .h_full()
+            .child(app.arrange_group("ar", cx))
+            .into_any_element(),
         group(
             t("Size", "Taille"),
             rows(vec![
@@ -474,7 +551,13 @@ impl Feature for ChartFormat {
         }
     }
 
-    fn render_tab(&self, app: &mut ExcelApp, _tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+    fn render_tab(
+        &self,
+        app: &mut ExcelApp,
+        _tab: &'static str,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         format_tab(app, window, cx)
     }
 }

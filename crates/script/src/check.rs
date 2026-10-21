@@ -16,8 +16,9 @@ use std::sync::OnceLock;
 
 use oxc::allocator::Allocator;
 use oxc::ast::ast::{
-    Argument, BindingPattern, CallExpression, ChainElement, Expression, ForOfStatement, ForStatementLeft, FormalParameter, Function,
-    Program, Statement, StaticMemberExpression, TSType, TSTypeName, UnaryExpression, VariableDeclarator,
+    Argument, BindingPattern, CallExpression, ChainElement, Expression, ForOfStatement,
+    ForStatementLeft, FormalParameter, Function, Program, Statement, StaticMemberExpression,
+    TSType, TSTypeName, UnaryExpression, VariableDeclarator,
 };
 use oxc::ast_visit::{Visit, walk};
 use oxc::parser::Parser;
@@ -90,11 +91,16 @@ fn params_end(signature: &str) -> Option<(usize, usize)> {
 
 /// The text of the return type of a signature.
 fn returns_text(signature: &str) -> &str {
-    params_end(signature).and_then(|(_, close)| signature[close + 1..].trim().strip_prefix(':')).map_or("", str::trim)
+    params_end(signature)
+        .and_then(|(_, close)| signature[close + 1..].trim().strip_prefix(':'))
+        .map_or("", str::trim)
 }
 
 fn parse_member(signature: &str) -> Member {
-    let unknown = Member { args: (0, None), returns: Ty::Unknown };
+    let unknown = Member {
+        args: (0, None),
+        returns: Ty::Unknown,
+    };
     let Some((open, close)) = params_end(signature) else {
         return unknown;
     };
@@ -117,9 +123,19 @@ fn parse_member(signature: &str) -> Member {
     if !list[start..].trim().is_empty() {
         params.push(&list[start..]);
     }
-    let name = |param: &str| param.split(':').next().unwrap_or_default().trim().to_string();
+    let name = |param: &str| {
+        param
+            .split(':')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_string()
+    };
     let rest = params.iter().any(|param| param.trim().starts_with("..."));
-    let required = params.iter().filter(|param| !name(param).ends_with('?') && !param.trim().starts_with("...")).count();
+    let required = params
+        .iter()
+        .filter(|param| !name(param).ends_with('?') && !param.trim().starts_with("..."))
+        .count();
     Member {
         args: (required, (!rest).then_some(params.len())),
         returns: signature_type(returns_text(signature)),
@@ -129,7 +145,17 @@ fn parse_member(signature: &str) -> Member {
 /// The members of every class, parsed once.
 fn members() -> &'static Vec<HashMap<&'static str, Member>> {
     static MEMBERS: OnceLock<Vec<HashMap<&'static str, Member>>> = OnceLock::new();
-    MEMBERS.get_or_init(|| API.iter().map(|class| class.members.iter().map(|m| (m.name, parse_member(m.signature))).collect()).collect())
+    MEMBERS.get_or_init(|| {
+        API.iter()
+            .map(|class| {
+                class
+                    .members
+                    .iter()
+                    .map(|m| (m.name, parse_member(m.signature)))
+                    .collect()
+            })
+            .collect()
+    })
 }
 
 /// The names any object answers without being members of the model (see
@@ -137,7 +163,16 @@ fn members() -> &'static Vec<HashMap<&'static str, Member>> {
 const QUIET: [&str; 5] = ["then", "toJSON", "constructor", "toString", "valueOf"];
 
 /// The methods of arrays whose callback takes an element first.
-const ELEMENT_CALLBACKS: [&str; 8] = ["forEach", "map", "filter", "find", "findIndex", "some", "every", "flatMap"];
+const ELEMENT_CALLBACKS: [&str; 8] = [
+    "forEach",
+    "map",
+    "filter",
+    "find",
+    "findIndex",
+    "some",
+    "every",
+    "flatMap",
+];
 
 struct Checker<'s> {
     source: &'s str,
@@ -181,10 +216,16 @@ impl<'s> Checker<'s> {
         match ty {
             TSType::TSTypeReference(reference) => match &reference.type_name {
                 TSTypeName::QualifiedName(name) => match &name.left {
-                    TSTypeName::IdentifierReference(space) if space.name == "ExcelScript" => class_index(name.right.name.as_str()).map_or(Ty::Unknown, Ty::Class),
+                    TSTypeName::IdentifierReference(space) if space.name == "ExcelScript" => {
+                        class_index(name.right.name.as_str()).map_or(Ty::Unknown, Ty::Class)
+                    }
                     _ => Ty::Unknown,
                 },
-                TSTypeName::IdentifierReference(name) if name.name == "Array" => match reference.type_arguments.as_ref().map(|args| args.params.as_slice()) {
+                TSTypeName::IdentifierReference(name) if name.name == "Array" => match reference
+                    .type_arguments
+                    .as_ref()
+                    .map(|args| args.params.as_slice())
+                {
                     Some([element]) => Ty::Array(Box::new(self.written(element))),
                     _ => Ty::Unknown,
                 },
@@ -193,7 +234,12 @@ impl<'s> Checker<'s> {
             TSType::TSArrayType(array) => Ty::Array(Box::new(self.written(&array.element_type))),
             TSType::TSParenthesizedType(inner) => self.written(&inner.type_annotation),
             TSType::TSUnionType(union) => {
-                let mut held = union.types.iter().filter(|part| !matches!(part, TSType::TSUndefinedKeyword(_) | TSType::TSNullKeyword(_)));
+                let mut held = union.types.iter().filter(|part| {
+                    !matches!(
+                        part,
+                        TSType::TSUndefinedKeyword(_) | TSType::TSNullKeyword(_)
+                    )
+                });
                 match (held.next(), held.next()) {
                     (Some(only), None) => self.written(only),
                     _ => Ty::Unknown,
@@ -205,7 +251,10 @@ impl<'s> Checker<'s> {
 
     fn of_member(&self, member: &StaticMemberExpression) -> Ty {
         match self.of(&member.object) {
-            Ty::Namespace => ENUMS.iter().position(|e| e.name == member.property.name.as_str()).map_or(Ty::Unknown, Ty::Enum),
+            Ty::Namespace => ENUMS
+                .iter()
+                .position(|e| e.name == member.property.name.as_str())
+                .map_or(Ty::Unknown, Ty::Enum),
             _ => Ty::Unknown,
         }
     }
@@ -214,8 +263,13 @@ impl<'s> Checker<'s> {
         match &call.callee {
             Expression::StaticMemberExpression(member) => self.of_method(member),
             Expression::Identifier(name) => {
-                let symbol = name.reference_id.get().and_then(|id| self.scoping.get_reference(id).symbol_id());
-                symbol.and_then(|symbol| self.returns.get(&symbol).cloned()).unwrap_or(Ty::Unknown)
+                let symbol = name
+                    .reference_id
+                    .get()
+                    .and_then(|id| self.scoping.get_reference(id).symbol_id());
+                symbol
+                    .and_then(|symbol| self.returns.get(&symbol).cloned())
+                    .unwrap_or(Ty::Unknown)
             }
             Expression::ParenthesizedExpression(inner) => match &inner.expression {
                 Expression::StaticMemberExpression(member) => self.of_method(member),
@@ -229,7 +283,9 @@ impl<'s> Checker<'s> {
     fn of_method(&self, member: &StaticMemberExpression) -> Ty {
         let name = member.property.name.as_str();
         match self.of(&member.object) {
-            Ty::Class(class) => members()[class].get(name).map_or(Ty::Unknown, |m| m.returns.clone()),
+            Ty::Class(class) => members()[class]
+                .get(name)
+                .map_or(Ty::Unknown, |m| m.returns.clone()),
             // `find` gives an element; what `filter`, `map` or `slice` give
             // is not followed.
             Ty::Array(element) if name == "find" => *element,
@@ -240,7 +296,11 @@ impl<'s> Checker<'s> {
     /// The type of an expression, as far as it is certain.
     fn of(&self, expression: &Expression) -> Ty {
         match expression {
-            Expression::Identifier(name) => match name.reference_id.get().map(|id| self.scoping.get_reference(id).symbol_id()) {
+            Expression::Identifier(name) => match name
+                .reference_id
+                .get()
+                .map(|id| self.scoping.get_reference(id).symbol_id())
+            {
                 Some(Some(symbol)) => self.env.get(&symbol).cloned().unwrap_or(Ty::Unknown),
                 // The global, not a binding of the script.
                 Some(None) if name.name == "ExcelScript" => Ty::Namespace,
@@ -295,7 +355,12 @@ impl<'s> Checker<'s> {
                 self.returns.insert(symbol, ty);
             }
             if function.id.as_ref().is_some_and(|id| id.name == "main") {
-                if let Some(first) = function.params.items.first().filter(|first| first.type_annotation.is_none()) {
+                if let Some(first) = function
+                    .params
+                    .items
+                    .first()
+                    .filter(|first| first.type_annotation.is_none())
+                {
                     if let Some(workbook) = Self::bound(&first.pattern) {
                         self.env.insert(workbook, Ty::Class(0));
                     }
@@ -309,7 +374,12 @@ impl<'a> Visit<'a> for Checker<'_> {
     fn visit_expression(&mut self, it: &Expression<'a>) {
         if let Some(end) = self.probe {
             let span = it.span();
-            if span.end == end && self.probed.as_ref().is_none_or(|(start, _)| span.start >= *start) {
+            if span.end == end
+                && self
+                    .probed
+                    .as_ref()
+                    .is_none_or(|(start, _)| span.start >= *start)
+            {
                 self.probed = Some((span.start, self.of(it)));
             }
         }
@@ -336,7 +406,9 @@ impl<'a> Visit<'a> for Checker<'_> {
     }
 
     fn visit_for_of_statement(&mut self, it: &ForOfStatement<'a>) {
-        if let (ForStatementLeft::VariableDeclaration(declaration), Ty::Array(element)) = (&it.left, self.of(&it.right)) {
+        if let (ForStatementLeft::VariableDeclaration(declaration), Ty::Array(element)) =
+            (&it.left, self.of(&it.right))
+        {
             if let [one] = declaration.declarations.as_slice() {
                 if let (Some(symbol), None) = (Self::bound(&one.id), &one.type_annotation) {
                     if !self.scoping.symbol_is_mutated(symbol) {
@@ -359,7 +431,10 @@ impl<'a> Visit<'a> for Checker<'_> {
     fn visit_function(&mut self, it: &Function<'a>, flags: ScopeFlags) {
         // A function inside another one: its declared return type is
         // known from here on.
-        if let (Some(symbol), Some(declared)) = (it.id.as_ref().and_then(|id| id.symbol_id.get()), &it.return_type) {
+        if let (Some(symbol), Some(declared)) = (
+            it.id.as_ref().and_then(|id| id.symbol_id.get()),
+            &it.return_type,
+        ) {
             let ty = self.written(&declared.type_annotation);
             self.returns.insert(symbol, ty);
         }
@@ -376,13 +451,20 @@ impl<'a> Visit<'a> for Checker<'_> {
     fn visit_static_member_expression(&mut self, it: &StaticMemberExpression<'a>) {
         let name = it.property.name.as_str();
         match self.of(&it.object) {
-            Ty::Class(class) if !members()[class].contains_key(name) && !QUIET.contains(&name) && self.in_typeof == 0 => {
+            Ty::Class(class)
+                if !members()[class].contains_key(name)
+                    && !QUIET.contains(&name)
+                    && self.in_typeof == 0 =>
+            {
                 self.report(it.property.span.start, format!("{}.{name} is not supported in OpenSheet: no such member, or one of Office Scripts that OpenSheet does not have", API[class].name));
             }
             Ty::Namespace if !ENUMS.iter().any(|e| e.name == name) && !QUIET.contains(&name) => {
                 self.report(it.property.span.start, format!("ExcelScript.{name} is not supported in OpenSheet: no such enum, or one OpenSheet does not have"));
             }
-            Ty::Enum(of) if !ENUMS[of].members.iter().any(|(member, _)| *member == name) && !QUIET.contains(&name) => {
+            Ty::Enum(of)
+                if !ENUMS[of].members.iter().any(|(member, _)| *member == name)
+                    && !QUIET.contains(&name) =>
+            {
                 self.report(it.property.span.start, format!("ExcelScript.{}.{name} is not supported in OpenSheet: no such value, or one OpenSheet does not have", ENUMS[of].name));
             }
             _ => {}
@@ -395,7 +477,10 @@ impl<'a> Visit<'a> for Checker<'_> {
             let name = member.property.name.as_str();
             match self.of(&member.object) {
                 Ty::Class(class) => {
-                    let spread = it.arguments.iter().any(|argument| matches!(argument, Argument::SpreadElement(_)));
+                    let spread = it
+                        .arguments
+                        .iter()
+                        .any(|argument| matches!(argument, Argument::SpreadElement(_)));
                     if let (Some(known), false) = (members()[class].get(name), spread) {
                         let (given, (fewest, most)) = (it.arguments.len(), known.args);
                         if given < fewest || most.is_some_and(|most| given > most) {
@@ -405,7 +490,13 @@ impl<'a> Visit<'a> for Checker<'_> {
                                 None => format!("at least {fewest}"),
                             };
                             let plural = if expected == "1" { "" } else { "s" };
-                            self.report(member.property.span.start, format!("{}.{name} takes {expected} argument{plural}, not {given}", API[class].name));
+                            self.report(
+                                member.property.span.start,
+                                format!(
+                                    "{}.{name} takes {expected} argument{plural}, not {given}",
+                                    API[class].name
+                                ),
+                            );
                         }
                     }
                 }
@@ -413,12 +504,20 @@ impl<'a> Visit<'a> for Checker<'_> {
                 // an element of it.
                 Ty::Array(element) if ELEMENT_CALLBACKS.contains(&name) => {
                     let first = match it.arguments.first() {
-                        Some(Argument::ArrowFunctionExpression(arrow)) => arrow.params.items.first(),
-                        Some(Argument::FunctionExpression(function)) => function.params.items.first(),
+                        Some(Argument::ArrowFunctionExpression(arrow)) => {
+                            arrow.params.items.first()
+                        }
+                        Some(Argument::FunctionExpression(function)) => {
+                            function.params.items.first()
+                        }
                         _ => None,
                     };
-                    if let Some(parameter) = first.filter(|parameter| parameter.type_annotation.is_none()) {
-                        if let Some(symbol) = Self::bound(&parameter.pattern).filter(|symbol| !self.scoping.symbol_is_mutated(*symbol)) {
+                    if let Some(parameter) =
+                        first.filter(|parameter| parameter.type_annotation.is_none())
+                    {
+                        if let Some(symbol) = Self::bound(&parameter.pattern)
+                            .filter(|symbol| !self.scoping.symbol_is_mutated(*symbol))
+                        {
                             self.env.insert(symbol, *element);
                         }
                     }
@@ -460,7 +559,9 @@ fn examine(source: &str, probe: Option<u32>) -> Option<(Vec<ScriptError>, Option
 
 /// What is wrong in a script that parses: see the top of this file.
 pub(crate) fn check(source: &str) -> Vec<ScriptError> {
-    examine(source, None).map(|(findings, _)| findings).unwrap_or_default()
+    examine(source, None)
+        .map(|(findings, _)| findings)
+        .unwrap_or_default()
 }
 
 // ---- completion --------------------------------------------------------------
@@ -527,7 +628,13 @@ pub fn members_of(class: &str) -> Vec<Completion> {
 }
 
 fn plain(name: &'static str, kind: CompletionKind, signature: String) -> Completion {
-    Completion { name, kind, signature, returns: String::new(), description: "" }
+    Completion {
+        name,
+        kind,
+        signature,
+        returns: String::new(),
+        description: "",
+    }
 }
 
 /// What can follow the dot that stands before `offset` (a byte offset in
@@ -542,8 +649,15 @@ pub fn complete(source: &str, offset: usize) -> Completions {
         at -= 1;
     }
     let before = &source[..at];
-    let start = before.rfind(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$')).map_or(0, |last| last + before[last..].chars().next().map_or(1, char::len_utf8));
-    let mut out = Completions { start, ..Completions::default() };
+    let start = before
+        .rfind(|c: char| !(c.is_alphanumeric() || c == '_' || c == '$'))
+        .map_or(0, |last| {
+            last + before[last..].chars().next().map_or(1, char::len_utf8)
+        });
+    let mut out = Completions {
+        start,
+        ..Completions::default()
+    };
     // The dot, which `?.` and white space may dress.
     let head = before[..start].trim_end();
     let Some(receiver) = head.strip_suffix('.') else {
@@ -563,11 +677,24 @@ pub fn complete(source: &str, offset: usize) -> Completions {
         }
         Ty::Namespace => {
             out.of = Some("ExcelScript".to_string());
-            out.items = ENUMS.iter().map(|e| plain(e.name, CompletionKind::Enum, e.name.to_string())).collect();
+            out.items = ENUMS
+                .iter()
+                .map(|e| plain(e.name, CompletionKind::Enum, e.name.to_string()))
+                .collect();
         }
         Ty::Enum(of) => {
             out.of = Some(format!("ExcelScript.{}", ENUMS[of].name));
-            out.items = ENUMS[of].members.iter().map(|(name, value)| plain(name, CompletionKind::EnumMember, format!("{name} = {value:?}"))).collect();
+            out.items = ENUMS[of]
+                .members
+                .iter()
+                .map(|(name, value)| {
+                    plain(
+                        name,
+                        CompletionKind::EnumMember,
+                        format!("{name} = {value:?}"),
+                    )
+                })
+                .collect();
         }
         Ty::Array(_) | Ty::Unknown => {}
     }
@@ -581,20 +708,46 @@ mod tests {
     #[test]
     fn signatures_are_read() {
         let member = |signature: &str| parse_member(signature);
-        assert_eq!(member("getCell(row: number, column: number): Range").args, (2, Some(2)));
-        assert_eq!(member("getRange(address?: string): Range").args, (0, Some(1)));
+        assert_eq!(
+            member("getCell(row: number, column: number): Range").args,
+            (2, Some(2))
+        );
+        assert_eq!(
+            member("getRange(address?: string): Range").args,
+            (0, Some(1))
+        );
         assert_eq!(member("sortByValues(sortBy: ExcelScript.SortBy, valuesHierarchy: DataPivotHierarchy, pivotItemScope?: Array<PivotItem | string>): void").args, (2, Some(3)));
-        assert_eq!(member("apply(fields: ExcelScript.SortField[], matchCase?: boolean): void").args, (1, Some(2)));
+        assert_eq!(
+            member("apply(fields: ExcelScript.SortField[], matchCase?: boolean): void").args,
+            (1, Some(2))
+        );
         // Arrays of plain values are arrays of what is not followed.
-        assert_eq!(member("getValues(): (string | number | boolean)[][]").returns, Ty::Array(Box::new(Ty::Array(Box::new(Ty::Unknown)))));
+        assert_eq!(
+            member("getValues(): (string | number | boolean)[][]").returns,
+            Ty::Array(Box::new(Ty::Array(Box::new(Ty::Unknown))))
+        );
         assert_eq!(member("getName(): string").returns, Ty::Unknown);
-        assert_eq!(member("getTables(): Table[]").returns, Ty::Array(Box::new(Ty::Class(class_index("Table").unwrap()))));
-        assert_eq!(member("getTable(key: string): Table | undefined").returns, Ty::Class(class_index("Table").unwrap()));
-        assert_eq!(returns_text("getValues(): (string | number | boolean)[][]"), "(string | number | boolean)[][]");
+        assert_eq!(
+            member("getTables(): Table[]").returns,
+            Ty::Array(Box::new(Ty::Class(class_index("Table").unwrap())))
+        );
+        assert_eq!(
+            member("getTable(key: string): Table | undefined").returns,
+            Ty::Class(class_index("Table").unwrap())
+        );
+        assert_eq!(
+            returns_text("getValues(): (string | number | boolean)[][]"),
+            "(string | number | boolean)[][]"
+        );
         // Every signature of the table is one that reads.
         for class in API {
             for m in class.members {
-                assert!(params_end(m.signature).is_some() && !returns_text(m.signature).is_empty(), "{}.{}", class.name, m.signature);
+                assert!(
+                    params_end(m.signature).is_some() && !returns_text(m.signature).is_empty(),
+                    "{}.{}",
+                    class.name,
+                    m.signature
+                );
             }
         }
     }

@@ -11,11 +11,11 @@ use std::sync::Arc;
 use serde_json::{Value as J, json};
 
 use opensheet_engine::ast::Expr;
-use opensheet_engine::condfmt::{
-    BarAxis, BarDirection, CellOp, Cfvo, ColorScale, ColorStop, CondFormat, DataBar, IconRule, IconSet, IconThreshold, Rule,
-    ScalePreset, TextOp, TimePeriod, operand_text, parse_operand,
-};
 use opensheet_engine::condfmt::BarColor;
+use opensheet_engine::condfmt::{
+    BarAxis, BarDirection, CellOp, Cfvo, ColorScale, ColorStop, CondFormat, DataBar, IconRule,
+    IconSet, IconThreshold, Rule, ScalePreset, TextOp, TimePeriod, operand_text, parse_operand,
+};
 use opensheet_engine::locale::Locale;
 use opensheet_engine::protect::Action;
 use opensheet_engine::refs::Rect;
@@ -96,7 +96,10 @@ pub(super) fn add(h: &mut Host, call: &Call) -> Res<Ret> {
     h.wb.add_cond_format(sheet, CondFormat::new(vec![rect], starting(kind)));
     // The new rule is first: the others step down.
     h.cond_formats_moved(sheet, |index| Some(index + 1));
-    Ok(Ret::Object(handle_object("ConditionalFormat", h.cond_handle(sheet, 0))))
+    Ok(Ret::Object(handle_object(
+        "ConditionalFormat",
+        h.cond_handle(sheet, 0),
+    )))
 }
 
 /// `Range.getConditionalFormats`: the rules that reach the range, in
@@ -104,7 +107,10 @@ pub(super) fn add(h: &mut Host, call: &Call) -> Res<Ret> {
 pub(super) fn list(h: &mut Host, call: &Call) -> Res<Ret> {
     let (sheet, rect) = this_range(h, call)?;
     let found = h.wb.cond_formats_in(sheet, &[rect]);
-    let objects: Vec<J> = found.into_iter().map(|index| handle_object("ConditionalFormat", h.cond_handle(sheet, index))).collect();
+    let objects: Vec<J> = found
+        .into_iter()
+        .map(|index| handle_object("ConditionalFormat", h.cond_handle(sheet, index)))
+        .collect();
     Ok(Ret::Object(J::from(objects)))
 }
 
@@ -112,8 +118,13 @@ pub(super) fn list(h: &mut Host, call: &Call) -> Res<Ret> {
 pub(super) fn by_id(h: &mut Host, call: &Call) -> Res<Ret> {
     let (sheet, _) = this_range(h, call)?;
     let handle = call.str(0)?.parse::<i64>().map_err(|_| call.invalid())?;
-    let found = h.cond_format(call, handle).ok().filter(|(of, _)| *of == sheet);
-    Ok(Ret::maybe(found.map(|_| handle_object("ConditionalFormat", handle))))
+    let found = h
+        .cond_format(call, handle)
+        .ok()
+        .filter(|(of, _)| *of == sheet);
+    Ok(Ret::maybe(
+        found.map(|_| handle_object("ConditionalFormat", handle)),
+    ))
 }
 
 /// `Range.clearAllConditionalFormats`: the cells of the range leave every
@@ -126,7 +137,11 @@ pub(super) fn clear(h: &mut Host, call: &Call) -> Res<Ret> {
     h.permit(call, &Action::FormatCells { sheet })?;
     // A rule goes when all its cells are in the range.
     let inside = |r: &Rect| rect.intersection(r) == Some(*r);
-    let gone: Vec<bool> = h.wb.sheets[sheet].cond_formats.iter().map(|cf| cf.ranges.iter().all(inside)).collect();
+    let gone: Vec<bool> = h.wb.sheets[sheet]
+        .cond_formats
+        .iter()
+        .map(|cf| cf.ranges.iter().all(inside))
+        .collect();
     h.wb.clear_cond_formats(sheet, &[rect]);
     h.cond_formats_moved(sheet, |index| match gone.get(index) {
         Some(false) => Some(index - gone[..index].iter().filter(|g| **g).count()),
@@ -138,7 +153,9 @@ pub(super) fn clear(h: &mut Host, call: &Call) -> Res<Ret> {
 /// The object of a kind of rule, when the rule is of that kind.
 fn part(h: &Host, call: &Call, class: &str, kinds: &str) -> Res<Ret> {
     let (_, _, cf) = rule(h, call)?;
-    Ok(Ret::maybe((kind(&cf.rule) == kinds).then(|| handle_object(class, call.this_int(0)))))
+    Ok(Ret::maybe(
+        (kind(&cf.rule) == kinds).then(|| handle_object(class, call.this_int(0))),
+    ))
 }
 
 // ---- formulas and thresholds -------------------------------------------------------
@@ -147,7 +164,9 @@ fn part(h: &Host, call: &Call, class: &str, kinds: &str) -> Res<Ret> {
 fn operand(call: &Call, value: &J, anchor: (u32, u32)) -> Res<Expr> {
     match value {
         J::Number(n) => n.as_f64().map(Expr::Number).ok_or_else(|| call.invalid()),
-        J::String(text) => parse_operand(text, Locale::en(), anchor, anchor).map_err(|_| call.invalid()),
+        J::String(text) => {
+            parse_operand(text, Locale::en(), anchor, anchor).map_err(|_| call.invalid())
+        }
         _ => Err(call.invalid()),
     }
 }
@@ -186,7 +205,9 @@ fn threshold_out(at: &Cfvo, anchor: (u32, u32)) -> (&'static str, Option<String>
 }
 
 fn field<'a>(call: &Call, of: &'a J, key: &str) -> Res<&'a str> {
-    of.get(key).and_then(J::as_str).ok_or_else(|| call.invalid())
+    of.get(key)
+        .and_then(J::as_str)
+        .ok_or_else(|| call.invalid())
 }
 
 fn names_eq(a: &str, b: &str) -> bool {
@@ -194,7 +215,10 @@ fn names_eq(a: &str, b: &str) -> bool {
 }
 
 fn icon_set(call: &Call, name: &str) -> Res<IconSet> {
-    IconSet::ALL.into_iter().find(|set| names_eq(&format!("{set:?}"), name)).ok_or_else(|| call.invalid())
+    IconSet::ALL
+        .into_iter()
+        .find(|set| names_eq(&format!("{set:?}"), name))
+        .ok_or_else(|| call.invalid())
 }
 
 const CELL_OPS: [(&str, CellOp); 8] = [
@@ -217,7 +241,11 @@ const TEXT_OPS: [(&str, TextOp); 4] = [
 
 /// The preset criteria and the rules they are.
 fn presets() -> Vec<(&'static str, Rule)> {
-    let average = |above: bool, or_equal: bool, std_dev: u32| Rule::Average { above, or_equal, std_dev };
+    let average = |above: bool, or_equal: bool, std_dev: u32| Rule::Average {
+        above,
+        or_equal,
+        std_dev,
+    };
     vec![
         ("Blanks", Rule::Blanks),
         ("NonBlanks", Rule::NoBlanks),
@@ -252,19 +280,37 @@ fn presets() -> Vec<(&'static str, Rule)> {
 
 fn scale<'h>(h: &'h Host, call: &Call) -> Res<(&'h ColorScale, (u32, u32))> {
     match rule(h, call)? {
-        (_, _, cf @ CondFormat { rule: Rule::ColorScale(scale), .. }) => Ok((scale, cf.anchor())),
+        (
+            _,
+            _,
+            cf @ CondFormat {
+                rule: Rule::ColorScale(scale),
+                ..
+            },
+        ) => Ok((scale, cf.anchor())),
         _ => Err(call.gone()),
     }
 }
 
 fn bar<'h>(h: &'h Host, call: &Call) -> Res<(&'h DataBar, (u32, u32))> {
     match rule(h, call)? {
-        (_, _, cf @ CondFormat { rule: Rule::DataBar(bar), .. }) => Ok((bar, cf.anchor())),
+        (
+            _,
+            _,
+            cf @ CondFormat {
+                rule: Rule::DataBar(bar),
+                ..
+            },
+        ) => Ok((bar, cf.anchor())),
         _ => Err(call.gone()),
     }
 }
 
-fn edit_bar(h: &mut Host, call: &Call, change: impl FnOnce(&mut DataBar, (u32, u32)) -> Res<()>) -> Res<Ret> {
+fn edit_bar(
+    h: &mut Host,
+    call: &Call,
+    change: impl FnOnce(&mut DataBar, (u32, u32)) -> Res<()>,
+) -> Res<Ret> {
     edit(h, call, |cf| {
         let anchor = cf.anchor();
         match &mut cf.rule {
@@ -276,12 +322,23 @@ fn edit_bar(h: &mut Host, call: &Call, change: impl FnOnce(&mut DataBar, (u32, u
 
 fn icons<'h>(h: &'h Host, call: &Call) -> Res<(&'h IconRule, (u32, u32))> {
     match rule(h, call)? {
-        (_, _, cf @ CondFormat { rule: Rule::IconSet(icons), .. }) => Ok((icons, cf.anchor())),
+        (
+            _,
+            _,
+            cf @ CondFormat {
+                rule: Rule::IconSet(icons),
+                ..
+            },
+        ) => Ok((icons, cf.anchor())),
         _ => Err(call.gone()),
     }
 }
 
-fn edit_icons(h: &mut Host, call: &Call, change: impl FnOnce(&mut IconRule, (u32, u32)) -> Res<()>) -> Res<Ret> {
+fn edit_icons(
+    h: &mut Host,
+    call: &Call,
+    change: impl FnOnce(&mut IconRule, (u32, u32)) -> Res<()>,
+) -> Res<Ret> {
     edit(h, call, |cf| {
         let anchor = cf.anchor();
         match &mut cf.rule {
@@ -294,7 +351,12 @@ fn edit_icons(h: &mut Host, call: &Call, change: impl FnOnce(&mut IconRule, (u32
 /// The rule of a data bar end: `{ type, formula? }`.
 fn bar_end(call: &Call, anchor: (u32, u32)) -> Res<Cfvo> {
     let given = call.arg(0);
-    threshold(call, field(call, given, "type")?, given.get("formula"), anchor)
+    threshold(
+        call,
+        field(call, given, "type")?,
+        given.get("formula"),
+        anchor,
+    )
 }
 
 fn bar_end_out(at: &Cfvo, anchor: (u32, u32)) -> Ret {
@@ -315,14 +377,21 @@ fn patch<'h>(h: &'h Host, call: &Call) -> Res<&'h StylePatch> {
     Ok(&rule(h, call)?.2.format)
 }
 
-fn edit_patch(h: &mut Host, call: &Call, change: impl FnOnce(&mut StylePatch) -> Res<()>) -> Res<Ret> {
+fn edit_patch(
+    h: &mut Host,
+    call: &Call,
+    change: impl FnOnce(&mut StylePatch) -> Res<()>,
+) -> Res<Ret> {
     edit(h, call, |cf| change(&mut cf.format))
 }
 
 const BORDER_SIDES: [&str; 4] = ["EdgeTop", "EdgeBottom", "EdgeLeft", "EdgeRight"];
 
 fn border_object(call: &Call, side: usize) -> J {
-    object("ConditionalRangeBorder", vec![call.this_int(0).into(), side.into()])
+    object(
+        "ConditionalRangeBorder",
+        vec![call.this_int(0).into(), side.into()],
+    )
 }
 
 fn border_slot(patch: &mut StylePatch, side: i64) -> &mut Option<Border> {
@@ -343,7 +412,10 @@ fn border_of(h: &Host, call: &Call) -> Res<Option<Border>> {
 /// one.
 fn format_object(h: &Host, call: &Call) -> Res<Ret> {
     rule(h, call)?;
-    Ok(Ret::Object(handle_object("ConditionalRangeFormat", call.this_int(0))))
+    Ok(Ret::Object(handle_object(
+        "ConditionalRangeFormat",
+        call.this_int(0),
+    )))
 }
 
 // ---- the classes -----------------------------------------------------------------
@@ -827,7 +899,8 @@ fn set_formula(h: &mut Host, call: &Call, locale: &'static Locale) -> Res<Ret> {
     }
     edit(h, call, |cf| {
         let anchor = cf.anchor();
-        cf.rule = Rule::Formula(parse_operand(text, locale, anchor, anchor).map_err(|_| call.invalid())?);
+        cf.rule =
+            Rule::Formula(parse_operand(text, locale, anchor, anchor).map_err(|_| call.invalid())?);
         Ok(())
     })
 }

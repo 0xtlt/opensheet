@@ -125,7 +125,11 @@ impl Path {
         let (x, y) = (cx + rx * a.cos(), cy + ry * a.sin());
         match self.segments.last() {
             None | Some(Segment::Close) => self.segments.push(Segment::MoveTo(x, y)),
-            Some(Segment::MoveTo(px, py) | Segment::LineTo(px, py) | Segment::CurveTo(_, _, _, _, px, py)) => {
+            Some(
+                Segment::MoveTo(px, py)
+                | Segment::LineTo(px, py)
+                | Segment::CurveTo(_, _, _, _, px, py),
+            ) => {
                 // Already there: no joining line.
                 if (px - x).abs() > 1e-9 || (py - y).abs() > 1e-9 {
                     self.segments.push(Segment::LineTo(x, y));
@@ -172,7 +176,10 @@ impl Paint {
 
 impl From<Color> for Paint {
     fn from(color: Color) -> Paint {
-        Paint { color, opacity: 1.0 }
+        Paint {
+            color,
+            opacity: 1.0,
+        }
     }
 }
 
@@ -412,13 +419,28 @@ impl<'a> Canvas<'a> {
     /// Draw one line of text with its baseline starting at (x, y);
     /// returns its width. Characters the font lacks are drawn with
     /// another installed font that has them.
-    pub fn text(&mut self, text: &str, x: f64, y: f64, style: &TextStyle, paint: impl Into<Paint>) -> f64 {
+    pub fn text(
+        &mut self,
+        text: &str,
+        x: f64,
+        y: f64,
+        style: &TextStyle,
+        paint: impl Into<Paint>,
+    ) -> f64 {
         let face = self.face(style);
         self.face_text(&face, text, x, y, style.size, paint.into())
     }
 
     /// Like `text`, with a face already chosen.
-    pub fn face_text(&mut self, face: &Arc<Face>, text: &str, x: f64, y: f64, size: f64, paint: Paint) -> f64 {
+    pub fn face_text(
+        &mut self,
+        face: &Arc<Face>,
+        text: &str,
+        x: f64,
+        y: f64,
+        size: f64,
+        paint: Paint,
+    ) -> f64 {
         let mut advance = 0.0;
         for (run_face, run) in self.fonts.runs(face, text) {
             let width = run_face.text_width(&run, size);
@@ -460,16 +482,25 @@ mod tests {
         assert_eq!(e.segments.len(), 6);
         assert_eq!(e.segments[0], Segment::MoveTo(20.0, 5.0));
         match e.segments[4] {
-            Segment::CurveTo(_, _, _, _, x, y) => assert!((x - 20.0).abs() < 1e-9 && (y - 5.0).abs() < 1e-9),
+            Segment::CurveTo(_, _, _, _, x, y) => {
+                assert!((x - 20.0).abs() < 1e-9 && (y - 5.0).abs() < 1e-9)
+            }
             _ => panic!("not a curve"),
         }
         // A quarter arc reaches the bottom of the circle (y grows down).
         let a = Path::new().arc(0.0, 0.0, 10.0, 10.0, 0.0, 90.0);
         match a.segments[1] {
-            Segment::CurveTo(_, _, _, _, x, y) => assert!(x.abs() < 1e-9 && (y - 10.0).abs() < 1e-9),
+            Segment::CurveTo(_, _, _, _, x, y) => {
+                assert!(x.abs() < 1e-9 && (y - 10.0).abs() < 1e-9)
+            }
             _ => panic!("not a curve"),
         }
-        assert_eq!(Path::polyline(&[(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)]).segments.len(), 3);
+        assert_eq!(
+            Path::polyline(&[(0.0, 0.0), (1.0, 1.0), (2.0, 0.0)])
+                .segments
+                .len(),
+            3
+        );
     }
 
     #[test]
@@ -498,7 +529,10 @@ mod tests {
         let saves = ops.iter().filter(|o| matches!(o, Op::Save)).count();
         let restores = ops.iter().filter(|o| matches!(o, Op::Restore)).count();
         assert_eq!((saves, restores), (2, 2));
-        assert_eq!(ops.iter().filter(|o| matches!(o, Op::Text { .. })).count(), 1);
+        assert_eq!(
+            ops.iter().filter(|o| matches!(o, Op::Text { .. })).count(),
+            1
+        );
         assert_eq!(ops.len(), 7);
     }
 }

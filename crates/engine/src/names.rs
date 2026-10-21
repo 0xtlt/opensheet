@@ -216,7 +216,10 @@ impl Workbook {
         let src = src.strip_prefix('=').unwrap_or(src);
         let expr = parse_formula(src, self.locale).ok()?;
         let mut areas = Vec::new();
-        if self.expr_areas(&expr, sheet, row, col, 0, &mut areas).is_none() {
+        if self
+            .expr_areas(&expr, sheet, row, col, 0, &mut areas)
+            .is_none()
+        {
             return self.evaluate_areas(sheet, row, col, &expr);
         }
         (!areas.is_empty()).then_some(areas)
@@ -573,8 +576,13 @@ mod tests {
         let range = |text: &str| parse_formula(text, Locale::en()).unwrap();
         wb.add_name(NameScope::Workbook, "Sales", range("Sheet2!$B$2:$B$9"), "")
             .unwrap();
-        wb.add_name(NameScope::Workbook, "Both", range("(Sheet1!$A$1:$A$3,Sheet1!$C$1)"), "")
-            .unwrap();
+        wb.add_name(
+            NameScope::Workbook,
+            "Both",
+            range("(Sheet1!$A$1:$A$3,Sheet1!$C$1)"),
+            "",
+        )
+        .unwrap();
         wb.add_name(NameScope::Workbook, "Alias", range("Sales"), "")
             .unwrap();
         wb.add_name(NameScope::Workbook, "Rate", range("0.2"), "")
@@ -614,8 +622,10 @@ mod tests {
         let mut wb = Workbook::new(Locale::en());
         wb.set_cell_text(0, 0, 0, "=SEQUENCE(3,2)").unwrap();
         let name = |text: &str| parse_formula(text, Locale::en()).unwrap();
-        wb.add_name(NameScope::Workbook, "Ping", name("Pong"), "").unwrap();
-        wb.add_name(NameScope::Workbook, "Pong", name("Ping"), "").unwrap();
+        wb.add_name(NameScope::Workbook, "Ping", name("Pong"), "")
+            .unwrap();
+        wb.add_name(NameScope::Workbook, "Pong", name("Ping"), "")
+            .unwrap();
         wb.commit("setup");
         let spill = wb.reference_areas(0, 0, 0, "A1#").unwrap();
         assert_eq!(spill, vec![Reference::new(0, Rect::new(0, 0, 2, 1))]);

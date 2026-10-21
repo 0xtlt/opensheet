@@ -64,7 +64,9 @@ use opensheet_engine::drawing::{
     ObjectRef, Outline, Picture, PictureAdjust, Placement, Recolor, Shadow, Shape, ShapePreset,
     TextAlign, TextAnchor,
 };
-use opensheet_engine::picture_style::{Artistic, ArtisticKind, Baked, Bevel, BevelPreset, Camera, Reflection, Rotation3d};
+use opensheet_engine::picture_style::{
+    Artistic, ArtisticKind, Baked, Bevel, BevelPreset, Camera, Reflection, Rotation3d,
+};
 use opensheet_engine::style::{Font, Underline};
 use opensheet_engine::{Color, MAX_COLS, MAX_ROWS, Sheet, Workbook};
 use std::collections::HashMap;
@@ -297,7 +299,10 @@ fn push_geometry(x: &mut String, shape: &Shape) {
     match shape.adjust.filter(|adjust| adjust.is_finite()) {
         Some(adjust) => {
             let value = (adjust.clamp(0.0, 100.0) as f64 * 100_000.0).round() as i64;
-            w!(x, "<a:avLst><a:gd name=\"adj\" fmla=\"val {value}\"/></a:avLst>");
+            w!(
+                x,
+                "<a:avLst><a:gd name=\"adj\" fmla=\"val {value}\"/></a:avLst>"
+            );
         }
         None => x.push_str("<a:avLst/>"),
     }
@@ -339,7 +344,12 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
     // A shape that holds an equation is written twice: with it, for
     // those who know equations, and with its text for the others.
     if shape.math.is_some() {
-        w!(x, "<mc:AlternateContent xmlns:mc=\"{}\"><mc:Choice xmlns:a14=\"{}\" Requires=\"a14\">", math::NS_MC, math::NS_A14);
+        w!(
+            x,
+            "<mc:AlternateContent xmlns:mc=\"{}\"><mc:Choice xmlns:a14=\"{}\" Requires=\"a14\">",
+            math::NS_MC,
+            math::NS_A14
+        );
         push_shape_as(x, drawing, shape, id, frame, true);
         x.push_str("</mc:Choice><mc:Fallback>");
         push_shape_as(x, drawing, shape, id, frame, false);
@@ -350,7 +360,14 @@ fn push_shape(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame
 }
 
 /// A shape; `equation`: with its equation rather than the text of it.
-fn push_shape_as(x: &mut String, drawing: &Drawing, shape: &Shape, id: usize, frame: Frame, equation: bool) {
+fn push_shape_as(
+    x: &mut String,
+    drawing: &Drawing,
+    shape: &Shape,
+    id: usize,
+    frame: Frame,
+    equation: bool,
+) {
     x.push_str("<xdr:sp macro=\"\" textlink=\"\"><xdr:nvSpPr>");
     push_identity(x, drawing, id);
     let text_box = if shape.text_box { " txBox=\"1\"" } else { "" };
@@ -434,9 +451,17 @@ pub(crate) fn push_effects(x: &mut String, effects: &Effects) {
             w!(x, " sx=\"{size}\" sy=\"{tall}\"");
         }
         if shadow.skew != 0.0 {
-            w!(x, " kx=\"{}\"", (shadow.skew as f64 * ANGLE_UNITS).round() as i64);
+            w!(
+                x,
+                " kx=\"{}\"",
+                (shadow.skew as f64 * ANGLE_UNITS).round() as i64
+            );
         }
-        w!(x, " algn=\"{}\" rotWithShape=\"0\">", shadow_alignment(shadow));
+        w!(
+            x,
+            " algn=\"{}\" rotWithShape=\"0\">",
+            shadow_alignment(shadow)
+        );
         push_color_alpha(x, shadow.color, shadow.transparency);
         x.push_str("</a:outerShdw>");
     }
@@ -469,13 +494,20 @@ fn push_3d(x: &mut String, effects: &Effects) {
     x.push_str("<a:scene3d>");
     match effects.rotation {
         None => x.push_str("<a:camera prst=\"orthographicFront\"/>"),
-        Some(rotation) => match Camera::ALL.into_iter().find(|camera| camera.rotation() == rotation) {
+        Some(rotation) => match Camera::ALL
+            .into_iter()
+            .find(|camera| camera.rotation() == rotation)
+        {
             Some(camera) => {
                 w!(x, "<a:camera prst=\"{}\"/>", camera.ooxml_name());
             }
             None => {
                 if rotation.perspective > 0.0 {
-                    w!(x, "<a:camera prst=\"perspectiveFront\" fov=\"{}\">", angle(rotation.perspective.min(180.0)));
+                    w!(
+                        x,
+                        "<a:camera prst=\"perspectiveFront\" fov=\"{}\">",
+                        angle(rotation.perspective.min(180.0))
+                    );
                 } else {
                     x.push_str("<a:camera prst=\"orthographicFront\">");
                 }
@@ -516,7 +548,12 @@ fn parse_scene<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<Rotation3d> {
             let camera = Camera::from_ooxml_name(&preset);
             let mut rotation = match camera {
                 Some(camera) => Some(camera.rotation()),
-                None if preset == "orthographicFront" => Some(Rotation3d { x: 0.0, y: 0.0, z: 0.0, perspective: 0.0 }),
+                None if preset == "orthographicFront" => Some(Rotation3d {
+                    x: 0.0,
+                    y: 0.0,
+                    z: 0.0,
+                    perspective: 0.0,
+                }),
                 None => None,
             };
             if let (Some(rotation), Some(_)) = (&mut rotation, t.attr("fov")) {
@@ -524,7 +561,8 @@ fn parse_scene<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<Rotation3d> {
             }
             each_child(r, t, |r, c| {
                 if let ("rot", Some(rotation)) = (c.name, &mut rotation) {
-                    (rotation.y, rotation.x, rotation.z) = (degrees(c, "lat"), degrees(c, "lon"), degrees(c, "rev"));
+                    (rotation.y, rotation.x, rotation.z) =
+                        (degrees(c, "lat"), degrees(c, "lon"), degrees(c, "rev"));
                 }
                 r.skip(c);
             });
@@ -542,10 +580,15 @@ fn parse_bevel<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<Bevel> {
         if t.name == "bevelT" {
             // Six points each way and a round profile when not said.
             let points = |name: &str| {
-                let emu = t.attr_f64(name).filter(|v| v.is_finite()).unwrap_or(76_200.0);
+                let emu = t
+                    .attr_f64(name)
+                    .filter(|v| v.is_finite())
+                    .unwrap_or(76_200.0);
                 (emu / EMU_PER_PT).clamp(0.0, 1584.0) as f32
             };
-            let preset = t.attr("prst").and_then(|name| BevelPreset::from_ooxml_name(&name));
+            let preset = t
+                .attr("prst")
+                .and_then(|name| BevelPreset::from_ooxml_name(&name));
             found = Some(Bevel {
                 preset: preset.unwrap_or(BevelPreset::Circle),
                 width: points("w"),
@@ -567,14 +610,22 @@ const NS_DRAWING_2010: &str = "http://schemas.microsoft.com/office/drawing/2010/
 fn push_blip_effects(x: &mut String, picture: &Picture, image: usize, vector: Option<usize>) {
     let adjust = &picture.adjust;
     if adjust.transparency > 0.0 {
-        w!(x, "<a:alphaModFix amt=\"{}\"/>", per_100k(1.0 - adjust.transparency.min(1.0)));
+        w!(
+            x,
+            "<a:alphaModFix amt=\"{}\"/>",
+            per_100k(1.0 - adjust.transparency.min(1.0))
+        );
     }
     let (mut bright, mut contrast) = (adjust.brightness, adjust.contrast);
     match adjust.recolor {
         Recolor::None => {}
         Recolor::Grayscale => x.push_str("<a:grayscl/>"),
         Recolor::BlackAndWhite(threshold) => {
-            w!(x, "<a:biLevel thresh=\"{}\"/>", per_100k(threshold.clamp(0.0, 1.0)));
+            w!(
+                x,
+                "<a:biLevel thresh=\"{}\"/>",
+                per_100k(threshold.clamp(0.0, 1.0))
+            );
         }
         Recolor::Duotone(dark, light) => {
             x.push_str("<a:duotone>");
@@ -674,7 +725,11 @@ fn push_picture(
             if drawing.lock_aspect {
                 x.push_str(" noChangeAspect=\"1\"");
             }
-            w!(x, " noChangeArrowheads=\"1\"/><a:extLst><a:ext uri=\"{CAMERA_EXT}\"><a14:cameraTool xmlns:a14=\"{}\" cellRange=\"", math::NS_A14);
+            w!(
+                x,
+                " noChangeArrowheads=\"1\"/><a:extLst><a:ext uri=\"{CAMERA_EXT}\"><a14:cameraTool xmlns:a14=\"{}\" cellRange=\"",
+                math::NS_A14
+            );
             push_attr(x, &link.to_text(opensheet_engine::Locale::en()));
             x.push_str("\"/></a:ext></a:extLst></xdr:cNvPicPr>");
         }
@@ -764,14 +819,24 @@ impl PartWriter<'_> {
                     Some(baked) => {
                         // In the format it was made in: a PNG, or a JPEG
                         // for a photograph.
-                        let format = opensheet_engine::drawing::image_info(&baked.data).map_or(opensheet_engine::drawing::ImageFormat::Png, |info| info.format);
-                        let name = self.media.file(&baked.data, format.extension(), format.mime(), self.extras);
+                        let format = opensheet_engine::drawing::image_info(&baked.data)
+                            .map_or(opensheet_engine::drawing::ImageFormat::Png, |info| {
+                                info.format
+                            });
+                        let name = self.media.file(
+                            &baked.data,
+                            format.extension(),
+                            format.mime(),
+                            self.extras,
+                        );
                         self.related(name)
                     }
                     None => image,
                 };
                 let vector = picture.svg.as_ref().map(|document| {
-                    let name = self.media.file(document, "svg", "image/svg+xml", self.extras);
+                    let name = self
+                        .media
+                        .file(document, "svg", "image/svg+xml", self.extras);
                     self.related(name)
                 });
                 push_picture(x, drawing, picture, id, frame, image, shown, vector);
@@ -781,7 +846,14 @@ impl PartWriter<'_> {
             DrawingKind::SmartArt(art) => {
                 *self.graphics += 1;
                 let first = self.first_image + self.links.len();
-                let parts = smartart::add_parts(art, self.wb.theme(), (frame.width, frame.height), *self.graphics, first, self.extras);
+                let parts = smartart::add_parts(
+                    art,
+                    self.wb.theme(),
+                    (frame.width, frame.height),
+                    *self.graphics,
+                    first,
+                    self.extras,
+                );
                 self.links.extend(parts);
                 smartart::push_frame(x, drawing, id, first);
             }
@@ -816,7 +888,10 @@ impl PartWriter<'_> {
     /// application, and as the group of its shapes for the others, which
     /// would lay it out their own way.
     fn push_anchor(&mut self, x: &mut String, sheet: &Sheet, drawing: &Drawing) {
-        match drawing.as_smartart().filter(|art| art.kept_parts().is_none()) {
+        match drawing
+            .as_smartart()
+            .filter(|art| art.kept_parts().is_none())
+        {
             Some(art) => {
                 smartart::push_choice_start(x);
                 self.push_anchor_as(x, sheet, drawing, None);
@@ -828,8 +903,16 @@ impl PartWriter<'_> {
             }
             // A linked picture is for those who know the extension it
             // is described in; Excel leaves the others nothing.
-            None if drawing.as_picture().is_some_and(|picture| picture.link.is_some()) => {
-                w!(x, "<mc:AlternateContent xmlns:mc=\"{}\"><mc:Choice xmlns:a14=\"{}\" Requires=\"a14\">", math::NS_MC, math::NS_A14);
+            None if drawing
+                .as_picture()
+                .is_some_and(|picture| picture.link.is_some()) =>
+            {
+                w!(
+                    x,
+                    "<mc:AlternateContent xmlns:mc=\"{}\"><mc:Choice xmlns:a14=\"{}\" Requires=\"a14\">",
+                    math::NS_MC,
+                    math::NS_A14
+                );
                 self.push_anchor_as(x, sheet, drawing, None);
                 x.push_str("</mc:Choice><mc:Fallback/></mc:AlternateContent>");
             }
@@ -839,7 +922,13 @@ impl PartWriter<'_> {
 
     /// An anchor with its object or, given the shapes a graphic is laid
     /// out as, with the group of them.
-    fn push_anchor_as(&mut self, x: &mut String, sheet: &Sheet, drawing: &Drawing, pieces: Option<&[opensheet_engine::smartart::Piece]>) {
+    fn push_anchor_as(
+        &mut self,
+        x: &mut String,
+        sheet: &Sheet,
+        drawing: &Drawing,
+        pieces: Option<&[opensheet_engine::smartart::Piece]>,
+    ) {
         // Excel anchors everything by two cells and says apart how the
         // object follows them.
         x.push_str("<xdr:twoCellAnchor");
@@ -883,15 +972,25 @@ struct Media(Vec<(Arc<[u8]>, String)>);
 impl Media {
     /// The file of a picture, stored once however many pictures show it.
     fn name(&mut self, picture: &Picture, extras: &mut Extras) -> String {
-        self.file(&picture.data, picture.format.extension(), picture.format.mime(), extras)
+        self.file(
+            &picture.data,
+            picture.format.extension(),
+            picture.format.mime(),
+            extras,
+        )
     }
 
     /// A media file of the package, stored once.
-    fn file(&mut self, bytes: &Arc<[u8]>, extension: &'static str, mime: &'static str, extras: &mut Extras) -> String {
-        let known = self
-            .0
-            .iter()
-            .find(|(data, name)| name.ends_with(extension) && (Arc::ptr_eq(data, bytes) || **data == **bytes));
+    fn file(
+        &mut self,
+        bytes: &Arc<[u8]>,
+        extension: &'static str,
+        mime: &'static str,
+        extras: &mut Extras,
+    ) -> String {
+        let known = self.0.iter().find(|(data, name)| {
+            name.ends_with(extension) && (Arc::ptr_eq(data, bytes) || **data == **bytes)
+        });
         if let Some((_, name)) = known {
             return name.clone();
         }
@@ -991,8 +1090,13 @@ pub(crate) fn add_parts(wb: &Workbook, parts: &mut Vec<DrawingPart>, extras: &mu
         // Their ids come after those of the charts, the pictures, the
         // shapes (a group takes one, and one for each of its members) and
         // the strokes drawn by hand.
-        let objects: usize = sheet.drawings.iter().map(|drawing| drawing.object_count()).sum();
-        let anchors = super::slicer::anchors(sheet, sheet.charts.len() + objects + sheet.inks.len() + 2);
+        let objects: usize = sheet
+            .drawings
+            .iter()
+            .map(|drawing| drawing.object_count())
+            .sum();
+        let anchors =
+            super::slicer::anchors(sheet, sheet.charts.len() + objects + sheet.inks.len() + 2);
         if anchors.is_empty() {
             continue;
         }
@@ -1247,7 +1351,10 @@ pub(crate) fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Pal
         }
         "reflection" => {
             let fraction = |name: &str, default: f64| {
-                let value = t.attr_f64(name).filter(|v| v.is_finite()).unwrap_or(default);
+                let value = t
+                    .attr_f64(name)
+                    .filter(|v| v.is_finite())
+                    .unwrap_or(default);
                 (value / 100_000.0).clamp(0.0, 1.0) as f32
             };
             effects.reflection = Some(Reflection {
@@ -1335,23 +1442,30 @@ fn parse_blip_effects<'a>(
                                 let amount = e.attr_f64(kind.ooxml().1).filter(|v| v.is_finite());
                                 more.artistic = Some(Artistic {
                                     kind,
-                                    transparency: fraction(e, "trans").unwrap_or(0.0).clamp(0.0, 1.0),
+                                    transparency: fraction(e, "trans")
+                                        .unwrap_or(0.0)
+                                        .clamp(0.0, 1.0),
                                     amount: amount.map_or(preset, |v| (v as f32).clamp(low, high)),
                                 });
                             }
                             match e.name {
                                 "saturation" => {
-                                    adjust.saturation = fraction(e, "sat").unwrap_or(1.0).clamp(0.0, 4.0);
+                                    adjust.saturation =
+                                        fraction(e, "sat").unwrap_or(1.0).clamp(0.0, 4.0);
                                 }
                                 "colorTemperature" => {
                                     adjust.temperature = e
                                         .attr_f64("colorTemp")
                                         .filter(|v| v.is_finite())
-                                        .map_or(NEUTRAL_TEMPERATURE, |v| (v as f32).clamp(1500.0, 11500.0));
+                                        .map_or(NEUTRAL_TEMPERATURE, |v| {
+                                            (v as f32).clamp(1500.0, 11500.0)
+                                        });
                                 }
                                 "brightnessContrast" => {
-                                    adjust.brightness = fraction(e, "bright").unwrap_or(0.0).clamp(-1.0, 1.0);
-                                    adjust.contrast = fraction(e, "contrast").unwrap_or(0.0).clamp(-1.0, 1.0);
+                                    adjust.brightness =
+                                        fraction(e, "bright").unwrap_or(0.0).clamp(-1.0, 1.0);
+                                    adjust.contrast =
+                                        fraction(e, "contrast").unwrap_or(0.0).clamp(-1.0, 1.0);
                                 }
                                 _ => {}
                             }
@@ -1535,7 +1649,9 @@ fn parse_style<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> RawStyle
             }
             "fillRef" => style.fill = parse_color(r, t, theme.palette).filter(|_| idx > 0),
             // Black from the theme is the automatic colour of text.
-            "fontRef" => style.text = parse_color(r, t, theme.palette).filter(|color| color.value() != 0),
+            "fontRef" => {
+                style.text = parse_color(r, t, theme.palette).filter(|color| color.value() != 0)
+            }
             _ => r.skip(t),
         }
     });
@@ -1555,7 +1671,10 @@ enum RawKind {
     /// A SmartArt graphic: the relationships to its data, layout, style
     /// and colours parts.
     /// `own`: written by this application, in the choice it reads.
-    Graphic { ids: [String; 4], own: bool },
+    Graphic {
+        ids: [String; 4],
+        own: bool,
+    },
     /// The relationships of the drawing part to the image and, for a
     /// vector picture, to its SVG document.
     Picture(String, Option<String>),
@@ -1642,7 +1761,10 @@ impl RawObject {
             "cNvSpPr" | "cNvPicPr" | "cNvCxnSpPr" | "cNvGrpSpPr" => {
                 text_box = t.attr_bool("txBox").unwrap_or(false);
                 each_child(r, t, |r, locks| {
-                    if matches!(locks.name, "spLocks" | "picLocks" | "cxnSpLocks" | "grpSpLocks") {
+                    if matches!(
+                        locks.name,
+                        "spLocks" | "picLocks" | "cxnSpLocks" | "grpSpLocks"
+                    ) {
                         self.lock_aspect = locks.attr_bool("noChangeAspect").unwrap_or(false);
                     }
                     if locks.name != "extLst" {
@@ -1668,7 +1790,11 @@ impl RawObject {
     /// `<a:xfrm>`: how the object is turned and the box it is given
     /// (where an object that stands alone is, its anchor says). Returns
     /// the box of the children of a group (`chOff`, `chExt`).
-    fn parse_xfrm<'a>(&mut self, r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<(f64, f64, f64, f64)> {
+    fn parse_xfrm<'a>(
+        &mut self,
+        r: &mut Reader<'a>,
+        tag: &Tag<'a>,
+    ) -> Option<(f64, f64, f64, f64)> {
         let angle = tag.attr_f64("rot").filter(|angle| angle.is_finite());
         self.rotation = angle.map_or(0.0, |angle| (angle / ANGLE_UNITS).rem_euclid(360.0) as f32);
         self.flip_h = tag.attr_bool("flipH").unwrap_or(false);
@@ -1756,9 +1882,13 @@ fn parse_picture<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, theme: &Theme) -> Option
                 object.parse_xfrm(r, c);
             }
             "prstGeom" => {
-                let preset = c.attr("prst").and_then(|name| ShapePreset::from_ooxml_name(&name));
+                let preset = c
+                    .attr("prst")
+                    .and_then(|name| ShapePreset::from_ooxml_name(&name));
                 // A picture cut to a line would show nothing.
-                object.adjust.shape = preset.filter(|preset| !preset.is_line()).unwrap_or(ShapePreset::Rect);
+                object.adjust.shape = preset
+                    .filter(|preset| !preset.is_line())
+                    .unwrap_or(ShapePreset::Rect);
                 r.skip(c);
             }
             "effectLst" => {
@@ -1920,7 +2050,9 @@ fn parse_content<'a>(
                 *object = Some(frame);
             }
         }
-        "grpSp" if object.is_none() && depth < MAX_GROUPS => *object = Some(parse_group(r, t, theme, depth)),
+        "grpSp" if object.is_none() && depth < MAX_GROUPS => {
+            *object = Some(parse_group(r, t, theme, depth))
+        }
         "AlternateContent" | "Choice" if depth < MAX_NESTING => {
             each_child(r, t, |r, c| parse_content(r, c, theme, depth + 1, object))
         }
@@ -1988,13 +2120,24 @@ fn parse_part(xml: &str, theme: &Theme) -> Vec<RawAnchor> {
                 "Choice" => own = t.attr_local("ossa").as_deref() == Some(smartart::NS_OWN),
                 "twoCellAnchor" | "oneCellAnchor" | "absoluteAnchor" => {
                     let mut anchor = parse_anchor(&mut r, &t, theme);
-                    if let Some(RawObject { kind: RawKind::Graphic { own: written_here, .. }, .. }) = &mut anchor.object {
+                    if let Some(RawObject {
+                        kind:
+                            RawKind::Graphic {
+                                own: written_here, ..
+                            },
+                        ..
+                    }) = &mut anchor.object
+                    {
                         *written_here = own;
                     }
                     own = false;
                     index += 1;
                     anchor.index = index;
-                    if anchor.object.as_ref().is_some_and(|object| !object.control_twin) {
+                    if anchor
+                        .object
+                        .as_ref()
+                        .is_some_and(|object| !object.control_twin)
+                    {
                         out.push(anchor);
                     }
                 }
@@ -2105,7 +2248,10 @@ impl Loader {
             // The shapes a graphic keeps from its file were laid out for
             // the frame it has.
             let frame = sheet.drawing_frame(&drawing);
-            if let Some(foreign) = drawing.as_smartart_mut().and_then(|art| art.foreign.as_mut()) {
+            if let Some(foreign) = drawing
+                .as_smartart_mut()
+                .and_then(|art| art.foreign.as_mut())
+            {
                 Arc::make_mut(foreign).size = (frame.width as f32, frame.height as f32);
             }
             // An anchor can be made to say what no file written from here
@@ -2174,9 +2320,15 @@ impl Loader {
     ) -> Option<Drawing> {
         let mut drawing = match object.kind {
             RawKind::Shape(shape) => Drawing::shape(shape, (0.0, 0.0)),
-            RawKind::Graphic { ids, own } => Drawing::smartart(smartart::load(pkg, rels, &ids, theme, own)?, (0.0, 0.0)),
+            RawKind::Graphic { ids, own } => {
+                Drawing::smartart(smartart::load(pkg, rels, &ids, theme, own)?, (0.0, 0.0))
+            }
             RawKind::Picture(embed, vector) => {
-                let image_of = |id: &str| rels.iter().find(|rel| rel.id == id && rel.kind == "image").map(|rel| rel.target.clone());
+                let image_of = |id: &str| {
+                    rels.iter()
+                        .find(|rel| rel.id == id && rel.kind == "image")
+                        .map(|rel| rel.target.clone())
+                };
                 let target = image_of(&embed)?;
                 let image = self.images.entry(target).or_insert_with_key(|target| {
                     pkg.read_bytes(target).ok().flatten().and_then(Picture::new)
@@ -2187,7 +2339,11 @@ impl Loader {
                 picture.outline = object.picture.outline;
                 // The image properties name the image as it was: the
                 // blip is then the image with their effects done.
-                let layer = object.picture.layer.filter(|id| *id != embed).and_then(|id| image_of(&id));
+                let layer = object
+                    .picture
+                    .layer
+                    .filter(|id| *id != embed)
+                    .and_then(|id| image_of(&id));
                 let tuned = object.picture.artistic.is_some()
                     || picture.adjust.saturation != 1.0
                     || picture.adjust.temperature != NEUTRAL_TEMPERATURE;
@@ -2204,7 +2360,8 @@ impl Loader {
                                 temperature: picture.adjust.temperature,
                                 artistic: picture.artistic,
                             });
-                            (picture.format, picture.data, picture.pixels) = (original.format, original.data, original.pixels);
+                            (picture.format, picture.data, picture.pixels) =
+                                (original.format, original.data, original.pixels);
                         }
                         // The image as it was cannot be read (HD Photo):
                         // the blip stands for the picture, effects done.
@@ -2227,8 +2384,20 @@ impl Loader {
                 // A linked picture: a reference or a name, nothing else.
                 picture.link = object
                     .link
-                    .and_then(|range| opensheet_engine::parser::parse_formula(range.trim_start_matches('='), opensheet_engine::Locale::en()).ok())
-                    .filter(|link| matches!(link, opensheet_engine::ast::Expr::Ref(_) | opensheet_engine::ast::Expr::Name(_)))
+                    .and_then(|range| {
+                        opensheet_engine::parser::parse_formula(
+                            range.trim_start_matches('='),
+                            opensheet_engine::Locale::en(),
+                        )
+                        .ok()
+                    })
+                    .filter(|link| {
+                        matches!(
+                            link,
+                            opensheet_engine::ast::Expr::Ref(_)
+                                | opensheet_engine::ast::Expr::Name(_)
+                        )
+                    })
                     .map(Arc::new);
                 Drawing::picture(picture)
             }
@@ -2252,7 +2421,13 @@ impl Loader {
                 if held.is_empty() {
                     return None;
                 }
-                Drawing::group(held, (width.clamp(0.0, MAX_PX) as f32, height.clamp(0.0, MAX_PX) as f32))
+                Drawing::group(
+                    held,
+                    (
+                        width.clamp(0.0, MAX_PX) as f32,
+                        height.clamp(0.0, MAX_PX) as f32,
+                    ),
+                )
             }
         };
         // After its members: an object that is left out takes no id.

@@ -24,10 +24,17 @@ pub(super) fn comparisons(kind: ColumnKind) -> Vec<(Comparison, &'static str)> {
     let date = kind == ColumnKind::Date;
     vec![
         (Comparison::Equals, t("equals", "est égal à")),
-        (Comparison::NotEquals, t("does not equal", "est différent de")),
+        (
+            Comparison::NotEquals,
+            t("does not equal", "est différent de"),
+        ),
         (
             Comparison::Greater,
-            if date { t("is after", "postérieur au") } else { t("is greater than", "est supérieur à") },
+            if date {
+                t("is after", "postérieur au")
+            } else {
+                t("is greater than", "est supérieur à")
+            },
         ),
         (
             Comparison::GreaterOrEqual,
@@ -39,7 +46,11 @@ pub(super) fn comparisons(kind: ColumnKind) -> Vec<(Comparison, &'static str)> {
         ),
         (
             Comparison::Less,
-            if date { t("is before", "antérieur au") } else { t("is less than", "est inférieur à") },
+            if date {
+                t("is before", "antérieur au")
+            } else {
+                t("is less than", "est inférieur à")
+            },
         ),
         (
             Comparison::LessOrEqual,
@@ -50,11 +61,20 @@ pub(super) fn comparisons(kind: ColumnKind) -> Vec<(Comparison, &'static str)> {
             },
         ),
         (Comparison::BeginsWith, t("begins with", "commence par")),
-        (Comparison::NotBeginsWith, t("does not begin with", "ne commence pas par")),
+        (
+            Comparison::NotBeginsWith,
+            t("does not begin with", "ne commence pas par"),
+        ),
         (Comparison::EndsWith, t("ends with", "se termine par")),
-        (Comparison::NotEndsWith, t("does not end with", "ne se termine pas par")),
+        (
+            Comparison::NotEndsWith,
+            t("does not end with", "ne se termine pas par"),
+        ),
         (Comparison::Contains, t("contains", "contient")),
-        (Comparison::NotContains, t("does not contain", "ne contient pas")),
+        (
+            Comparison::NotContains,
+            t("does not contain", "ne contient pas"),
+        ),
     ]
 }
 
@@ -93,10 +113,15 @@ impl Fields {
         };
         let second = custom.second.as_ref();
         Fields {
-            comparisons: [Some(custom.first.comparison().0), second.map(|c| c.comparison().0)],
+            comparisons: [
+                Some(custom.first.comparison().0),
+                second.map(|c| c.comparison().0),
+            ],
             operands: [
                 custom.first.operand_text(locale, as_date),
-                second.map(|c| c.operand_text(locale, as_date)).unwrap_or_default(),
+                second
+                    .map(|c| c.operand_text(locale, as_date))
+                    .unwrap_or_default(),
             ],
             and: second.is_none() || custom.and,
         }
@@ -106,11 +131,17 @@ impl Fields {
     /// chosen; `None` (no filter) when neither is. A line left without an
     /// operand only counts when it can mean "is blank" / "is not blank".
     pub(super) fn criteria(&self, locale: &Locale) -> Option<Criteria> {
-        let mut conditions = self.comparisons.iter().zip(&self.operands).filter_map(|(comparison, operand)| {
-            let (comparison, operand) = ((*comparison)?, operand.trim());
-            let about_blanks = matches!(comparison, Comparison::Equals | Comparison::NotEquals);
-            (about_blanks || !operand.is_empty()).then(|| Condition::new(comparison, operand, locale))
-        });
+        let mut conditions =
+            self.comparisons
+                .iter()
+                .zip(&self.operands)
+                .filter_map(|(comparison, operand)| {
+                    let (comparison, operand) = ((*comparison)?, operand.trim());
+                    let about_blanks =
+                        matches!(comparison, Comparison::Equals | Comparison::NotEquals);
+                    (about_blanks || !operand.is_empty())
+                        .then(|| Condition::new(comparison, operand, locale))
+                });
         let first = conditions.next()?;
         Some(Criteria::Custom(match conditions.next() {
             Some(second) => CustomFilter {
@@ -130,7 +161,9 @@ pub(super) fn suggestions(data: &FilterDropdown, locale: &Locale) -> Vec<String>
     for year in data.dates.iter().rev() {
         for month in &year.months {
             for day in &month.days {
-                if let Some(serial) = date_to_serial(year.year as i64, month.month as i64, day.day as i64) {
+                if let Some(serial) =
+                    date_to_serial(year.year as i64, month.month as i64, day.day as i64)
+                {
                     out.push(format::format_number(serial, locale.short_date_format, locale).text);
                 }
             }
@@ -171,13 +204,25 @@ pub(super) fn open(
     let Some(data) = app.wb.filter_dropdown(sheet, scope, col_id) else {
         return;
     };
-    let Some(first_col) = app.wb.auto_filter(sheet, scope).map(|filter| filter.range.c0) else {
+    let Some(first_col) = app
+        .wb
+        .auto_filter(sheet, scope)
+        .map(|filter| filter.range.c0)
+    else {
         return;
     };
     let kind = data.kind;
-    let fields = Fields::opening(data.criteria.as_ref(), preset, kind == ColumnKind::Date, locale);
+    let fields = Fields::opening(
+        data.criteria.as_ref(),
+        preset,
+        kind == ColumnKind::Date,
+        locale,
+    );
     let title: SharedString = column_title(&data.header, first_col + col_id).into();
-    let suggestions: Vec<SharedString> = suggestions(&data, locale).into_iter().map(SharedString::from).collect();
+    let suggestions: Vec<SharedString> = suggestions(&data, locale)
+        .into_iter()
+        .map(SharedString::from)
+        .collect();
     app.open_modal(window, cx, move |modal, _, cx| {
         let [first, second] = fields.operands;
         CustomDialog {
@@ -210,8 +255,9 @@ impl CustomDialog {
         let criteria = fields.criteria(self.locale);
         let (sheet, scope, col_id) = (self.sheet, self.scope, self.col_id);
         self.modal.close(window, cx);
-        self.modal
-            .update_app(cx, |app, cx| apply_criteria(app, sheet, scope, col_id, criteria, cx));
+        self.modal.update_app(cx, |app, cx| {
+            apply_criteria(app, sheet, scope, col_id, criteria, cx)
+        });
     }
 
     /// One line of the dialog: a comparison and its operand.
@@ -221,7 +267,10 @@ impl CustomDialog {
         let mut names: Vec<SharedString> = vec![SharedString::default()];
         names.extend(choices.iter().map(|(_, name)| SharedString::from(*name)));
         let selected = match self.comparisons[index] {
-            Some(comparison) => choices.iter().position(|(c, _)| *c == comparison).map(|at| at + 1),
+            Some(comparison) => choices
+                .iter()
+                .position(|(c, _)| *c == comparison)
+                .map(|at| at + 1),
             None => Some(0),
         };
         div()
@@ -231,11 +280,19 @@ impl CustomDialog {
                 Select::new(("custom-comparison", index), names, selected)
                     .width(200.0)
                     .on_change(cx.listener(move |this, at: &usize, _, cx| {
-                        this.comparisons[index] = at.checked_sub(1).map(|at| comparisons(this.kind)[at].0);
+                        this.comparisons[index] =
+                            at.checked_sub(1).map(|at| comparisons(this.kind)[at].0);
                         cx.notify();
                     })),
             )
-            .child(ComboBox::new(("custom-operand", index), &self.operands[index], self.suggestions.clone()).width(220.0))
+            .child(
+                ComboBox::new(
+                    ("custom-operand", index),
+                    &self.operands[index],
+                    self.suggestions.clone(),
+                )
+                .width(220.0),
+            )
     }
 }
 
@@ -254,45 +311,51 @@ impl Render for CustomDialog {
         let joints: Vec<SharedString> = vec![t("And", "Et").into(), t("Or", "Ou").into()];
         let first = self.line(0, cx);
         let second = self.line(1, cx);
-        dialog(&self.modal, t("Custom AutoFilter", "Filtre automatique personnalisé"))
-            .width(480.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(label(t("Show rows where:", "Afficher les lignes dans lesquelles\u{a0}:")))
-            .child(
-                div()
-                    .pl(px(12.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(8.))
-                    .child(label(self.title.clone()))
-                    .child(first)
-                    .child(
-                        div().pl(px(36.)).child(
-                            RadioGroup::new("custom-joint", joints, Some(if self.and { 0 } else { 1 }))
-                                .horizontal()
-                                .on_change(cx.listener(|this, at: &usize, _, cx| {
-                                    this.and = *at == 0;
-                                    cx.notify();
-                                })),
-                        ),
-                    )
-                    .child(second),
-            )
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .gap(px(2.))
-                    .child(label(t(
-                        "Use ? to represent any single character",
-                        "Utilisez ? pour représenter un caractère",
-                    )))
-                    .child(label(t(
-                        "Use * to represent any series of characters",
-                        "Utilisez * pour représenter une série de caractères",
-                    ))),
-            )
-            .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+        dialog(
+            &self.modal,
+            t("Custom AutoFilter", "Filtre automatique personnalisé"),
+        )
+        .width(480.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(label(t(
+            "Show rows where:",
+            "Afficher les lignes dans lesquelles\u{a0}:",
+        )))
+        .child(
+            div()
+                .pl(px(12.))
+                .flex()
+                .flex_col()
+                .gap(px(8.))
+                .child(label(self.title.clone()))
+                .child(first)
+                .child(
+                    div().pl(px(36.)).child(
+                        RadioGroup::new("custom-joint", joints, Some(if self.and { 0 } else { 1 }))
+                            .horizontal()
+                            .on_change(cx.listener(|this, at: &usize, _, cx| {
+                                this.and = *at == 0;
+                                cx.notify();
+                            })),
+                    ),
+                )
+                .child(second),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(2.))
+                .child(label(t(
+                    "Use ? to represent any single character",
+                    "Utilisez ? pour représenter un caractère",
+                )))
+                .child(label(t(
+                    "Use * to represent any series of characters",
+                    "Utilisez * pour représenter une série de caractères",
+                ))),
+        )
+        .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
 
@@ -320,7 +383,13 @@ struct Top10Dialog {
 
 /// Open the Top 10 AutoFilter dialog for a column, on its current top /
 /// bottom filter if it has one.
-pub(super) fn open_top10(app: &mut ExcelApp, scope: FilterScope, col_id: u32, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_top10(
+    app: &mut ExcelApp,
+    scope: FilterScope,
+    col_id: u32,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let sheet = app.sheet;
     let current = app
         .wb
@@ -343,52 +412,64 @@ pub(super) fn open_top10(app: &mut ExcelApp, scope: FilterScope, col_id: u32, wi
 
 impl Top10Dialog {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let Some(criteria) = top10_criteria(self.top, self.percent, self.count.read(cx).number()) else {
+        let Some(criteria) = top10_criteria(self.top, self.percent, self.count.read(cx).number())
+        else {
             let message = t(
                 "The number must be between 1 and 500. Try again by entering a number in this range.",
                 "Le nombre doit être compris entre 1 et 500. Réessayez en tapant un nombre compris entre ces valeurs.",
             );
-            self.modal
-                .update_app(cx, |app, cx| app.alert(Alert::new(APP_NAME, message).warning(), cx));
+            self.modal.update_app(cx, |app, cx| {
+                app.alert(Alert::new(APP_NAME, message).warning(), cx)
+            });
             return;
         };
         let (sheet, scope, col_id) = (self.sheet, self.scope, self.col_id);
         self.modal.close(window, cx);
-        self.modal
-            .update_app(cx, |app, cx| apply_criteria(app, sheet, scope, col_id, Some(criteria), cx));
+        self.modal.update_app(cx, |app, cx| {
+            apply_criteria(app, sheet, scope, col_id, Some(criteria), cx)
+        });
     }
 }
 
 impl Render for Top10Dialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ends: Vec<SharedString> = vec![crate::i18n::t_ctx("top10", "Top", "Haut").into(), crate::i18n::t_ctx("top10", "Bottom", "Bas").into()];
-        let units: Vec<SharedString> = vec![t("Items", "Éléments").into(), t("Percent", "Pourcentage").into()];
-        dialog(&self.modal, t("Top 10 AutoFilter", "Filtre automatique des 10 premiers"))
-            .width(360.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(label(t("Show", "Afficher")))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(
-                        Select::new("top-end", ends, Some(if self.top { 0 } else { 1 }))
-                            .width(96.0)
-                            .on_change(cx.listener(|this, at: &usize, _, cx| {
-                                this.top = *at == 0;
-                                cx.notify();
-                            })),
-                    )
-                    .child(NumberField::new("top-count", &self.count).width(72.0))
-                    .child(
-                        Select::new("top-unit", units, Some(if self.percent { 1 } else { 0 }))
-                            .width(130.0)
-                            .on_change(cx.listener(|this, at: &usize, _, cx| {
-                                this.percent = *at == 1;
-                                cx.notify();
-                            })),
-                    ),
-            )
-            .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+        let ends: Vec<SharedString> = vec![
+            crate::i18n::t_ctx("top10", "Top", "Haut").into(),
+            crate::i18n::t_ctx("top10", "Bottom", "Bas").into(),
+        ];
+        let units: Vec<SharedString> = vec![
+            t("Items", "Éléments").into(),
+            t("Percent", "Pourcentage").into(),
+        ];
+        dialog(
+            &self.modal,
+            t("Top 10 AutoFilter", "Filtre automatique des 10 premiers"),
+        )
+        .width(360.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(label(t("Show", "Afficher")))
+        .child(
+            div()
+                .flex()
+                .gap(px(8.))
+                .child(
+                    Select::new("top-end", ends, Some(if self.top { 0 } else { 1 }))
+                        .width(96.0)
+                        .on_change(cx.listener(|this, at: &usize, _, cx| {
+                            this.top = *at == 0;
+                            cx.notify();
+                        })),
+                )
+                .child(NumberField::new("top-count", &self.count).width(72.0))
+                .child(
+                    Select::new("top-unit", units, Some(if self.percent { 1 } else { 0 }))
+                        .width(130.0)
+                        .on_change(cx.listener(|this, at: &usize, _, cx| {
+                            this.percent = *at == 1;
+                            cx.notify();
+                        })),
+                ),
+        )
+        .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }

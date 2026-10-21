@@ -12,11 +12,23 @@ fn no_member_brings_the_engine_down() {
     let classes: Vec<String> = api()
         .iter()
         .map(|class| {
-            let members: Vec<String> = class.members.iter().map(|m| format!("{:?}", m.name)).collect();
-            format!("{{\"name\":{:?},\"members\":[{}]}}", class.name, members.join(","))
+            let members: Vec<String> = class
+                .members
+                .iter()
+                .map(|m| format!("{:?}", m.name))
+                .collect();
+            format!(
+                "{{\"name\":{:?},\"members\":[{}]}}",
+                class.name,
+                members.join(",")
+            )
         })
         .collect();
-    let source = format!("const CLASSES = {:?};\n{}", format!("[{}]", classes.join(",")), include_str!("robust.ts"));
+    let source = format!(
+        "const CLASSES = {:?};\n{}",
+        format!("[{}]", classes.join(",")),
+        include_str!("robust.ts")
+    );
     let mut wb = book(&[("A1", "1")]);
     let context = Context {
         time_limit: Duration::from_secs(600),

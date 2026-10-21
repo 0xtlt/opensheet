@@ -11,7 +11,9 @@ use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -29,7 +31,14 @@ fn book() -> Workbook {
     wb.add_sheet(1);
     assert!(wb.rename_sheet(1, "Year's data"));
     for sheet in 0..2 {
-        for (r, row) in [["1", "3", "2", "5"], ["4", "-2", "", "1"], ["2", "-2", "2", "2"]].iter().enumerate() {
+        for (r, row) in [
+            ["1", "3", "2", "5"],
+            ["4", "-2", "", "1"],
+            ["2", "-2", "2", "2"],
+        ]
+        .iter()
+        .enumerate()
+        {
             for (c, text) in row.iter().enumerate() {
                 if !text.is_empty() {
                     enter(&mut wb, sheet, &Rect::cell(r as u32, c as u32).name(), text);
@@ -44,9 +53,12 @@ fn book() -> Workbook {
 #[test]
 fn groups_round_trip_with_every_option() {
     let mut wb = book();
-    wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3")).unwrap();
-    wb.add_sparklines(0, SparklineType::Column, (1, rect("A1:D3")), rect("A5:D5")).unwrap();
-    wb.add_sparklines(0, SparklineType::WinLoss, (0, rect("A2:D2")), rect("G2")).unwrap();
+    wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D3")), rect("F1:F3"))
+        .unwrap();
+    wb.add_sparklines(0, SparklineType::Column, (1, rect("A1:D3")), rect("A5:D5"))
+        .unwrap();
+    wb.add_sparklines(0, SparklineType::WinLoss, (0, rect("A2:D2")), rect("G2"))
+        .unwrap();
     wb.update_sparkline_groups(0, &[rect("F1")], |g| {
         g.line_weight = 2.25;
         g.markers = true;
@@ -90,9 +102,15 @@ fn groups_round_trip_with_every_option() {
         "{xml}"
     );
     assert!(xml.contains("<x14:sparklineGroup manualMax=\"10\" type=\"column\" displayEmptyCellsAs=\"zero\" minAxisType=\"group\" maxAxisType=\"custom\">"), "{xml}");
-    assert!(xml.contains("<xm:f>'Year''s data'!A1:A3</xm:f><xm:sqref>A5</xm:sqref>"), "{xml}");
+    assert!(
+        xml.contains("<xm:f>'Year''s data'!A1:A3</xm:f><xm:sqref>A5</xm:sqref>"),
+        "{xml}"
+    );
     assert!(xml.contains("<x14:sparklineGroup type=\"stacked\" displayEmptyCellsAs=\"gap\" negative=\"1\"><x14:colorSeries rgb=\"FF376092\"/>"), "{xml}");
-    assert!(xml.ends_with("</x14:sparklineGroups></ext></extLst></worksheet>"), "{xml}");
+    assert!(
+        xml.ends_with("</x14:sparklineGroups></ext></extLst></worksheet>"),
+        "{xml}"
+    );
 
     let back = load(&bytes);
     assert_eq!(back.sheets[0].sparklines, wb.sheets[0].sparklines);
@@ -104,10 +122,14 @@ fn groups_round_trip_with_every_option() {
 #[test]
 fn one_extension_list_for_all_the_features_of_a_sheet() {
     let mut wb = book();
-    wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D1")), rect("F1")).unwrap();
+    wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:D1")), rect("F1"))
+        .unwrap();
     // A data bar of the 2010 kind lives in the extension list too.
     wb.snapshot();
-    wb.sheets[0].cond_formats.push(CondFormat::new(vec![rect("A1:A3")], Rule::DataBar(DataBar::preset(BarColor::Blue, true))));
+    wb.sheets[0].cond_formats.push(CondFormat::new(
+        vec![rect("A1:A3")],
+        Rule::DataBar(DataBar::preset(BarColor::Blue, true)),
+    ));
     wb.commit("setup");
     let bytes = to_bytes(&wb);
     keep_sample("sparklines-and-data-bars.xlsx", &bytes);
@@ -117,8 +139,12 @@ fn one_extension_list_for_all_the_features_of_a_sheet() {
     // The list of the sheet is the last element; the one inside the
     // 2007 rule is its own.
     let tail = &xml[xml.rfind("<extLst>").unwrap()..];
-    let bars = tail.find("{78C0D931-6437-407d-A8EE-F0AAD7539E65}").expect("the conditional formats");
-    let sparks = tail.find("{05C60535-1F16-4fd2-B633-F4F36F0B64E0}").expect("the sparklines");
+    let bars = tail
+        .find("{78C0D931-6437-407d-A8EE-F0AAD7539E65}")
+        .expect("the conditional formats");
+    let sparks = tail
+        .find("{05C60535-1F16-4fd2-B633-F4F36F0B64E0}")
+        .expect("the sparklines");
     assert!(bars < sparks, "{tail}");
     assert_eq!(tail.matches("<ext ").count(), 2);
     let back = load(&bytes);
@@ -161,18 +187,40 @@ fn sparklines_written_by_excel_are_read() {
     let groups = &wb.sheets[0].sparklines;
     assert_eq!(groups.len(), 2);
     let g = &groups[0];
-    assert_eq!((g.kind, g.empty, g.high, g.low), (SparklineType::Column, EmptyCells::Gaps, true, false));
-    assert_eq!((g.min, g.max), (AxisBound::Individual, AxisBound::Custom(8.0)));
+    assert_eq!(
+        (g.kind, g.empty, g.high, g.low),
+        (SparklineType::Column, EmptyCells::Gaps, true, false)
+    );
+    assert_eq!(
+        (g.min, g.max),
+        (AxisBound::Individual, AxisBound::Custom(8.0))
+    );
     // Theme colours come through the palette of the file; the one given
     // outright is kept as it is.
     assert_eq!(g.colors.high, Color(0x00B050));
     assert_ne!(g.colors.series, SparklineColors::default().series);
     assert_eq!(g.sparklines.len(), 1);
-    assert_eq!((g.sparklines[0].row, g.sparklines[0].col, g.sparklines[0].data.range), (0, 2, rect("A1:B1")));
+    assert_eq!(
+        (
+            g.sparklines[0].row,
+            g.sparklines[0].col,
+            g.sparklines[0].data.range
+        ),
+        (0, 2, rect("A1:B1"))
+    );
     // The schema's defaults: a line, empty cells as zero.
     let plain = &groups[1];
-    assert_eq!((plain.kind, plain.empty, plain.line_weight), (SparklineType::Line, EmptyCells::Zero, 0.75));
-    assert_eq!((plain.sparklines[0].data.sheet.as_str(), plain.sparklines[0].data.range), ("My notes", rect("A1:A4")));
+    assert_eq!(
+        (plain.kind, plain.empty, plain.line_weight),
+        (SparklineType::Line, EmptyCells::Zero, 0.75)
+    );
+    assert_eq!(
+        (
+            plain.sparklines[0].data.sheet.as_str(),
+            plain.sparklines[0].data.range
+        ),
+        ("My notes", rect("A1:A4"))
+    );
     assert_eq!(plain.colors, SparklineColors::default());
 }
 
@@ -181,17 +229,31 @@ fn sparklines_written_by_excel_are_read() {
 #[test]
 fn a_date_axis_goes_through_a_file() {
     let mut wb = Workbook::new(Locale::en());
-    let days = ["2024-01-01", "2024-01-02", "2024-01-05", "2024-02-01", "2024-02-02"];
+    let days = [
+        "2024-01-01",
+        "2024-01-02",
+        "2024-01-05",
+        "2024-02-01",
+        "2024-02-02",
+    ];
     for (c, day) in days.iter().enumerate() {
         wb.set_cell_text(0, 0, c as u32, day).unwrap();
-        wb.set_cell_text(0, 1, c as u32, &format!("{}", (c * 7) % 5 + 1)).unwrap();
-        wb.set_cell_text(0, 2, c as u32, &format!("{}", (c * 3) % 4 + 2)).unwrap();
+        wb.set_cell_text(0, 1, c as u32, &format!("{}", (c * 7) % 5 + 1))
+            .unwrap();
+        wb.set_cell_text(0, 2, c as u32, &format!("{}", (c * 3) % 4 + 2))
+            .unwrap();
     }
     // Dated lines and columns, and the same data evenly spaced beside them.
-    wb.add_sparklines(0, SparklineType::Line, (0, rect("A2:E3")), rect("G2:G3")).unwrap();
-    wb.add_sparklines(0, SparklineType::Column, (0, rect("A2:E3")), rect("H2:H3")).unwrap();
-    wb.add_sparklines(0, SparklineType::Line, (0, rect("A2:E3")), rect("I2:I3")).unwrap();
-    assert_eq!(wb.set_sparkline_date_axis(0, &[rect("G2:H3")], Some((0, rect("A1:E1")))), Ok(true));
+    wb.add_sparklines(0, SparklineType::Line, (0, rect("A2:E3")), rect("G2:G3"))
+        .unwrap();
+    wb.add_sparklines(0, SparklineType::Column, (0, rect("A2:E3")), rect("H2:H3"))
+        .unwrap();
+    wb.add_sparklines(0, SparklineType::Line, (0, rect("A2:E3")), rect("I2:I3"))
+        .unwrap();
+    assert_eq!(
+        wb.set_sparkline_date_axis(0, &[rect("G2:H3")], Some((0, rect("A1:E1")))),
+        Ok(true)
+    );
     wb.update_sparkline_groups(0, &[rect("G2:I3")], |group| group.markers = true);
     wb.set_col_width(0, 6, Some(160.0));
     wb.set_col_width(0, 7, Some(160.0));
@@ -200,13 +262,28 @@ fn a_date_axis_goes_through_a_file() {
     let bytes = to_bytes(&wb);
     keep_sample("sparkline-date-axis.xlsx", &bytes);
     let xml = part(&bytes, "xl/worksheets/sheet1.xml");
-    assert!(xml.contains("<x14:sparklineGroup dateAxis=\"1\" displayEmptyCellsAs=\"gap\" markers=\"1\">"), "{xml}");
+    assert!(
+        xml.contains(
+            "<x14:sparklineGroup dateAxis=\"1\" displayEmptyCellsAs=\"gap\" markers=\"1\">"
+        ),
+        "{xml}"
+    );
     assert!(xml.contains("<x14:sparklineGroup type=\"column\" dateAxis=\"1\" displayEmptyCellsAs=\"gap\" markers=\"1\">"), "{xml}");
-    assert_eq!(xml.matches("<xm:f>Sheet1!A1:E1</xm:f><x14:sparklines>").count(), 2, "{xml}");
+    assert_eq!(
+        xml.matches("<xm:f>Sheet1!A1:E1</xm:f><x14:sparklines>")
+            .count(),
+        2,
+        "{xml}"
+    );
     assert_eq!(xml.matches("dateAxis").count(), 2);
     let back = load(&bytes);
     assert_eq!(back.sheets[0].sparklines, wb.sheets[0].sparklines);
     let dated = &back.sheets[0].sparklines[0];
-    assert!(back.sparkline_dates(dated).unwrap().iter().all(|date| date.is_some_and(|day| day > 45000.0)));
+    assert!(
+        back.sparkline_dates(dated)
+            .unwrap()
+            .iter()
+            .all(|date| date.is_some_and(|day| day > 45000.0))
+    );
     assert_eq!(to_bytes(&back), bytes);
 }

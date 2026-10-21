@@ -326,7 +326,9 @@ fn collect_ink(wb: &Workbook, sheet: usize, measure: Option<&dyn TextMeasure>) -
     let marks = |row: u32, col: u32| -> bool {
         sh.cells.get(&(row, col)).is_some_and(|cell| {
             let style = wb.styles.get(cell.style);
-            !matches!(cell.content, Content::Empty) || style.fill.is_some() || !style.borders.is_none()
+            !matches!(cell.content, Content::Empty)
+                || style.fill.is_some()
+                || !style.borders.is_none()
         })
     };
 
@@ -355,16 +357,25 @@ fn collect_ink(wb: &Workbook, sheet: usize, measure: Option<&dyn TextMeasure>) -
         if style.wrap || style.shrink_to_fit || style.rotation != 0 {
             return None;
         }
-        let text = wb.display_text(sheet, row, col).text.replace(['\n', '\r'], " ");
+        let text = wb
+            .display_text(sheet, row, col)
+            .text
+            .replace(['\n', '\r'], " ");
         let width = measure.text_width(&text, &style.font) as f64 + 2.0 * CELL_PADDING as f64;
         let own = visible_col_width(sh, col);
         let mut missing = match style.h_align {
-            HAlign::General | HAlign::Left => width + style.indent as f64 * INDENT_WIDTH as f64 - own,
+            HAlign::General | HAlign::Left => {
+                width + style.indent as f64 * INDENT_WIDTH as f64 - own
+            }
             HAlign::Center | HAlign::CenterAcross => (width - own) / 2.0,
             HAlign::Right | HAlign::Fill | HAlign::Justify => return None,
         };
         let mut end = col;
-        while missing > EPS && end + 1 < MAX_COLS && sh.is_blank(row, end + 1) && sh.merge_at(row, end + 1).is_none() {
+        while missing > EPS
+            && end + 1 < MAX_COLS
+            && sh.is_blank(row, end + 1)
+            && sh.merge_at(row, end + 1).is_none()
+        {
             end += 1;
             missing -= visible_col_width(sh, end);
         }
@@ -446,10 +457,14 @@ pub fn paginate(wb: &Workbook, sheet: usize, opts: &PaginateOptions) -> Paginati
 
     // What to print: the selection, else the print area, else everything
     // from A1 to the last cell that leaves a mark.
-    let automatic = opts.selection.is_none() && (setup.print_area.is_empty() || opts.ignore_print_area);
+    let automatic =
+        opts.selection.is_none() && (setup.print_area.is_empty() || opts.ignore_print_area);
     let mut rects: Vec<Rect> = match opts.selection {
         Some(selection) => selection.to_vec(),
-        None if automatic => used.map(|u| Rect::new(0, 0, u.r1, u.c1)).into_iter().collect(),
+        None if automatic => used
+            .map(|u| Rect::new(0, 0, u.r1, u.c1))
+            .into_iter()
+            .collect(),
         None => setup.print_area.clone(),
     };
     // Whole rows and columns print as far as the sheet is used.
@@ -471,7 +486,12 @@ pub fn paginate(wb: &Workbook, sheet: usize, opts: &PaginateOptions) -> Paginati
     }
     let axes: Vec<(Sizes, Sizes)> = rects
         .iter()
-        .map(|r| (Sizes::new(sh, false, r.c0, r.c1), Sizes::new(sh, true, r.r0, r.r1)))
+        .map(|r| {
+            (
+                Sizes::new(sh, false, r.c0, r.c1),
+                Sizes::new(sh, true, r.r0, r.r1),
+            )
+        })
         .collect();
     let title_cols_px = setup
         .title_cols
@@ -493,8 +513,10 @@ pub fn paginate(wb: &Workbook, sheet: usize, opts: &PaginateOptions) -> Paginati
             .iter()
             .zip(&axes)
             .map(|(rect, (cols, rows))| {
-                let (col_bands, col_breaks) = bands(cols, across, setup.title_cols, title_cols_px, manual_cols);
-                let (row_bands, row_breaks) = bands(rows, down, setup.title_rows, title_rows_px, manual_rows);
+                let (col_bands, col_breaks) =
+                    bands(cols, across, setup.title_cols, title_cols_px, manual_cols);
+                let (row_bands, row_breaks) =
+                    bands(rows, down, setup.title_rows, title_rows_px, manual_rows);
                 PrintRange {
                     rect: *rect,
                     col_bands,
@@ -532,7 +554,10 @@ pub fn paginate(wb: &Workbook, sheet: usize, opts: &PaginateOptions) -> Paginati
     out.ranges = cut(out.scale_percent);
 
     let unit = PX_TO_PT * out.scale_percent as f64 / 100.0;
-    let first_number = setup.first_page_number.or(opts.first_page_number).unwrap_or(1);
+    let first_number = setup
+        .first_page_number
+        .or(opts.first_page_number)
+        .unwrap_or(1);
     let mut any_ink = false;
     for (ri, range) in out.ranges.iter().enumerate() {
         let (nc, nr) = (range.col_bands.len(), range.row_bands.len());
@@ -598,7 +623,13 @@ pub fn paginate(wb: &Workbook, sheet: usize, opts: &PaginateOptions) -> Paginati
                 + title_rows.map_or(0.0, |_| title_rows_px)
                 + span_px(sh, BreakAxis::Rows, rows.0, rows.1);
             let size = (width_px * unit, height_px * unit);
-            let centre = |on: bool, room: f64, size: f64| if on { ((room - size) / 2.0).max(0.0) } else { 0.0 };
+            let centre = |on: bool, room: f64, size: f64| {
+                if on {
+                    ((room - size) / 2.0).max(0.0)
+                } else {
+                    0.0
+                }
+            };
             let index = out.pages.len();
             out.pages.push(Page {
                 index,
@@ -651,12 +682,16 @@ impl SheetPages {
 
     /// Which page across holds a column.
     pub fn col_page(&self, col: u32) -> usize {
-        self.col_starts.partition_point(|s| *s <= col).saturating_sub(1)
+        self.col_starts
+            .partition_point(|s| *s <= col)
+            .saturating_sub(1)
     }
 
     /// Which page down holds a row.
     pub fn row_page(&self, row: u32) -> usize {
-        self.row_starts.partition_point(|s| *s <= row).saturating_sub(1)
+        self.row_starts
+            .partition_point(|s| *s <= row)
+            .saturating_sub(1)
     }
 
     /// The first and last column of a page across.
@@ -687,9 +722,19 @@ fn axis_starts(
 ) -> Vec<u32> {
     let rows = axis == BreakAxis::Rows;
     let (default, count, sizes, hidden) = if rows {
-        (DEFAULT_ROW_HEIGHT, MAX_ROWS, &sheet.row_heights, &sheet.hidden_rows)
+        (
+            DEFAULT_ROW_HEIGHT,
+            MAX_ROWS,
+            &sheet.row_heights,
+            &sheet.hidden_rows,
+        )
     } else {
-        (DEFAULT_COL_WIDTH, MAX_COLS, &sheet.col_widths, &sheet.hidden_cols)
+        (
+            DEFAULT_COL_WIDTH,
+            MAX_COLS,
+            &sheet.col_widths,
+            &sheet.hidden_cols,
+        )
     };
     // Past this track every one has the default size, none is hidden and
     // no break is set: the pages repeat and need not be walked.
@@ -704,7 +749,13 @@ fn axis_starts(
     }
     let limit = limit.min(count - 1);
     let title_px = title.map_or(0.0, |(a, b)| span_px(sheet, axis, a, b));
-    let (bands, breaks) = bands(&Sizes::new(sheet, rows, 0, limit), available, title, title_px, manual);
+    let (bands, breaks) = bands(
+        &Sizes::new(sheet, rows, 0, limit),
+        available,
+        title,
+        title_px,
+        manual,
+    );
     let mut starts = vec![0u32];
     starts.extend(breaks.iter().map(|b| b.at));
     let room = |start: u32| -> f64 {
@@ -788,7 +839,11 @@ impl Pagination {
         let unit = self.unit();
         let heading = (self.heading_size.0 * unit, self.heading_size.1 * unit);
         // Repeated titles first, then the page's own rows or columns.
-        let place = |rows: bool, start: f64, title: Option<(u32, u32)>, own: (u32, u32)| -> (Vec<Span>, usize, f64) {
+        let place = |rows: bool,
+                     start: f64,
+                     title: Option<(u32, u32)>,
+                     own: (u32, u32)|
+         -> (Vec<Span>, usize, f64) {
             let mut spans = Vec::new();
             let mut pos = start;
             let mut add = |(first, last): (u32, u32), spans: &mut Vec<Span>| {
@@ -814,8 +869,10 @@ impl Pagination {
             add(own, &mut spans);
             (spans, titles, body_start)
         };
-        let (cols, title_cols, body_x) = place(false, page.origin.0 + heading.0, page.title_cols, page.cols);
-        let (rows, title_rows, body_y) = place(true, page.origin.1 + heading.1, page.title_rows, page.rows);
+        let (cols, title_cols, body_x) =
+            place(false, page.origin.0 + heading.0, page.title_cols, page.cols);
+        let (rows, title_rows, body_y) =
+            place(true, page.origin.1 + heading.1, page.title_rows, page.rows);
         let right = page.origin.0 + page.size.0;
         let bottom = page.origin.1 + page.size.1;
         PageLayout {

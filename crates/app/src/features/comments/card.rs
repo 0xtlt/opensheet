@@ -2,18 +2,18 @@
 //! box to answer in. The same card floats beside its cell on the grid and
 //! lines up with the others in the Comments pane.
 
-use crate::widgets::text_area::{AreaEvent, AreaKey, TextArea};
 use super::mentions::{self, Named, Suggestions};
 use super::user_name;
 use crate::app::{ExcelApp, MenuEntry};
 use crate::i18n::t;
 use crate::theme::{self, c};
+use crate::widgets::text_area::{AreaEvent, AreaKey, TextArea};
 use crate::widgets::{Button, icon, tooltip};
 use gpui::{
-    AnyElement, App, Bounds, Context, CursorStyle, Element, ElementId, Entity, FocusHandle, Focusable, FontWeight,
-    GlobalElementId, HighlightStyle,
-    IntoElement, LayoutId, MouseButton, MouseDownEvent, Pixels, Point, Position, Render, SharedString, Style,
-    StyledText, Subscription, WeakEntity, Window, div, point, prelude::*, px,
+    AnyElement, App, Bounds, Context, CursorStyle, Element, ElementId, Entity, FocusHandle,
+    Focusable, FontWeight, GlobalElementId, HighlightStyle, IntoElement, LayoutId, MouseButton,
+    MouseDownEvent, Pixels, Point, Position, Render, SharedString, Style, StyledText, Subscription,
+    WeakEntity, Window, div, point, prelude::*, px,
 };
 use opensheet_engine::comment::{Comment, Mention, Person, Post, Thread, utc_to_local};
 use opensheet_engine::refs::cell_name;
@@ -57,19 +57,27 @@ pub(super) struct CommentCard {
 
 /// The two letters shown in the round badge of an author.
 pub(super) fn initials(name: &str) -> String {
-    let mut words = name.split_whitespace().filter_map(|word| word.chars().find(|ch| ch.is_alphanumeric()));
+    let mut words = name
+        .split_whitespace()
+        .filter_map(|word| word.chars().find(|ch| ch.is_alphanumeric()));
     let first = words.next();
     let last = words.last();
-    first.into_iter().chain(last).flat_map(char::to_uppercase).collect()
+    first
+        .into_iter()
+        .chain(last)
+        .flat_map(char::to_uppercase)
+        .collect()
 }
 
 /// The colour of the badge of an author: always the same for a name.
 pub(super) fn badge_color(name: &str) -> u32 {
     const COLORS: [u32; 12] = [
-        0x750B1C, 0xA4262C, 0xCA5010, 0x986F0B, 0x498205, 0x038387, 0x004E8C, 0x4F6BED, 0x8764B8, 0x881798, 0xC239B3,
-        0x69797E,
+        0x750B1C, 0xA4262C, 0xCA5010, 0x986F0B, 0x498205, 0x038387, 0x004E8C, 0x4F6BED, 0x8764B8,
+        0x881798, 0xC239B3, 0x69797E,
     ];
-    let hash = name.bytes().fold(0u32, |hash, byte| hash.wrapping_mul(31).wrapping_add(byte as u32));
+    let hash = name.bytes().fold(0u32, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(byte as u32)
+    });
     COLORS[hash as usize % COLORS.len()]
 }
 
@@ -77,7 +85,11 @@ pub(super) fn badge_color(name: &str) -> u32 {
 /// date and the time without seconds, as the workbook's language writes
 /// them.
 pub(super) fn time_text(local: f64, locale: &Locale) -> String {
-    let code = format!("{} {}", locale.short_date_format, locale.time_format.replace(":ss", ""));
+    let code = format!(
+        "{} {}",
+        locale.short_date_format,
+        locale.time_format.replace(":ss", "")
+    );
     format::format_number(local, &code, locale).text
 }
 
@@ -116,7 +128,11 @@ fn badge(name: &str) -> impl IntoElement {
 }
 
 /// A small square button showing an icon.
-fn icon_button(id: impl Into<ElementId>, name: &'static str, tip: &'static str) -> gpui::Stateful<gpui::Div> {
+fn icon_button(
+    id: impl Into<ElementId>,
+    name: &'static str,
+    tip: &'static str,
+) -> gpui::Stateful<gpui::Div> {
     div()
         .id(id)
         .size(px(22.))
@@ -141,19 +157,27 @@ impl CommentCard {
         cx: &mut Context<Self>,
     ) -> Self {
         let input = cx.new(|cx| {
-            let mut area = if in_pane { TextArea::field(cx) } else { TextArea::new(cx) };
+            let mut area = if in_pane {
+                TextArea::field(cx)
+            } else {
+                TextArea::new(cx)
+            };
             area.max_height = Some(120.0);
             area.token_color = Some(c(mentions::COLOR));
             area
         });
-        let subscription = cx.subscribe_in(&input, window, |card, _, event: &AreaEvent, window, cx| match event {
-            AreaEvent::Submit => card.post(window, cx),
-            AreaEvent::Escape => card.cancel(window, cx),
-            AreaEvent::Changed => card.typed(false, cx),
-            AreaEvent::Key(key) => card.list_key(*key, cx),
-            AreaEvent::Blurred => card.close_list(cx),
-            _ => cx.notify(),
-        });
+        let subscription = cx.subscribe_in(
+            &input,
+            window,
+            |card, _, event: &AreaEvent, window, cx| match event {
+                AreaEvent::Submit => card.post(window, cx),
+                AreaEvent::Escape => card.cancel(window, cx),
+                AreaEvent::Changed => card.typed(false, cx),
+                AreaEvent::Key(key) => card.list_key(*key, cx),
+                AreaEvent::Blurred => card.close_list(cx),
+                _ => cx.notify(),
+            },
+        );
         CommentCard {
             app,
             sheet,
@@ -183,7 +207,9 @@ impl CommentCard {
     /// What can hold the keyboard in this card.
     pub fn fields(&self, cx: &App) -> Vec<FocusHandle> {
         let edit = self.editing.as_ref().map(|edit| edit.area.focus_handle(cx));
-        std::iter::once(self.input.focus_handle(cx)).chain(edit).collect()
+        std::iter::once(self.input.focus_handle(cx))
+            .chain(edit)
+            .collect()
     }
 
     /// Words were typed that are not in the workbook yet.
@@ -196,26 +222,40 @@ impl CommentCard {
     }
 
     /// Rewrite a post in place (`reply` `None`: the first comment).
-    pub fn start_edit(&mut self, reply: Option<usize>, post: &Post, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn start_edit(
+        &mut self,
+        reply: Option<usize>,
+        post: &Post,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let in_pane = self.in_pane;
         let text = post.text.clone();
         let tokens = post.mentions.iter().map(Mention::range).collect();
         let area = cx.new(|cx| {
-            let mut area = if in_pane { TextArea::field(cx) } else { TextArea::new(cx) };
+            let mut area = if in_pane {
+                TextArea::field(cx)
+            } else {
+                TextArea::new(cx)
+            };
             area.max_height = Some(160.0);
             area.token_color = Some(c(mentions::COLOR));
             area.set_text(text.clone(), cx);
             area.set_tokens(tokens, cx);
             area
         });
-        let subscription = cx.subscribe_in(&area, window, |card, _, event: &AreaEvent, window, cx| match event {
-            AreaEvent::Submit => card.save_edit(window, cx),
-            AreaEvent::Escape => card.cancel(window, cx),
-            AreaEvent::Changed => card.typed(true, cx),
-            AreaEvent::Key(key) => card.list_key(*key, cx),
-            AreaEvent::Blurred => card.close_list(cx),
-            _ => cx.notify(),
-        });
+        let subscription = cx.subscribe_in(
+            &area,
+            window,
+            |card, _, event: &AreaEvent, window, cx| match event {
+                AreaEvent::Submit => card.save_edit(window, cx),
+                AreaEvent::Escape => card.cancel(window, cx),
+                AreaEvent::Changed => card.typed(true, cx),
+                AreaEvent::Key(key) => card.list_key(*key, cx),
+                AreaEvent::Blurred => card.close_list(cx),
+                _ => cx.notify(),
+            },
+        );
         window.focus(&area.focus_handle(cx));
         self.close_list(cx);
         self.editing = Some(PostEdit {
@@ -233,13 +273,21 @@ impl CommentCard {
 
     /// The box of the post being rewritten (`in_edit`), or that of the card.
     fn area(&self, in_edit: bool) -> Option<Entity<TextArea>> {
-        if in_edit { self.editing.as_ref().map(|edit| edit.area.clone()) } else { Some(self.input.clone()) }
+        if in_edit {
+            self.editing.as_ref().map(|edit| edit.area.clone())
+        } else {
+            Some(self.input.clone())
+        }
     }
 
     /// The people a mention can name: those the comments of the workbook
     /// know, and the user.
     fn people(&self, query: &str, cx: &App) -> Vec<Person> {
-        let known = self.app.upgrade().map(|app| app.read(cx).wb.people()).unwrap_or_default();
+        let known = self
+            .app
+            .upgrade()
+            .map(|app| app.read(cx).wb.people())
+            .unwrap_or_default();
         mentions::candidates(&known, user_name(), query)
     }
 
@@ -251,13 +299,19 @@ impl CommentCard {
         };
         let found = {
             let area = area.read(cx);
-            mentions::query_at(area.text(), area.caret(), area.tokens()).map(|(at, query)| (at, query.to_string()))
+            mentions::query_at(area.text(), area.caret(), area.tokens())
+                .map(|(at, query)| (at, query.to_string()))
         };
         let list = found.and_then(|(at, query)| {
             let people = self.people(&query, cx);
             // The line that was selected stays so while it is still offered.
-            let before = self.suggestions.as_ref().and_then(|list| list.people.get(list.selected));
-            let selected = before.and_then(|person| people.iter().position(|other| other == person)).unwrap_or(0);
+            let before = self
+                .suggestions
+                .as_ref()
+                .and_then(|list| list.people.get(list.selected));
+            let selected = before
+                .and_then(|person| people.iter().position(|other| other == person))
+                .unwrap_or(0);
             (!people.is_empty()).then_some(Suggestions {
                 in_edit,
                 at,
@@ -328,7 +382,10 @@ impl CommentCard {
 
     /// The list of people, under the box it belongs to.
     fn list_view(&self, in_edit: bool, cx: &mut Context<Self>) -> Option<AnyElement> {
-        let list = self.suggestions.as_ref().filter(|list| list.in_edit == in_edit)?;
+        let list = self
+            .suggestions
+            .as_ref()
+            .filter(|list| list.in_edit == in_edit)?;
         let cell = cell_name(self.cell.0, self.cell.1);
         let rows = list.people.iter().enumerate().map(|(index, person)| {
             let name = format!("mention-{index}@{cell}");
@@ -349,7 +406,11 @@ impl CommentCard {
                         .min_w(px(0.))
                         .flex()
                         .flex_col()
-                        .child(div().truncate().child(SharedString::from(person.name.clone())))
+                        .child(
+                            div()
+                                .truncate()
+                                .child(SharedString::from(person.name.clone())),
+                        )
                         .children(mentions::address(person).map(|address| {
                             div()
                                 .truncate()
@@ -395,7 +456,13 @@ impl CommentCard {
     #[cfg(test)]
     pub fn suggested(&self) -> Option<(Vec<String>, usize)> {
         let list = self.suggestions.as_ref()?;
-        Some((list.people.iter().map(|person| person.name.clone()).collect(), list.selected))
+        Some((
+            list.people
+                .iter()
+                .map(|person| person.name.clone())
+                .collect(),
+            list.selected,
+        ))
     }
 
     /// Run something on the application once this card is done with the
@@ -495,25 +562,34 @@ impl CommentCard {
         let (sheet, cell) = (self.sheet, self.cell);
         let card = cx.weak_entity();
         let post = post.clone();
-        let mut entries = vec![MenuEntry::new(t("Edit comment", "Modifier le commentaire"), move |app, window, cx| {
-            if super::may_edit(app, cx) {
-                card.update(cx, |card, cx| card.start_edit(reply, &post, window, cx)).ok();
-            }
-        })];
+        let mut entries = vec![MenuEntry::new(
+            t("Edit comment", "Modifier le commentaire"),
+            move |app, window, cx| {
+                if super::may_edit(app, cx) {
+                    card.update(cx, |card, cx| card.start_edit(reply, &post, window, cx))
+                        .ok();
+                }
+            },
+        )];
         match reply {
             None => {
-                entries.push(MenuEntry::new(t("Delete thread", "Supprimer la conversation"), move |app, _, cx| {
-                    super::delete_thread(app, sheet, cell, cx)
-                }));
-                entries.push(MenuEntry::new(t("Resolve thread", "Résoudre la conversation"), move |app, _, cx| {
-                    super::resolve(app, sheet, cell, true, cx)
-                }));
+                entries.push(MenuEntry::new(
+                    t("Delete thread", "Supprimer la conversation"),
+                    move |app, _, cx| super::delete_thread(app, sheet, cell, cx),
+                ));
+                entries.push(MenuEntry::new(
+                    t("Resolve thread", "Résoudre la conversation"),
+                    move |app, _, cx| super::resolve(app, sheet, cell, true, cx),
+                ));
             }
-            Some(index) => entries.push(MenuEntry::new(t("Delete comment", "Supprimer le commentaire"), move |app, _, cx| {
-                super::delete_reply(app, sheet, cell, index, cx)
-            })),
+            Some(index) => entries.push(MenuEntry::new(
+                t("Delete comment", "Supprimer le commentaire"),
+                move |app, _, cx| super::delete_reply(app, sheet, cell, index, cx),
+            )),
         }
-        self.tell_app(window, cx, move |app, _, cx| app.open_context_menu(position, entries, cx));
+        self.tell_app(window, cx, move |app, _, cx| {
+            app.open_context_menu(position, entries, cx)
+        });
     }
 
     /// A field with its text box, and under it the two buttons once it is
@@ -532,7 +608,8 @@ impl CommentCard {
         let empty = area.read(cx).text().trim().is_empty();
         let clicked = area.clone();
         let cell = cell_name(self.cell.0, self.cell.1);
-        let (accept_name, cancel_name) = (format!("{id}-accept@{cell}"), format!("{id}-cancel@{cell}"));
+        let (accept_name, cancel_name) =
+            (format!("{id}-accept@{cell}"), format!("{id}-cancel@{cell}"));
         let list = self.list_view(id == "edit-field", cx);
         div()
             .flex()
@@ -547,14 +624,21 @@ impl CommentCard {
                     .rounded(px(4.))
                     .bg(c(0xFFFFFF))
                     .border_1()
-                    .border_color(c(if focused { theme::ACCENT } else { theme::BORDER_STRONG }))
+                    .border_color(c(if focused {
+                        theme::ACCENT
+                    } else {
+                        theme::BORDER_STRONG
+                    }))
                     .cursor(CursorStyle::IBeam)
                     .line_height(px(17.))
                     // A press beside the text still puts the cursor in it.
-                    .on_mouse_down(MouseButton::Left, move |event: &MouseDownEvent, window, cx| {
-                        window.focus(&clicked.focus_handle(cx));
-                        clicked.update(cx, |area, cx| area.caret_to_point(event.position, cx));
-                    })
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        move |event: &MouseDownEvent, window, cx| {
+                            window.focus(&clicked.focus_handle(cx));
+                            clicked.update(cx, |area, cx| area.caret_to_point(event.position, cx));
+                        },
+                    )
                     .child(area.clone()),
             )
             .children(list)
@@ -570,14 +654,18 @@ impl CommentCard {
                                     .primary()
                                     .disabled(empty)
                                     .width(64.0)
-                                    .on_click(cx.listener(move |card, _, window, cx| on_accept(card, window, cx))),
+                                    .on_click(cx.listener(move |card, _, window, cx| {
+                                        on_accept(card, window, cx)
+                                    })),
                             ),
                         )
                         .child(
                             div().debug_selector(|| cancel_name).child(
                                 Button::new((id, 2usize), t("Cancel", "Annuler"))
                                     .width(64.0)
-                                    .on_click(cx.listener(|card, _, window, cx| card.cancel(window, cx))),
+                                    .on_click(
+                                        cx.listener(|card, _, window, cx| card.cancel(window, cx)),
+                                    ),
                             ),
                         ),
                 )
@@ -596,7 +684,11 @@ impl CommentCard {
         window: &Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let name = if post.author.name.is_empty() { t("Unknown", "Inconnu") } else { post.author.name.as_str() };
+        let name = if post.author.name.is_empty() {
+            t("Unknown", "Inconnu")
+        } else {
+            post.author.name.as_str()
+        };
         let index = reply.map_or(0, |index| index + 1);
         let edit = self.editing.as_ref().filter(|edit| edit.reply == reply);
         let menu_post = post.clone();
@@ -626,7 +718,11 @@ impl CommentCard {
                                     .child(SharedString::from(name.to_string())),
                             )
                             .when(self.in_pane && reply.is_none(), |d| {
-                                d.child(div().text_color(c(theme::TEXT_MUTED)).child(cell_name(row, col)))
+                                d.child(
+                                    div()
+                                        .text_color(c(theme::TEXT_MUTED))
+                                        .child(cell_name(row, col)),
+                                )
                             })
                             .when(!resolved && edit.is_none(), |d| {
                                 d.child(
@@ -634,16 +730,32 @@ impl CommentCard {
                                         ("post-menu", index),
                                         "more",
                                         match reply {
-                                            None => t("More thread actions", "Autres actions sur la conversation"),
-                                            Some(_) => t("More comment actions", "Plus d’actions de commentaires"),
+                                            None => t(
+                                                "More thread actions",
+                                                "Autres actions sur la conversation",
+                                            ),
+                                            Some(_) => t(
+                                                "More comment actions",
+                                                "Plus d’actions de commentaires",
+                                            ),
                                         },
                                     )
-                                    .debug_selector(|| format!("post-menu-{index}@{}", cell_name(row, col)))
+                                    .debug_selector(|| {
+                                        format!("post-menu-{index}@{}", cell_name(row, col))
+                                    })
                                     .on_mouse_down(
                                         MouseButton::Left,
-                                        cx.listener(move |card, event: &MouseDownEvent, window, cx| {
-                                            card.open_menu(reply, &menu_post, event.position, window, cx)
-                                        }),
+                                        cx.listener(
+                                            move |card, event: &MouseDownEvent, window, cx| {
+                                                card.open_menu(
+                                                    reply,
+                                                    &menu_post,
+                                                    event.position,
+                                                    window,
+                                                    cx,
+                                                )
+                                            },
+                                        ),
                                     ),
                                 )
                             }),
@@ -657,7 +769,15 @@ impl CommentCard {
                     .child(match edit {
                         Some(edit) => div()
                             .pt(px(4.))
-                            .child(self.field("edit-field", &edit.area, t("Save", "Enregistrer"), Self::save_edit, true, window, cx))
+                            .child(self.field(
+                                "edit-field",
+                                &edit.area,
+                                t("Save", "Enregistrer"),
+                                Self::save_edit,
+                                true,
+                                window,
+                                cx,
+                            ))
                             .into_any_element(),
                         None => div()
                             .pt(px(2.))
@@ -667,8 +787,11 @@ impl CommentCard {
                                     color: Some(c(mentions::COLOR)),
                                     ..HighlightStyle::default()
                                 };
-                                let highlights: Vec<_> = named.into_iter().map(|range| (range, color)).collect();
-                                div().min_h(px(17.)).child(StyledText::new(line).with_highlights(highlights))
+                                let highlights: Vec<_> =
+                                    named.into_iter().map(|range| (range, color)).collect();
+                                div()
+                                    .min_h(px(17.))
+                                    .child(StyledText::new(line).with_highlights(highlights))
                             }))
                             .into_any_element(),
                     }),
@@ -688,20 +811,29 @@ impl CommentCard {
             .child(icon("check", 13.0, theme::TEXT_MUTED))
             .child(div().flex_1().child(t("Resolved", "Résolu")))
             .child(
-                icon_button("reopen", "comments-reopen", t("Reopen thread", "Rouvrir la conversation"))
-                    .debug_selector(|| format!("reopen-thread@{}", cell_name(cell.0, cell.1)))
-                    .on_click(
-                    cx.listener(move |card, _, window, cx| {
-                        card.tell_app(window, cx, move |app, _, cx| super::resolve(app, sheet, cell, false, cx))
-                    }),
-                ),
+                icon_button(
+                    "reopen",
+                    "comments-reopen",
+                    t("Reopen thread", "Rouvrir la conversation"),
+                )
+                .debug_selector(|| format!("reopen-thread@{}", cell_name(cell.0, cell.1)))
+                .on_click(cx.listener(move |card, _, window, cx| {
+                    card.tell_app(window, cx, move |app, _, cx| {
+                        super::resolve(app, sheet, cell, false, cx)
+                    })
+                })),
             )
             .child(
-                icon_button("delete-thread", "trash", t("Delete thread", "Supprimer la conversation")).on_click(
-                    cx.listener(move |card, _, window, cx| {
-                        card.tell_app(window, cx, move |app, _, cx| super::delete_thread(app, sheet, cell, cx))
-                    }),
-                ),
+                icon_button(
+                    "delete-thread",
+                    "trash",
+                    t("Delete thread", "Supprimer la conversation"),
+                )
+                .on_click(cx.listener(move |card, _, window, cx| {
+                    card.tell_app(window, cx, move |app, _, cx| {
+                        super::delete_thread(app, sheet, cell, cx)
+                    })
+                })),
             )
     }
 }
@@ -714,7 +846,10 @@ impl Render for CommentCard {
             Some(app) => {
                 let app = app.read(cx);
                 (
-                    app.wb.comment_at(self.sheet, row, col).and_then(Comment::as_thread).cloned(),
+                    app.wb
+                        .comment_at(self.sheet, row, col)
+                        .and_then(Comment::as_thread)
+                        .cloned(),
                     app.wb.locale,
                 )
             }
@@ -722,9 +857,9 @@ impl Render for CommentCard {
         };
         // An edit of a post that is no longer there (undone, deleted) ends.
         if let Some(edit) = &self.editing {
-            let exists = thread
-                .as_ref()
-                .is_some_and(|thread| !thread.resolved && edit.reply.is_none_or(|index| index < thread.replies.len()));
+            let exists = thread.as_ref().is_some_and(|thread| {
+                !thread.resolved && edit.reply.is_none_or(|index| index < thread.replies.len())
+            });
             if !exists {
                 self.editing = None;
             }
@@ -762,20 +897,32 @@ impl Render for CommentCard {
                 .on_mouse_down(
                     MouseButton::Left,
                     cx.listener(move |card, _, window, cx| {
-                        card.tell_app(window, cx, move |app, _, cx| super::pin_card(app, sheet, cell, cx))
+                        card.tell_app(window, cx, move |app, _, cx| {
+                            super::pin_card(app, sheet, cell, cx)
+                        })
                     }),
                 )
                 .on_hover(cx.listener(move |card, inside: &bool, window, cx| {
                     let inside = *inside;
-                    card.tell_app(window, cx, move |app, _, cx| super::pointer_on_card(app, inside, cx));
+                    card.tell_app(window, cx, move |app, _, cx| {
+                        super::pointer_on_card(app, inside, cx)
+                    });
                 }))
         };
 
         match &thread {
             Some(thread) => {
-                let mut posts = vec![self.post_view(None, &thread.first, thread.resolved, locale, window, cx)];
+                let mut posts =
+                    vec![self.post_view(None, &thread.first, thread.resolved, locale, window, cx)];
                 for (index, reply) in thread.replies.iter().enumerate() {
-                    posts.push(self.post_view(Some(index), reply, thread.resolved, locale, window, cx));
+                    posts.push(self.post_view(
+                        Some(index),
+                        reply,
+                        thread.resolved,
+                        locale,
+                        window,
+                        cx,
+                    ));
                 }
                 card = card
                     .when(thread.resolved, |d| d.child(self.resolved_band(cx)))
@@ -786,12 +933,23 @@ impl Render for CommentCard {
                             .flex_col()
                             .gap(px(12.))
                             .when(thread.resolved, |d| d.opacity(0.6))
-                            .when(!in_pane, |d| d.max_h(px((self.room - 150.0).max(80.0))).overflow_y_scroll())
+                            .when(!in_pane, |d| {
+                                d.max_h(px((self.room - 150.0).max(80.0)))
+                                    .overflow_y_scroll()
+                            })
                             .children(posts),
                     );
                 if !thread.resolved {
                     let reply = self.input.clone();
-                    card = card.child(self.field("reply-field", &reply, t("Post", "Publier"), Self::post, false, window, cx));
+                    card = card.child(self.field(
+                        "reply-field",
+                        &reply,
+                        t("Post", "Publier"),
+                        Self::post,
+                        false,
+                        window,
+                        cx,
+                    ));
                 }
             }
             None => {
@@ -804,10 +962,30 @@ impl Render for CommentCard {
                             .items_center()
                             .gap(px(8.))
                             .child(badge(name))
-                            .child(div().flex_1().truncate().font_weight(FontWeight::SEMIBOLD).child(name))
-                            .when(in_pane, |d| d.child(div().text_color(c(theme::TEXT_MUTED)).child(cell_name(row, col)))),
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .truncate()
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(name),
+                            )
+                            .when(in_pane, |d| {
+                                d.child(
+                                    div()
+                                        .text_color(c(theme::TEXT_MUTED))
+                                        .child(cell_name(row, col)),
+                                )
+                            }),
                     )
-                    .child(self.field("new-field", &input, t("Post", "Publier"), Self::post, true, window, cx));
+                    .child(self.field(
+                        "new-field",
+                        &input,
+                        t("Post", "Publier"),
+                        Self::post,
+                        true,
+                        window,
+                        cx,
+                    ));
             }
         }
         card
@@ -838,7 +1016,11 @@ impl Beside {
 
 /// Where the corner of a card of a given size goes (see `Beside`). Boxes
 /// are (x0, y0, x1, y1).
-pub(super) fn beside(size: (f32, f32), cell: (f32, f32, f32, f32), limits: (f32, f32, f32, f32)) -> (f32, f32) {
+pub(super) fn beside(
+    size: (f32, f32),
+    cell: (f32, f32, f32, f32),
+    limits: (f32, f32, f32, f32),
+) -> (f32, f32) {
     let mut x = cell.2 + GAP;
     if x + size.0 > limits.2 {
         x = cell.0 - GAP - size.0;
@@ -895,7 +1077,14 @@ impl Element for Beside {
         cx: &mut App,
     ) {
         let size = window.layout_bounds(*child).size;
-        let edges = |b: &Bounds<Pixels>| (f32::from(b.left()), f32::from(b.top()), f32::from(b.right()), f32::from(b.bottom()));
+        let edges = |b: &Bounds<Pixels>| {
+            (
+                f32::from(b.left()),
+                f32::from(b.top()),
+                f32::from(b.right()),
+                f32::from(b.bottom()),
+            )
+        };
         let (x, y) = beside(
             (f32::from(size.width), f32::from(size.height)),
             edges(&self.cell),
@@ -969,14 +1158,33 @@ mod tests {
         let limits = (30.0, 20.0, 800.0, 600.0);
         let size = (300.0, 200.0);
         // Room on the right: beside the cell, level with its top.
-        assert_eq!(beside(size, (200.0, 100.0, 264.0, 120.0), limits), (270.0, 100.0));
+        assert_eq!(
+            beside(size, (200.0, 100.0, 264.0, 120.0), limits),
+            (270.0, 100.0)
+        );
         // No room: on the other side.
-        assert_eq!(beside(size, (600.0, 100.0, 664.0, 120.0), limits), (294.0, 100.0));
+        assert_eq!(
+            beside(size, (600.0, 100.0, 664.0, 120.0), limits),
+            (294.0, 100.0)
+        );
         // A cell near the bottom: the card is pushed up; near the top of a
         // scrolled sheet: it stays under the headers.
-        assert_eq!(beside(size, (200.0, 560.0, 264.0, 580.0), limits), (270.0, 400.0));
-        assert_eq!(beside(size, (200.0, 5.0, 264.0, 25.0), limits), (270.0, 20.0));
+        assert_eq!(
+            beside(size, (200.0, 560.0, 264.0, 580.0), limits),
+            (270.0, 400.0)
+        );
+        assert_eq!(
+            beside(size, (200.0, 5.0, 264.0, 25.0), limits),
+            (270.0, 20.0)
+        );
         // A grid too narrow for either side: inside it all the same.
-        assert_eq!(beside(size, (100.0, 100.0, 164.0, 120.0), (30.0, 20.0, 340.0, 600.0)), (40.0, 100.0));
+        assert_eq!(
+            beside(
+                size,
+                (100.0, 100.0, 164.0, 120.0),
+                (30.0, 20.0, 340.0, 600.0)
+            ),
+            (40.0, 100.0)
+        );
     }
 }

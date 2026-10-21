@@ -10,7 +10,9 @@ use super::geometry::{self, Placed};
 use super::render::{self, Dress};
 use gpui::{App, RenderImage, Window};
 use image::{Frame, RgbaImage};
-use opensheet_engine::drawing::{NEUTRAL_TEMPERATURE, Picture, PictureAdjust, ShapePreset, image_info};
+use opensheet_engine::drawing::{
+    NEUTRAL_TEMPERATURE, Picture, PictureAdjust, ShapePreset, image_info,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::io::Cursor;
@@ -69,7 +71,10 @@ impl Bitmap {
             for x in 0..width {
                 let mut sum = [0u32; 4];
                 for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                    let at = self.offset((x * 2 + dx).min(self.width - 1), (y * 2 + dy).min(self.height - 1));
+                    let at = self.offset(
+                        (x * 2 + dx).min(self.width - 1),
+                        (y * 2 + dy).min(self.height - 1),
+                    );
                     let alpha = self.data[at + 3] as u32;
                     for channel in 0..3 {
                         sum[channel] += self.data[at + channel] as u32 * alpha;
@@ -87,7 +92,11 @@ impl Bitmap {
                 }
             }
         }
-        Bitmap { width, height, data }
+        Bitmap {
+            width,
+            height,
+            data,
+        }
     }
 
     /// The picture flipped, then turned by a number of quarter turns
@@ -116,7 +125,11 @@ impl Bitmap {
                 data.extend_from_slice(&self.data[at..at + 4]);
             }
         }
-        Bitmap { width, height, data }
+        Bitmap {
+            width,
+            height,
+            data,
+        }
     }
 
     /// The colour at a point between pixels (their centres are at whole
@@ -133,7 +146,12 @@ impl Bitmap {
             (1, 1, fx * fy),
         ] {
             let (px, py) = (x0 as i64 + dx, y0 as i64 + dy);
-            if weight <= 0.0 || px < 0 || py < 0 || px >= self.width as i64 || py >= self.height as i64 {
+            if weight <= 0.0
+                || px < 0
+                || py < 0
+                || px >= self.width as i64
+                || py >= self.height as i64
+            {
                 continue;
             }
             let at = self.offset(px as u32, py as u32);
@@ -180,7 +198,10 @@ impl Bitmap {
             for x in 0..width {
                 // The centre of the pixel, from the centre of the box,
                 // turned back into the frame.
-                let (px, py) = (x as f32 + 0.5 - width as f32 / 2.0, y as f32 + 0.5 - height as f32 / 2.0);
+                let (px, py) = (
+                    x as f32 + 0.5 - width as f32 / 2.0,
+                    y as f32 + 0.5 - height as f32 / 2.0,
+                );
                 let (lx, ly) = (px * cos + py * sin, -px * sin + py * cos);
                 let (mut u, mut v) = (lx / frame_w + 0.5, ly / frame_h + 0.5);
                 if flip_h {
@@ -197,7 +218,11 @@ impl Bitmap {
                 data[at..at + 4].copy_from_slice(&self.sample(sx, sy));
             }
         }
-        Bitmap { width, height, data }
+        Bitmap {
+            width,
+            height,
+            data,
+        }
     }
 
     /// What a frame shows of the picture once it is adjusted: the part
@@ -231,15 +256,29 @@ impl Bitmap {
                 if recolour {
                     // Stored blue first.
                     let level = |v: u8| v as f32 / 255.0;
-                    let [red, green, blue, alpha] = adjust.apply([level(pixel[2]), level(pixel[1]), level(pixel[0]), level(pixel[3])]);
+                    let [red, green, blue, alpha] = adjust.apply([
+                        level(pixel[2]),
+                        level(pixel[1]),
+                        level(pixel[0]),
+                        level(pixel[3]),
+                    ]);
                     let byte = |v: f32| (v * 255.0).round() as u8;
-                    data[to..to + 4].copy_from_slice(&[byte(blue), byte(green), byte(red), byte(alpha)]);
+                    data[to..to + 4].copy_from_slice(&[
+                        byte(blue),
+                        byte(green),
+                        byte(red),
+                        byte(alpha),
+                    ]);
                 } else {
                     data[to..to + 4].copy_from_slice(pixel);
                 }
             }
         }
-        let mut out = Bitmap { width, height, data };
+        let mut out = Bitmap {
+            width,
+            height,
+            data,
+        };
         if adjust.shape != ShapePreset::Rect {
             out.cut_to(adjust.shape, natural);
         }
@@ -253,8 +292,12 @@ impl Bitmap {
     /// over the whole bitmap.
     pub(super) fn cut_to(&mut self, shape: ShapePreset, natural: (f32, f32)) {
         let placed = Placed::plain(0.0, 0.0, self.width as f32, self.height as f32);
-        let outlines = geometry::flatten(&shape.path(natural.0.max(1.0), natural.1.max(1.0)), &placed);
-        let outlines: Vec<_> = outlines.into_iter().filter(|line| line.closed && line.points.len() >= 3).collect();
+        let outlines =
+            geometry::flatten(&shape.path(natural.0.max(1.0), natural.1.max(1.0)), &placed);
+        let outlines: Vec<_> = outlines
+            .into_iter()
+            .filter(|line| line.closed && line.points.len() >= 3)
+            .collect();
         let mut crossings: Vec<f32> = Vec::new();
         for y in 0..self.height {
             // Where the outlines cross the middle of this row.
@@ -301,7 +344,13 @@ impl Bitmap {
     /// Which pixels of a frame `width` by `height` lie inside the
     /// outline a picture is cut to, the frame flipped as the picture is.
     /// `None` for a rectangle, which holds them all.
-    pub(super) fn outline_mask(shape: ShapePreset, width: u32, height: u32, natural: (f32, f32), flips: (bool, bool)) -> Option<Vec<bool>> {
+    pub(super) fn outline_mask(
+        shape: ShapePreset,
+        width: u32,
+        height: u32,
+        natural: (f32, f32),
+        flips: (bool, bool),
+    ) -> Option<Vec<bool>> {
         if shape == ShapePreset::Rect {
             return None;
         }
@@ -312,14 +361,26 @@ impl Bitmap {
         };
         white.cut_to(shape, natural);
         let white = white.oriented(flips.0, flips.1, 0);
-        Some(white.data.chunks_exact(4).map(|pixel| pixel[3] > 0).collect())
+        Some(
+            white
+                .data
+                .chunks_exact(4)
+                .map(|pixel| pixel[3] > 0)
+                .collect(),
+        )
     }
 
     /// The picture dressed (`render::compose`): `self` is the picture
     /// as its frame shows it, not yet flipped. The result is centred on
     /// the frame, which takes the returned share of its width and
     /// height.
-    pub(super) fn dressed(&self, shape: ShapePreset, natural: (f32, f32), flips: (bool, bool), dress: &Dress) -> (Bitmap, (f32, f32)) {
+    pub(super) fn dressed(
+        &self,
+        shape: ShapePreset,
+        natural: (f32, f32),
+        flips: (bool, bool),
+        dress: &Dress,
+    ) -> (Bitmap, (f32, f32)) {
         let body = self.oriented(flips.0, flips.1, 0);
         let mask = Bitmap::outline_mask(shape, body.width, body.height, natural, flips);
         let k = body.width as f32 / natural.0.max(1.0);
@@ -372,14 +433,30 @@ enum Look {
 /// drawn for.
 type Treatment = (Vec<u32>, u32, (u32, u32));
 
-fn treatment(adjust: &PictureAdjust, soft: f32, natural: (f32, f32), dress: Option<&Dress>) -> Option<Treatment> {
+fn treatment(
+    adjust: &PictureAdjust,
+    soft: f32,
+    natural: (f32, f32),
+    dress: Option<&Dress>,
+) -> Option<Treatment> {
     if *adjust == PictureAdjust::default() && soft <= 0.0 && dress.is_none() {
         return None;
     }
     let mut bits: Vec<u32> = adjust.crop.iter().map(|v| v.to_bits()).collect();
-    bits.extend([adjust.transparency, adjust.brightness, adjust.contrast, adjust.saturation, adjust.temperature].map(f32::to_bits));
+    bits.extend(
+        [
+            adjust.transparency,
+            adjust.brightness,
+            adjust.contrast,
+            adjust.saturation,
+            adjust.temperature,
+        ]
+        .map(f32::to_bits),
+    );
     // Told apart by its name: the enum may grow kinds that carry data.
-    bits.push(adjust.shape.ooxml_name().bytes().fold(0u32, |sum, byte| sum.wrapping_mul(31).wrapping_add(byte as u32)));
+    bits.push(adjust.shape.ooxml_name().bytes().fold(0u32, |sum, byte| {
+        sum.wrapping_mul(31).wrapping_add(byte as u32)
+    }));
     use opensheet_engine::drawing::Recolor;
     bits.extend(match adjust.recolor {
         Recolor::None => [0, 0, 0],
@@ -394,7 +471,11 @@ fn treatment(adjust: &PictureAdjust, soft: f32, natural: (f32, f32), dress: Opti
         bits.extend(dress.bits());
     }
     let shaped = adjust.shape != ShapePreset::Rect || dress.is_some();
-    let natural = if shaped { (natural.0.round() as u32, natural.1.round() as u32) } else { (0, 0) };
+    let natural = if shaped {
+        (natural.0.round() as u32, natural.1.round() as u32)
+    } else {
+        (0, 0)
+    };
     Some((bits, (soft * 1000.0).round() as u32, natural))
 }
 
@@ -448,8 +529,20 @@ fn level_for(width: u32, height: u32, shown: (f32, f32)) -> u8 {
 /// What to paint for a picture in a frame: a bitmap and the box (x0, y0,
 /// x1, y1) it is stretched over. `scale` is the number of device pixels
 /// per pixel. `None` when the picture cannot be decoded.
-pub fn image_for(picture: &Picture, placed: &Placed, scale: f32) -> Option<(Arc<RenderImage>, (f32, f32, f32, f32))> {
-    image_as(picture, &picture.adjust, 0.0, (placed.width().abs(), placed.height().abs()), placed, scale, None)
+pub fn image_for(
+    picture: &Picture,
+    placed: &Placed,
+    scale: f32,
+) -> Option<(Arc<RenderImage>, (f32, f32, f32, f32))> {
+    image_as(
+        picture,
+        &picture.adjust,
+        0.0,
+        (placed.width().abs(), placed.height().abs()),
+        placed,
+        scale,
+        None,
+    )
 }
 
 /// The image file a picture is drawn from and what is still to be done
@@ -496,12 +589,18 @@ pub fn image_as(
             levels: Bitmap::decode(bytes).into_iter().collect(),
             shown: HashMap::new(),
         });
-        let (full_w, full_h) = decoded.levels.first().map(|full| (full.width, full.height))?;
+        let (full_w, full_h) = decoded
+            .levels
+            .first()
+            .map(|full| (full.width, full.height))?;
         let shown = (placed.width().abs() * scale, placed.height().abs() * scale);
         // A cropped picture shows a part of the image only: the whole of
         // it would be that much larger.
         let kept = |a: f32, b: f32| (1.0 - a - b).clamp(0.05, 1.0);
-        let whole = (shown.0 / kept(adjust.crop[0], adjust.crop[2]), shown.1 / kept(adjust.crop[1], adjust.crop[3]));
+        let whole = (
+            shown.0 / kept(adjust.crop[0], adjust.crop[2]),
+            shown.1 / kept(adjust.crop[1], adjust.crop[3]),
+        );
         let level = level_for(full_w, full_h, whole);
         while decoded.levels.len() <= level as usize {
             let smaller = decoded.levels[decoded.levels.len() - 1].halved();
@@ -541,7 +640,12 @@ pub fn image_as(
             let (source, share, flipped) = match dress {
                 Some(dress) => {
                     let share;
-                    (composed, share) = source.dressed(adjust.shape, natural, (placed.flip_h, placed.flip_v), dress);
+                    (composed, share) = source.dressed(
+                        adjust.shape,
+                        natural,
+                        (placed.flip_h, placed.flip_v),
+                        dress,
+                    );
                     (&composed, share, true)
                 }
                 None => (source, (1.0, 1.0), false),
@@ -579,14 +683,24 @@ pub fn image_as(
                 }
             };
             let image = bitmap.into_image()?;
-            decoded.shown.insert(key.clone(), Shown { image, share, used: repaint });
+            decoded.shown.insert(
+                key.clone(),
+                Shown {
+                    image,
+                    share,
+                    used: repaint,
+                },
+            );
         }
         let entry = decoded.shown.get_mut(&key)?;
         entry.used = repaint;
         // A dressed picture is larger than its frame, about the same
         // middle.
         let (cx, cy) = placed.centre();
-        let (half_w, half_h) = (placed.width() / entry.share.0 / 2.0, placed.height() / entry.share.1 / 2.0);
+        let (half_w, half_h) = (
+            placed.width() / entry.share.0 / 2.0,
+            placed.height() / entry.share.1 / 2.0,
+        );
         let grown = Placed {
             x0: cx - half_w,
             y0: cy - half_h,
@@ -594,14 +708,25 @@ pub fn image_as(
             y1: cy + half_h,
             ..*placed
         };
-        Some((entry.image.clone(), if entry.share == (1.0, 1.0) { placed.extent() } else { grown.extent() }))
+        Some((
+            entry.image.clone(),
+            if entry.share == (1.0, 1.0) {
+                placed.extent()
+            } else {
+                grown.extent()
+            },
+        ))
     })
 }
 
 /// A bitmap that is made once and painted many times: the one of
 /// `slot` when it was made for `key`, else what `build` makes now (the
 /// bitmap and a size to remember with it), which takes its place.
-pub fn cached_image(slot: u64, key: Vec<u32>, build: impl FnOnce() -> Option<(Bitmap, (f32, f32))>) -> Option<(Arc<RenderImage>, (f32, f32))> {
+pub fn cached_image(
+    slot: u64,
+    key: Vec<u32>,
+    build: impl FnOnce() -> Option<(Bitmap, (f32, f32))>,
+) -> Option<(Arc<RenderImage>, (f32, f32))> {
     CACHE.with_borrow_mut(|cache| {
         let repaint = cache.repaint;
         if let Some((made_for, size, shown)) = cache.others.get_mut(&slot) {
@@ -637,7 +762,10 @@ pub fn small_copy(picture: &Picture, size: (u32, u32)) -> Option<Bitmap> {
             levels: Bitmap::decode(bytes).into_iter().collect(),
             shown: HashMap::new(),
         });
-        let (full_w, full_h) = decoded.levels.first().map(|full| (full.width, full.height))?;
+        let (full_w, full_h) = decoded
+            .levels
+            .first()
+            .map(|full| (full.width, full.height))?;
         let level = level_for(full_w, full_h, (size.0 as f32, size.1 as f32)) as usize;
         while decoded.levels.len() <= level {
             let smaller = decoded.levels[decoded.levels.len() - 1].halved();
@@ -655,17 +783,25 @@ pub fn png_of(bitmap: &Bitmap) -> Option<Vec<u8>> {
     }
     let pixels = RgbaImage::from_raw(bitmap.width, bitmap.height, rgba)?;
     let mut png = Cursor::new(Vec::new());
-    image::DynamicImage::ImageRgba8(pixels).write_to(&mut png, image::ImageFormat::Png).ok()?;
+    image::DynamicImage::ImageRgba8(pixels)
+        .write_to(&mut png, image::ImageFormat::Png)
+        .ok()?;
     Some(png.into_inner())
 }
 
 /// A bitmap without transparency as a JPEG file.
 pub fn jpeg_of(bitmap: &Bitmap) -> Option<Vec<u8>> {
-    let rgb: Vec<u8> = bitmap.data.chunks_exact(4).flat_map(|pixel| [pixel[2], pixel[1], pixel[0]]).collect();
+    let rgb: Vec<u8> = bitmap
+        .data
+        .chunks_exact(4)
+        .flat_map(|pixel| [pixel[2], pixel[1], pixel[0]])
+        .collect();
     let pixels = image::RgbImage::from_raw(bitmap.width, bitmap.height, rgb)?;
     let mut jpeg = Cursor::new(Vec::new());
     let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut jpeg, 92);
-    image::DynamicImage::ImageRgb8(pixels).write_with_encoder(encoder).ok()?;
+    image::DynamicImage::ImageRgb8(pixels)
+        .write_with_encoder(encoder)
+        .ok()?;
     Some(jpeg.into_inner())
 }
 
@@ -674,7 +810,13 @@ pub fn jpeg_of(bitmap: &Bitmap) -> Option<Vec<u8>> {
 /// each pixel of the sheet, with everything the picture wears, and the
 /// share of the bitmap's width and height the frame takes. The bitmap
 /// is flipped but not turned: the page turns it.
-pub fn printed(picture: &Picture, soft: f32, size: (f32, f32), flips: (bool, bool), dress: &Dress) -> Option<(Bitmap, (f32, f32))> {
+pub fn printed(
+    picture: &Picture,
+    soft: f32,
+    size: (f32, f32),
+    flips: (bool, bool),
+    dress: &Dress,
+) -> Option<(Bitmap, (f32, f32))> {
     /// Pixels of the page to a pixel of the sheet: 288 to the inch.
     const DENSITY: f32 = 3.0;
     let (bytes, adjust) = source_of(picture, &picture.adjust);
@@ -759,7 +901,11 @@ mod tests {
                 data.extend_from_slice(&[x as u8, y as u8, 0, 255]);
             }
         }
-        Bitmap { width, height, data }
+        Bitmap {
+            width,
+            height,
+            data,
+        }
     }
 
     fn at(bitmap: &Bitmap, x: u32, y: u32) -> (u8, u8) {
@@ -779,7 +925,10 @@ mod tests {
         // read from the bottom.
         let quarter = source.oriented(false, false, 1);
         assert_eq!((quarter.width, quarter.height), (2, 3));
-        assert_eq!((at(&quarter, 0, 0), at(&quarter, 1, 0), at(&quarter, 0, 2)), ((0, 1), (0, 0), (2, 1)));
+        assert_eq!(
+            (at(&quarter, 0, 0), at(&quarter, 1, 0), at(&quarter, 0, 2)),
+            ((0, 1), (0, 0), (2, 1))
+        );
         let half = source.oriented(false, false, 2);
         assert_eq!(at(&half, 0, 0), (2, 1));
         let three = source.oriented(false, false, 3);
@@ -820,7 +969,10 @@ mod tests {
         // A quarter turn agrees with moving the pixels.
         let turned = source.turned((4.0, 4.0), 90.0, false, false);
         assert_eq!(turned, source.oriented(false, false, 1));
-        assert_eq!(source.turned((4.0, 4.0), 0.0, true, false), source.oriented(true, false, 0));
+        assert_eq!(
+            source.turned((4.0, 4.0), 0.0, true, false),
+            source.oriented(true, false, 0)
+        );
         // At 45 degrees the box is wider, and its corners are empty.
         let diagonal = numbered(40, 40).turned((40.0, 40.0), 45.0, false, false);
         assert_eq!((diagonal.width, diagonal.height), (57, 57));
@@ -835,7 +987,9 @@ mod tests {
     fn a_picture_is_decoded_once_and_each_look_made_once() {
         let pixels = RgbaImage::from_raw(8, 4, vec![200; 8 * 4 * 4]).unwrap();
         let mut png = Cursor::new(Vec::new());
-        image::DynamicImage::ImageRgba8(pixels).write_to(&mut png, image::ImageFormat::Png).unwrap();
+        image::DynamicImage::ImageRgba8(pixels)
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
         let picture = Picture::new(png.into_inner()).unwrap();
         let placed = Placed::plain(10.0, 20.0, 18.0, 24.0);
         let (first, bounds) = image_for(&picture, &placed, 1.0).unwrap();
@@ -846,7 +1000,10 @@ mod tests {
         assert!(Arc::ptr_eq(&first, &again));
         // A quarter turn is another bitmap, lying on its side, drawn over
         // the box of the turned frame.
-        let turned = Placed { rotation: 90.0, ..placed };
+        let turned = Placed {
+            rotation: 90.0,
+            ..placed
+        };
         let (side, bounds) = image_for(&picture, &turned, 1.0).unwrap();
         assert_eq!((side.size(0).width.0, side.size(0).height.0), (4, 8));
         assert_eq!(bounds, (12.0, 18.0, 16.0, 26.0));
@@ -855,7 +1012,10 @@ mod tests {
         let (reduced, _) = image_for(&picture, &small, 1.0).unwrap();
         assert_eq!((reduced.size(0).width.0, reduced.size(0).height.0), (2, 1));
         // By an odd angle: the bitmap of the upright box around it.
-        let tilted = Placed { rotation: 45.0, ..placed };
+        let tilted = Placed {
+            rotation: 45.0,
+            ..placed
+        };
         let (odd, _) = image_for(&picture, &tilted, 1.0).unwrap();
         assert_eq!((odd.size(0).width.0, odd.size(0).height.0), (9, 9));
         // Bytes that are no picture give nothing to paint.
@@ -872,7 +1032,9 @@ mod tests {
         // blue.
         let pixels = RgbaImage::from_raw(2, 1, vec![255, 0, 0, 255, 0, 0, 255, 128]).unwrap();
         let mut png = Cursor::new(Vec::new());
-        image::DynamicImage::ImageRgba8(pixels.clone()).write_to(&mut png, image::ImageFormat::Png).unwrap();
+        image::DynamicImage::ImageRgba8(pixels.clone())
+            .write_to(&mut png, image::ImageFormat::Png)
+            .unwrap();
         let png = png.into_inner();
         let bitmap = Bitmap::decode(&png).unwrap();
         assert_eq!((bitmap.width, bitmap.height), (2, 1));
@@ -883,7 +1045,9 @@ mod tests {
         // a PNG.
         assert_eq!(importable(png.clone()), Some(png));
         let mut tiff = Cursor::new(Vec::new());
-        image::DynamicImage::ImageRgba8(pixels).write_to(&mut tiff, image::ImageFormat::Tiff).unwrap();
+        image::DynamicImage::ImageRgba8(pixels)
+            .write_to(&mut tiff, image::ImageFormat::Tiff)
+            .unwrap();
         let converted = importable(tiff.into_inner()).unwrap();
         assert!(converted.starts_with(b"\x89PNG"));
         assert_eq!(Bitmap::decode(&converted).unwrap(), bitmap);
@@ -898,35 +1062,74 @@ mod tests {
         let plain = PictureAdjust::default();
         assert_eq!(source.adjusted(&plain, 0.0, (8.0, 4.0)), source);
         // A quarter off the left and half off the bottom.
-        let cropped = source.adjusted(&PictureAdjust { crop: [0.25, 0.0, 0.0, 0.5], ..plain }, 0.0, (6.0, 2.0));
+        let cropped = source.adjusted(
+            &PictureAdjust {
+                crop: [0.25, 0.0, 0.0, 0.5],
+                ..plain
+            },
+            0.0,
+            (6.0, 2.0),
+        );
         assert_eq!((cropped.width, cropped.height), (6, 2));
         assert_eq!((at(&cropped, 0, 0), at(&cropped, 5, 1)), ((2, 0), (7, 1)));
         // A frame wider than the image: empty room at its left.
-        let padded = source.adjusted(&PictureAdjust { crop: [-0.25, 0.0, 0.0, 0.0], ..plain }, 0.0, (10.0, 4.0));
+        let padded = source.adjusted(
+            &PictureAdjust {
+                crop: [-0.25, 0.0, 0.0, 0.0],
+                ..plain
+            },
+            0.0,
+            (10.0, 4.0),
+        );
         assert_eq!(padded.width, 10);
         assert_eq!(padded.data[padded.offset(1, 0) + 3], 0);
         assert_eq!(at(&padded, 2, 0), (0, 0));
         // Half transparent.
-        let faded = source.adjusted(&PictureAdjust { transparency: 0.5, ..plain }, 0.0, (8.0, 4.0));
+        let faded = source.adjusted(
+            &PictureAdjust {
+                transparency: 0.5,
+                ..plain
+            },
+            0.0,
+            (8.0, 4.0),
+        );
         assert_eq!(faded.data[3], 128);
         // Two colours: the black of the first pixel becomes the dark one
         // (pixels are stored blue first).
-        let duo = PictureAdjust { recolor: Recolor::Duotone(Color(0x102030), Color(0xFFFFFF)), ..plain };
-        assert_eq!(&source.adjusted(&duo, 0.0, (8.0, 4.0)).data[..4], &[0x30, 0x20, 0x10, 255]);
+        let duo = PictureAdjust {
+            recolor: Recolor::Duotone(Color(0x102030), Color(0xFFFFFF)),
+            ..plain
+        };
+        assert_eq!(
+            &source.adjusted(&duo, 0.0, (8.0, 4.0)).data[..4],
+            &[0x30, 0x20, 0x10, 255]
+        );
         // Cut to an ellipse: the corners go, the middle stays.
-        let mut white = Bitmap { width: 20, height: 20, data: vec![255; 1600] };
+        let mut white = Bitmap {
+            width: 20,
+            height: 20,
+            data: vec![255; 1600],
+        };
         white.cut_to(ShapePreset::Ellipse, (20.0, 20.0));
         assert_eq!(white.data[white.offset(0, 0) + 3], 0);
         assert_eq!(white.data[white.offset(19, 19) + 3], 0);
         assert_eq!(white.data[white.offset(10, 10) + 3], 255);
         assert_eq!(white.data[white.offset(10, 0) + 3], 255);
         // Soft edges: clear at the rim, whole in the middle.
-        let soft = Bitmap { width: 20, height: 20, data: vec![255; 1600] }.adjusted(&plain, 0.25, (20.0, 20.0));
+        let soft = Bitmap {
+            width: 20,
+            height: 20,
+            data: vec![255; 1600],
+        }
+        .adjusted(&plain, 0.25, (20.0, 20.0));
         assert!(soft.data[soft.offset(0, 10) + 3] < 40);
         assert!(soft.data[soft.offset(2, 10) + 3] < 255);
         assert_eq!(soft.data[soft.offset(10, 10) + 3], 255);
         // Each look is a bitmap of its own.
-        assert_ne!(treatment(&duo, 0.0, (8.0, 4.0), None), treatment(&plain, 0.1, (8.0, 4.0), None));
+        assert_ne!(
+            treatment(&duo, 0.0, (8.0, 4.0), None),
+            treatment(&plain, 0.1, (8.0, 4.0), None)
+        );
         assert_eq!(treatment(&plain, 0.0, (8.0, 4.0), None), None);
     }
 }

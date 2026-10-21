@@ -3,8 +3,8 @@
 //! are the engine's (`cell_style.rs`).
 
 use super::{Cmd, named};
-use crate::features::Command;
 use crate::app::{ExcelApp, MenuEntry, Popup, PopupKind};
+use crate::features::Command;
 use crate::features::{Cx, Intent, format_cells};
 use crate::grid::FontResolver;
 use crate::i18n::{t, t_ctx};
@@ -13,8 +13,8 @@ use crate::text_input::TextInput;
 use crate::theme::{self, c};
 use crate::widgets::{self, Button, Checkbox, Sketch, TextField, dialog, label};
 use gpui::{
-    AnyElement, Context, Entity, Focusable, FontStyle, FontWeight, Hsla, MouseButton, MouseDownEvent, SharedString,
-    WeakEntity, Window, div, point, prelude::*, px,
+    AnyElement, Context, Entity, Focusable, FontStyle, FontWeight, Hsla, MouseButton,
+    MouseDownEvent, SharedString, WeakEntity, Window, div, point, prelude::*, px,
 };
 use opensheet_engine::cell_style::{CellStyle, StyleError, StyleGroup, StyleParts};
 use opensheet_engine::style::{Border, BorderStyle, Underline};
@@ -73,7 +73,10 @@ pub(super) fn display_name(style: &CellStyle) -> String {
 fn group_title(group: StyleGroup) -> &'static str {
     match group {
         StyleGroup::Custom => t_ctx("styles", "Custom", "Personnalisé"),
-        StyleGroup::GoodBadNeutral => t("Good, Bad and Neutral", "Satisfaisant, insatisfaisant et neutre"),
+        StyleGroup::GoodBadNeutral => t(
+            "Good, Bad and Neutral",
+            "Satisfaisant, insatisfaisant et neutre",
+        ),
         StyleGroup::DataModel => t("Data and Model", "Données et modèle"),
         StyleGroup::TitlesHeadings => t("Titles and Headings", "Titres et en-têtes"),
         StyleGroup::Themed => t("Themed Cell Styles", "Styles de cellules avec thème"),
@@ -96,7 +99,15 @@ pub(super) fn sections(app: &ExcelApp) -> Vec<(StyleGroup, Vec<CellStyle>)> {
     let all = app.wb.all_cell_styles();
     GROUPS
         .into_iter()
-        .map(|group| (group, all.iter().filter(|style| style.group() == group).cloned().collect::<Vec<_>>()))
+        .map(|group| {
+            (
+                group,
+                all.iter()
+                    .filter(|style| style.group() == group)
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            )
+        })
         .filter(|(_, styles)| !styles.is_empty())
         .collect()
 }
@@ -123,7 +134,10 @@ pub(super) fn delete(app: &mut ExcelApp, name: &str, cx: &mut Cx) {
 
 fn error_text(error: StyleError) -> &'static str {
     match error {
-        StyleError::NameTaken => t("This style name already exists.", "Ce nom de style existe déjà."),
+        StyleError::NameTaken => t(
+            "This style name already exists.",
+            "Ce nom de style existe déjà.",
+        ),
         _ => t("Style name is not valid.", "Nom de style non valide."),
     }
 }
@@ -139,9 +153,19 @@ pub(super) enum Purpose {
 
 /// What OK does in the dialog. False, after saying why, when the name
 /// will not do.
-pub(super) fn save(app: &mut ExcelApp, purpose: &Purpose, name: &str, style: Style, includes: StyleParts, cx: &mut Cx) -> bool {
+pub(super) fn save(
+    app: &mut ExcelApp,
+    purpose: &Purpose,
+    name: &str,
+    style: Style,
+    includes: StyleParts,
+    cx: &mut Cx,
+) -> bool {
     let (done, label) = match purpose {
-        Purpose::New => (app.wb.add_cell_style(name, style, includes), t("New Cell Style", "Nouveau style de cellule")),
+        Purpose::New => (
+            app.wb.add_cell_style(name, style, includes),
+            t("New Cell Style", "Nouveau style de cellule"),
+        ),
         Purpose::Modify(old) => (
             app.wb.modify_cell_style(old, style, includes),
             t("Modify Cell Style", "Modifier le style de cellule"),
@@ -183,14 +207,31 @@ fn draw_sample(s: &mut Sketch, style: &Style, text: &str, fonts: &FontResolver) 
         family: fonts.resolve(&style.font.name),
         features: Default::default(),
         fallbacks: None,
-        weight: if style.font.bold { FontWeight::BOLD } else { FontWeight::NORMAL },
-        style: if style.font.italic { FontStyle::Italic } else { FontStyle::Normal },
+        weight: if style.font.bold {
+            FontWeight::BOLD
+        } else {
+            FontWeight::NORMAL
+        },
+        style: if style.font.italic {
+            FontStyle::Italic
+        } else {
+            FontStyle::Normal
+        },
     };
     // Points to pixels, kept inside the box.
     let size = (style.font.size_pt() * 96.0 / 72.0).min(h - 8.0);
     let color = hsla(style.font.color, 0x000000);
     let underline = style.font.underline != Underline::None;
-    s.styled_text(text, 6.0, (h - size * 1.25) / 2.0, &font, size, color, underline, style.font.strike);
+    s.styled_text(
+        text,
+        6.0,
+        (h - size * 1.25) / 2.0,
+        &font,
+        size,
+        color,
+        underline,
+        style.font.strike,
+    );
     let mut side = |border: &Border, x0: f32, y0: f32, x1: f32, y1: f32, across: bool| {
         if border.is_none() {
             return;
@@ -232,9 +273,14 @@ const THUMB_H: f32 = 26.0;
 const PER_ROW: usize = 6;
 
 pub(super) fn open_gallery(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let anchor = app.command_anchor.and_then(|id| app.anchors.borrow().get(id).copied());
+    let anchor = app
+        .command_anchor
+        .and_then(|id| app.anchors.borrow().get(id).copied());
     let pos = match anchor {
-        Some(bounds) => point(bounds.origin.x, bounds.origin.y + bounds.size.height + px(2.)),
+        Some(bounds) => point(
+            bounds.origin.x,
+            bounds.origin.y + bounds.size.height + px(2.),
+        ),
         None => window.mouse_position(),
     };
     let (row, col) = app.active();
@@ -266,11 +312,20 @@ pub(super) fn style_menu(app: &ExcelApp, style: &CellStyle) -> Vec<MenuEntry> {
     let kept = app.wb.cell_styles.iter().any(|own| own.name == style.name);
     let (apply, modify, duplicate, remove) = (name.clone(), name.clone(), name.clone(), name);
     vec![
-        MenuEntry::new(t("Apply", "Appliquer"), move |a, _, cx| self::apply(a, &apply, cx)),
-        MenuEntry::new(t("Modify...", "Modifier..."), move |a, window, cx| open_dialog(a, Purpose::Modify(modify.clone()), None, window, cx))
-            .disabled(normal),
-        MenuEntry::new(t("Duplicate...", "Dupliquer..."), move |a, window, cx| open_dialog(a, Purpose::New, Some(&duplicate), window, cx)),
-        MenuEntry::new(t("Delete", "Supprimer"), move |a, _, cx| delete(a, &remove, cx)).disabled(!kept),
+        MenuEntry::new(t("Apply", "Appliquer"), move |a, _, cx| {
+            self::apply(a, &apply, cx)
+        }),
+        MenuEntry::new(t("Modify...", "Modifier..."), move |a, window, cx| {
+            open_dialog(a, Purpose::Modify(modify.clone()), None, window, cx)
+        })
+        .disabled(normal),
+        MenuEntry::new(t("Duplicate...", "Dupliquer..."), move |a, window, cx| {
+            open_dialog(a, Purpose::New, Some(&duplicate), window, cx)
+        }),
+        MenuEntry::new(t("Delete", "Supprimer"), move |a, _, cx| {
+            delete(a, &remove, cx)
+        })
+        .disabled(!kept),
     ]
 }
 
@@ -286,9 +341,15 @@ impl Gallery {
             .debug_selector(|| format!("cell-style-{}", style.name))
             .m(px(2.))
             .border_1()
-            .border_color(c(if current { theme::ACCENT } else { theme::BORDER }))
+            .border_color(c(if current {
+                theme::ACCENT
+            } else {
+                theme::BORDER
+            }))
             .hover(|s| s.border_color(c(theme::ACCENT)))
-            .child(widgets::preview(THUMB_W - 6.0, THUMB_H, move |s| draw_sample(s, &format, &text, &fonts)))
+            .child(widgets::preview(THUMB_W - 6.0, THUMB_H, move |s| {
+                draw_sample(s, &format, &text, &fonts)
+            }))
             .on_click(move |_, window, cx| {
                 app.update(cx, |app, cx| {
                     app.close_popup(window, cx);
@@ -335,7 +396,14 @@ impl Render for Gallery {
                     self.thumb(index, style)
                 })
                 .collect();
-            body.push(div().w(px(PER_ROW as f32 * THUMB_W)).flex().flex_wrap().children(thumbs).into_any_element());
+            body.push(
+                div()
+                    .w(px(PER_ROW as f32 * THUMB_W))
+                    .flex()
+                    .flex_wrap()
+                    .children(thumbs)
+                    .into_any_element(),
+            );
         }
         let app = self.app.clone();
         div()
@@ -383,7 +451,13 @@ fn proposed_name(app: &ExcelApp) -> String {
 /// Open the dialog: for a new style made from the format of the active
 /// cell (or, with `copy_of`, from another style: Duplicate), or to change
 /// a style.
-pub(super) fn open_dialog(app: &mut ExcelApp, purpose: Purpose, copy_of: Option<&str>, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_dialog(
+    app: &mut ExcelApp,
+    purpose: Purpose,
+    copy_of: Option<&str>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let source = match (&purpose, copy_of) {
         (Purpose::Modify(name), _) => app.wb.cell_style(name),
         (Purpose::New, Some(name)) => app.wb.cell_style(name),
@@ -429,7 +503,9 @@ impl StyleDialog {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         let name = self.name.read(cx).text().to_string();
         let (purpose, style, includes) = (self.purpose.clone(), self.style.clone(), self.includes);
-        let done = self.modal.update_app(cx, |app, cx| save(app, &purpose, &name, style, includes, cx));
+        let done = self.modal.update_app(cx, |app, cx| {
+            save(app, &purpose, &name, style, includes, cx)
+        });
         if done == Some(true) {
             self.modal.close(window, cx);
         }
@@ -449,7 +525,14 @@ impl StyleDialog {
         });
     }
 
-    fn part(&self, id: &'static str, text: &'static str, on: bool, set: fn(&mut StyleParts, bool), cx: &mut Context<Self>) -> gpui::Div {
+    fn part(
+        &self,
+        id: &'static str,
+        text: &'static str,
+        on: bool,
+        set: fn(&mut StyleParts, bool),
+        cx: &mut Context<Self>,
+    ) -> gpui::Div {
         named(
             id,
             Checkbox::new(id, text, on).on_change(cx.listener(move |this, on: &bool, _, cx| {
@@ -495,7 +578,8 @@ impl Render for StyleDialog {
                     .child(name)
                     .child(named(
                         "style-format",
-                        Button::new("format", t("Format...", "Format...")).on_click(cx.listener(|this, _, window, cx| this.format(window, cx))),
+                        Button::new("format", t("Format...", "Format..."))
+                            .on_click(cx.listener(|this, _, window, cx| this.format(window, cx))),
                     )),
             )
             .child(label(t(
@@ -508,12 +592,48 @@ impl Render for StyleDialog {
                     .flex_col()
                     .gap(px(6.))
                     .pl(px(12.))
-                    .child(self.part("style-number", t("Numbers", "Nombres"), parts.number, |p, on| p.number = on, cx))
-                    .child(self.part("style-alignment", t("Alignment", "Alignement"), parts.alignment, |p, on| p.alignment = on, cx))
-                    .child(self.part("style-font", t("Font", "Police"), parts.font, |p, on| p.font = on, cx))
-                    .child(self.part("style-border", t("Border", "Bordure"), parts.border, |p, on| p.border = on, cx))
-                    .child(self.part("style-fill", t_ctx("style part", "Fill", "Remplir"), parts.fill, |p, on| p.fill = on, cx))
-                    .child(self.part("style-protection", t("Protection", "Protection"), parts.protection, |p, on| p.protection = on, cx)),
+                    .child(self.part(
+                        "style-number",
+                        t("Numbers", "Nombres"),
+                        parts.number,
+                        |p, on| p.number = on,
+                        cx,
+                    ))
+                    .child(self.part(
+                        "style-alignment",
+                        t("Alignment", "Alignement"),
+                        parts.alignment,
+                        |p, on| p.alignment = on,
+                        cx,
+                    ))
+                    .child(self.part(
+                        "style-font",
+                        t("Font", "Police"),
+                        parts.font,
+                        |p, on| p.font = on,
+                        cx,
+                    ))
+                    .child(self.part(
+                        "style-border",
+                        t("Border", "Bordure"),
+                        parts.border,
+                        |p, on| p.border = on,
+                        cx,
+                    ))
+                    .child(self.part(
+                        "style-fill",
+                        t_ctx("style part", "Fill", "Remplir"),
+                        parts.fill,
+                        |p, on| p.fill = on,
+                        cx,
+                    ))
+                    .child(self.part(
+                        "style-protection",
+                        t("Protection", "Protection"),
+                        parts.protection,
+                        |p, on| p.protection = on,
+                        cx,
+                    )),
             )
             .child(
                 div()
@@ -521,12 +641,11 @@ impl Render for StyleDialog {
                     .items_center()
                     .gap(px(8.))
                     .child(label(t("Preview:", "Aperçu :")))
-                    .child(
-                        div()
-                            .border_1()
-                            .border_color(c(theme::BORDER))
-                            .child(widgets::preview(180.0, 32.0, move |s| draw_sample(s, &format, &sample, &fonts))),
-                    ),
+                    .child(div().border_1().border_color(c(theme::BORDER)).child(
+                        widgets::preview(180.0, 32.0, move |s| {
+                            draw_sample(s, &format, &sample, &fonts)
+                        }),
+                    )),
             )
             .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
     }

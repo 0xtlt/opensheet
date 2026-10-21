@@ -14,7 +14,9 @@ use crate::i18n::t;
 use crate::shell::{Alert, Modal};
 use crate::text_input::TextInput;
 use crate::widgets::{self, Button, Checkbox, ListBox, TextField, dialog, label, ok_cancel};
-use gpui::{Context, Entity, Focusable, SharedString, Stateful, Window, actions, div, prelude::*, px};
+use gpui::{
+    Context, Entity, Focusable, SharedString, Stateful, Window, actions, div, prelude::*, px,
+};
 use opensheet_engine::Sheet;
 use opensheet_engine::custom_view::{Shown, ViewKind, WindowState};
 
@@ -61,7 +63,11 @@ actions!(custom_views, [CustomViewsDialog]);
 
 /// Make the window answer the View ▸ Custom Views… menu item.
 pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Stateful<gpui::Div> {
-    root.on_action(cx.listener(|app, _: &CustomViewsDialog, window, cx| app.run_command(Cmd::Open, window, cx)))
+    root.on_action(
+        cx.listener(|app, _: &CustomViewsDialog, window, cx| {
+            app.run_command(Cmd::Open, window, cx)
+        }),
+    )
 }
 
 // ------------------------------------------------------------------- window
@@ -93,14 +99,19 @@ fn top_left(sheet: &Sheet, scroll: (f64, f64), zoom: f32) -> (u32, u32) {
     let z = zoom.max(0.01) as f64;
     // Half a pixel in: a scroll position that rounding left just before a
     // cell edge still names that cell.
-    sheet.corner_at(fx + scroll.0 / z + 0.5, fy + scroll.1 / z + 0.5).0
+    sheet
+        .corner_at(fx + scroll.0 / z + 0.5, fy + scroll.1 / z + 0.5)
+        .0
 }
 
 /// The scroll position that shows a cell first.
 fn scroll_to(sheet: &Sheet, cell: (u32, u32), zoom: f32) -> (f64, f64) {
     let (fx, fy) = frozen_edge(sheet);
     let (x, y) = sheet.corner_point((cell, (0.0, 0.0)));
-    (((x - fx) * zoom as f64).max(0.0), ((y - fy) * zoom as f64).max(0.0))
+    (
+        ((x - fx) * zoom as f64).max(0.0),
+        ((y - fy) * zoom as f64).max(0.0),
+    )
 }
 
 /// The window of every sheet as it is now.
@@ -130,7 +141,10 @@ pub(crate) fn window_states(app: &ExcelApp) -> Vec<WindowState> {
 
 /// Put the windows of a view back, after the engine restored the sheets.
 fn restore_windows(app: &mut ExcelApp, shown: &Shown, window: &mut Window, cx: &mut Cx) {
-    let front = shown.iter().find(|(_, state)| state.selected).or(shown.first());
+    let front = shown
+        .iter()
+        .find(|(_, state)| state.selected)
+        .or(shown.first());
     if let Some((index, _)) = front {
         app.switch_sheet(*index, window, cx);
     }
@@ -181,9 +195,19 @@ pub(crate) fn show(app: &mut ExcelApp, name: &str, window: &mut Window, cx: &mut
 
 /// Add a view of the workbook as it is now (a view of the same name is
 /// replaced), as one undo step.
-pub(crate) fn add(app: &mut ExcelApp, name: &str, print_settings: bool, hidden_settings: bool, cx: &mut Cx) -> bool {
+pub(crate) fn add(
+    app: &mut ExcelApp,
+    name: &str,
+    print_settings: bool,
+    hidden_settings: bool,
+    cx: &mut Cx,
+) -> bool {
     let windows = window_states(app);
-    if app.wb.add_custom_view(name, print_settings, hidden_settings, &windows).is_err() {
+    if app
+        .wb
+        .add_custom_view(name, print_settings, hidden_settings, &windows)
+        .is_err()
+    {
         return false;
     }
     app.commit(t("Add View", "Ajouter un affichage"), cx);
@@ -205,7 +229,11 @@ fn with_name(message: &str, name: &str) -> String {
 
 /// The names of the views, as the dialog lists them.
 fn view_names(app: &ExcelApp) -> Vec<String> {
-    app.wb.custom_views().into_iter().map(|view| view.name).collect()
+    app.wb
+        .custom_views()
+        .into_iter()
+        .map(|view| view.name)
+        .collect()
 }
 
 // ------------------------------------------------------------- Custom Views
@@ -238,7 +266,8 @@ impl ViewsDialog {
     }
 
     fn chosen(&self) -> Option<String> {
-        self.selected.and_then(|index| self.names.get(index).cloned())
+        self.selected
+            .and_then(|index| self.names.get(index).cloned())
     }
 
     fn show(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
@@ -246,7 +275,8 @@ impl ViewsDialog {
             return;
         };
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| show(app, &name, window, cx));
+        self.modal
+            .update_app(cx, |app, cx| show(app, &name, window, cx));
     }
 
     /// Add… closes this dialog and opens Add View, as in Excel.
@@ -262,14 +292,21 @@ impl ViewsDialog {
             return;
         };
         let this = cx.weak_entity();
-        let message = with_name(t("Do you wish to delete the view '|'?", "Voulez-vous supprimer l'affichage '|'?"), &name);
+        let message = with_name(
+            t(
+                "Do you wish to delete the view '|'?",
+                "Voulez-vous supprimer l'affichage '|'?",
+            ),
+            &name,
+        );
         self.modal.update_app(cx, |app, cx| {
             let alert = Alert::new("OpenSheet", message)
                 .warning()
                 .button(t("Yes", "Oui"), move |app, _, cx| {
                     delete(app, &name, cx);
                     let names = view_names(app);
-                    this.update(cx, |dialog, cx| dialog.set_names(names, cx)).ok();
+                    this.update(cx, |dialog, cx| dialog.set_names(names, cx))
+                        .ok();
                 })
                 .close_button(t("No", "Non"));
             app.alert(alert, cx);
@@ -279,7 +316,11 @@ impl ViewsDialog {
 
 impl Render for ViewsDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let items: Vec<SharedString> = self.names.iter().map(|name| SharedString::from(name.clone())).collect();
+        let items: Vec<SharedString> = self
+            .names
+            .iter()
+            .map(|name| SharedString::from(name.clone()))
+            .collect();
         let none = self.selected.is_none();
         let close = self.modal.clone();
         let buttons = div()
@@ -361,16 +402,26 @@ impl AddDialog {
             // The keyboard goes back to the field once the message is read.
             let field = self.name.read(cx).focus_handle(cx);
             self.modal.update_app(cx, |app, cx| {
-                let message = t("You must enter a name for the view.", "Vous devez entrer un nom pour l'affichage.");
-                let alert = Alert::new("OpenSheet", message).warning().button(t("OK", "OK"), move |_, window, _| window.focus(&field));
+                let message = t(
+                    "You must enter a name for the view.",
+                    "Vous devez entrer un nom pour l'affichage.",
+                );
+                let alert = Alert::new("OpenSheet", message)
+                    .warning()
+                    .button(t("OK", "OK"), move |_, window, _| window.focus(&field));
                 app.alert(alert, cx);
             });
             return;
         }
-        let exists = self.modal.read_app(cx, |app| app.wb.custom_view(&name).is_some()).unwrap_or(false);
+        let exists = self
+            .modal
+            .read_app(cx, |app| app.wb.custom_view(&name).is_some())
+            .unwrap_or(false);
         if !exists {
             self.modal.close(window, cx);
-            self.modal.update_app(cx, |app, cx| add(app, &name, print_settings, hidden_settings, cx));
+            self.modal.update_app(cx, |app, cx| {
+                add(app, &name, print_settings, hidden_settings, cx)
+            });
             return;
         }
         // Excel asks before a view takes the place of another.
@@ -417,12 +468,17 @@ impl Render for AddDialog {
                     .flex_col()
                     .gap(px(6.))
                     .child(
-                        Checkbox::new("view-print", t("Print settings", "Paramètres d'impression"), self.print_settings).on_change(
-                            cx.listener(|this, on: &bool, _, cx| {
+                        Checkbox::new(
+                            "view-print",
+                            t("Print settings", "Paramètres d'impression"),
+                            self.print_settings,
+                        )
+                        .on_change(cx.listener(
+                            |this, on: &bool, _, cx| {
                                 this.print_settings = *on;
                                 cx.notify();
-                            }),
-                        ),
+                            },
+                        )),
                     )
                     .child(
                         Checkbox::new(
@@ -433,10 +489,12 @@ impl Render for AddDialog {
                             ),
                             self.hidden_settings,
                         )
-                        .on_change(cx.listener(|this, on: &bool, _, cx| {
-                            this.hidden_settings = *on;
-                            cx.notify();
-                        })),
+                        .on_change(cx.listener(
+                            |this, on: &bool, _, cx| {
+                                this.hidden_settings = *on;
+                                cx.notify();
+                            },
+                        )),
                     ),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
@@ -469,7 +527,13 @@ mod tests {
     }
 
     fn views(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<String> {
-        app.update(cx, |app, _| app.wb.custom_views().into_iter().map(|view| view.name).collect())
+        app.update(cx, |app, _| {
+            app.wb
+                .custom_views()
+                .into_iter()
+                .map(|view| view.name)
+                .collect()
+        })
     }
 
     fn modals(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> usize {
@@ -518,7 +582,11 @@ mod tests {
         run(&app, cx);
         assert_eq!(modals(&app, cx), 1);
         cx.simulate_keystrokes("escape");
-        let dialog = app.update_in(cx, |app, window, cx| app.open_modal(window, cx, |modal, _, _| ViewsDialog::new(modal, Vec::new())));
+        let dialog = app.update_in(cx, |app, window, cx| {
+            app.open_modal(window, cx, |modal, _, _| {
+                ViewsDialog::new(modal, Vec::new())
+            })
+        });
         dialog.update_in(cx, |dialog, window, cx| dialog.add(window, cx));
         redraw(cx);
         assert_eq!(modals(&app, cx), 1);
@@ -533,7 +601,11 @@ mod tests {
         redraw(cx);
         assert_eq!(modals(&app, cx), 0);
         assert_eq!(views(&app, cx), vec!["Review"]);
-        assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Add View"));
+        assert_eq!(
+            app.update(cx, |app, _| app.wb.undo_label().map(str::to_string))
+                .as_deref(),
+            Some("Add View")
+        );
 
         disturb(&app, cx);
         // Custom Views: the view is selected, Return shows it.
@@ -544,11 +616,24 @@ mod tests {
         app.update(cx, |app, _| {
             let sheet = &app.wb.sheets[0];
             assert!(sheet.hidden_rows.contains(&4));
-            assert_eq!((sheet.page.orientation, sheet.frozen_rows), (Orientation::Landscape, 1));
+            assert_eq!(
+                (sheet.page.orientation, sheet.frozen_rows),
+                (Orientation::Landscape, 1)
+            );
             assert_eq!(app.zoom, 1.5);
             assert_eq!(app.view_mode(), ViewMode::PageBreakPreview);
-            assert_eq!((app.sel().active, app.sel().current()), ((6, 1), Rect::new(6, 1, 8, 2)));
-            assert_eq!(top_left(sheet, (app.views[0].scroll_x, app.views[0].scroll_y), app.zoom), (30, 3));
+            assert_eq!(
+                (app.sel().active, app.sel().current()),
+                ((6, 1), Rect::new(6, 1, 8, 2))
+            );
+            assert_eq!(
+                top_left(
+                    sheet,
+                    (app.views[0].scroll_x, app.views[0].scroll_y),
+                    app.zoom
+                ),
+                (30, 3)
+            );
             assert_eq!(app.wb.undo_label(), Some("Custom View"));
         });
         // Undo takes the sheet back (the window stays, as in Excel).
@@ -564,24 +649,34 @@ mod tests {
             assert!(add(app, "Two", false, true, cx));
         });
         // Add View with a name that is taken: Excel asks; No keeps both.
-        let dialog = app.update_in(cx, |app, window, cx| app.open_modal(window, cx, |modal, _, cx| AddDialog::new(modal, cx)));
+        let dialog = app.update_in(cx, |app, window, cx| {
+            app.open_modal(window, cx, |modal, _, cx| AddDialog::new(modal, cx))
+        });
         redraw(cx);
         // (The name field takes the keyboard on the frame after the dialog
         // opens, which a headless window does not draw.)
-        dialog.update_in(cx, |dialog, window, cx| window.focus(&dialog.name.read(cx).focus_handle(cx)));
+        dialog.update_in(cx, |dialog, window, cx| {
+            window.focus(&dialog.name.read(cx).focus_handle(cx))
+        });
         cx.simulate_input("one");
         cx.simulate_keystrokes("enter");
         redraw(cx);
         assert_eq!(modals(&app, cx), 2);
         cx.simulate_keystrokes("escape");
         redraw(cx);
-        assert_eq!((modals(&app, cx), views(&app, cx)), (1, vec!["One".to_string(), "Two".to_string()]));
+        assert_eq!(
+            (modals(&app, cx), views(&app, cx)),
+            (1, vec!["One".to_string(), "Two".to_string()])
+        );
         // Yes replaces: the new view takes the name as typed.
         cx.simulate_keystrokes("enter");
         redraw(cx);
         cx.simulate_keystrokes("enter");
         redraw(cx);
-        assert_eq!((modals(&app, cx), views(&app, cx)), (0, vec!["Two".to_string(), "one".to_string()]));
+        assert_eq!(
+            (modals(&app, cx), views(&app, cx)),
+            (0, vec!["Two".to_string(), "one".to_string()])
+        );
         // Delete asks too: No keeps the view, Yes deletes it.
         let dialog = app.update_in(cx, |app, window, cx| {
             let names = view_names(app);
@@ -599,7 +694,12 @@ mod tests {
         redraw(cx);
         assert_eq!(views(&app, cx), vec!["one"]);
         // The list of the dialog follows.
-        dialog.update(cx, |dialog, _| assert_eq!((dialog.names.clone(), dialog.selected), (vec!["one".to_string()], Some(0))));
+        dialog.update(cx, |dialog, _| {
+            assert_eq!(
+                (dialog.names.clone(), dialog.selected),
+                (vec!["one".to_string()], Some(0))
+            )
+        });
         cx.simulate_keystrokes("escape");
         redraw(cx);
         cx.simulate_keystrokes("cmd-z");
@@ -641,11 +741,17 @@ mod tests {
     #[test]
     fn scroll_positions_name_cells() {
         let mut sheet = Sheet::new("S");
-        let (w, h) = (sheet.default_col_width as f64, sheet.default_row_height as f64);
+        let (w, h) = (
+            sheet.default_col_width as f64,
+            sheet.default_row_height as f64,
+        );
         assert_eq!(top_left(&sheet, (0.0, 0.0), 1.0), (0, 0));
         assert_eq!(top_left(&sheet, (3.0 * w, 10.0 * h), 1.0), (10, 3));
         // At another zoom the scroll position is in zoomed pixels.
-        assert_eq!(top_left(&sheet, (3.0 * w * 2.0, 10.0 * h * 2.0), 2.0), (10, 3));
+        assert_eq!(
+            top_left(&sheet, (3.0 * w * 2.0, 10.0 * h * 2.0), 2.0),
+            (10, 3)
+        );
         assert_eq!(scroll_to(&sheet, (10, 3), 2.0), (6.0 * w, 20.0 * h));
         // Frozen panes: the scrolling part starts after them.
         sheet.frozen_rows = 2;

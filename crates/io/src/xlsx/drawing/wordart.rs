@@ -7,7 +7,8 @@
 use super::*;
 use opensheet_engine::textwarp::{TextWarp, WarpPreset};
 use opensheet_engine::wordart::{
-    GradientKind, GradientStop, TextEffects, TextGradient, TextOutline, TextReflection, TextRun, TextShadow,
+    GradientKind, GradientStop, TextEffects, TextGradient, TextOutline, TextReflection, TextRun,
+    TextShadow,
 };
 
 // ---- writing -------------------------------------------------------------------
@@ -57,7 +58,8 @@ fn push_run_properties(x: &mut String, element: &str, font: &Font, effects: &Tex
             emu(shadow.blur),
             emu(shadow.distance)
         );
-        let alpha = (shadow.opacity < 1.0).then(|| (shadow.opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32);
+        let alpha = (shadow.opacity < 1.0)
+            .then(|| (shadow.opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32);
         push_drawing_color(x, shadow.color, alpha);
         x.push_str("</a:outerShdw>");
     }
@@ -92,7 +94,11 @@ fn push_run_properties(x: &mut String, element: &str, font: &Font, effects: &Tex
 fn push_gradient(x: &mut String, gradient: &TextGradient) {
     x.push_str("<a:gradFill flip=\"none\" rotWithShape=\"1\"><a:gsLst>");
     for stop in gradient.stops() {
-        w!(x, "<a:gs pos=\"{}\">", (stop.at.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32);
+        w!(
+            x,
+            "<a:gs pos=\"{}\">",
+            (stop.at.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32
+        );
         push_drawing_color(x, stop.color, None);
         x.push_str("</a:gs>");
     }
@@ -114,7 +120,11 @@ fn push_gradient(x: &mut String, gradient: &TextGradient) {
 fn push_warp(x: &mut String, warp: &TextWarp) {
     w!(x, "<a:prstTxWarp prst=\"{}\">", warp.preset.ooxml_name());
     let own = warp.preset.adjustments();
-    let changed: Vec<(&str, i32)> = warp.adjustments().into_iter().filter(|adjustment| !own.contains(adjustment)).collect();
+    let changed: Vec<(&str, i32)> = warp
+        .adjustments()
+        .into_iter()
+        .filter(|adjustment| !own.contains(adjustment))
+        .collect();
     if changed.is_empty() {
         x.push_str("<a:avLst/>");
     } else {
@@ -212,14 +222,24 @@ pub(super) struct RawRun {
 
 /// `<a:effectLst>`: the outer shadow and the reflection, the effects that
 /// are kept.
-fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> (Option<TextShadow>, Option<TextReflection>) {
+fn parse_effects<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    palette: &Palette,
+) -> (Option<TextShadow>, Option<TextReflection>) {
     let mut shadow = None;
     let mut reflection = None;
     each_child(r, tag, |r, t| {
         if t.name == "reflection" {
-            let points = |name: &str| t.attr_f64(name).filter(|v| v.is_finite() && *v >= 0.0).map_or(0.0, |v| (v / EMU_PER_PT).min(400.0) as f32);
+            let points = |name: &str| {
+                t.attr_f64(name)
+                    .filter(|v| v.is_finite() && *v >= 0.0)
+                    .map_or(0.0, |v| (v / EMU_PER_PT).min(400.0) as f32)
+            };
             let part = |name: &str, default: f32| {
-                t.attr_f64(name).filter(|v| v.is_finite()).map_or(default, |v| (v / 100_000.0).clamp(0.0, 1.0) as f32)
+                t.attr_f64(name)
+                    .filter(|v| v.is_finite())
+                    .map_or(default, |v| (v / 100_000.0).clamp(0.0, 1.0) as f32)
             };
             reflection = Some(TextReflection {
                 blur: points("blurRad"),
@@ -234,9 +254,16 @@ fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> (O
             r.skip(t);
             return;
         }
-        let points = |name: &str| t.attr_f64(name).filter(|v| v.is_finite() && *v >= 0.0).map_or(0.0, |v| (v / EMU_PER_PT).min(400.0) as f32);
+        let points = |name: &str| {
+            t.attr_f64(name)
+                .filter(|v| v.is_finite() && *v >= 0.0)
+                .map_or(0.0, |v| (v / EMU_PER_PT).min(400.0) as f32)
+        };
         let (blur, distance) = (points("blurRad"), points("dist"));
-        let angle = t.attr_f64("dir").filter(|v| v.is_finite()).map_or(0.0, |v| (v / ANGLE_UNITS).rem_euclid(360.0) as f32);
+        let angle = t
+            .attr_f64("dir")
+            .filter(|v| v.is_finite())
+            .map_or(0.0, |v| (v / ANGLE_UNITS).rem_euclid(360.0) as f32);
         // The colour (which may be one of the theme), then how much of
         // it shows: the element is read once for each.
         let color = parse_color(&mut r.fork(), t, palette);
@@ -264,18 +291,28 @@ fn parse_effects<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> (O
 
 /// `<a:gradFill>`: its colours and the way it runs. A gradient along a
 /// shape (`rect` or `shape` paths) is read as one from the middle.
-fn parse_gradient<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette) -> Option<TextGradient> {
+fn parse_gradient<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    palette: &Palette,
+) -> Option<TextGradient> {
     let mut stops = Vec::new();
     let mut kind = GradientKind::Linear(0.0);
     each_child(r, tag, |r, t| match t.name {
         "gsLst" => each_child(r, t, |r, stop| {
-            let at = stop.attr_f64("pos").filter(|v| v.is_finite()).map_or(0.0, |v| (v / 100_000.0).clamp(0.0, 1.0) as f32);
+            let at = stop
+                .attr_f64("pos")
+                .filter(|v| v.is_finite())
+                .map_or(0.0, |v| (v / 100_000.0).clamp(0.0, 1.0) as f32);
             if let Some(color) = parse_color(r, stop, palette) {
                 stops.push(GradientStop { at, color });
             }
         }),
         "lin" => {
-            let angle = t.attr_f64("ang").filter(|v| v.is_finite()).map_or(0.0, |v| (v / ANGLE_UNITS).rem_euclid(360.0) as f32);
+            let angle = t
+                .attr_f64("ang")
+                .filter(|v| v.is_finite())
+                .map_or(0.0, |v| (v / ANGLE_UNITS).rem_euclid(360.0) as f32);
             kind = GradientKind::Linear(angle);
             r.skip(t);
         }
@@ -300,13 +337,19 @@ fn parse_run_properties<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette
         Some("dbl" | "wavyDbl") => Underline::Double,
         Some(_) => Underline::Single,
     };
-    font.strike = matches!(tag.attr("strike").as_deref(), Some("sngStrike" | "dblStrike"));
+    font.strike = matches!(
+        tag.attr("strike").as_deref(),
+        Some("sngStrike" | "dblStrike")
+    );
     let mut paint = Paint::Unset;
     let mut effects = TextEffects::default();
     each_child(r, tag, |r, t| match t.name {
         "latin" => {
             // "+mn-lt" and the like name a font of the theme.
-            if let Some(name) = t.attr("typeface").filter(|name| !name.is_empty() && !name.starts_with('+')) {
+            if let Some(name) = t
+                .attr("typeface")
+                .filter(|name| !name.is_empty() && !name.starts_with('+'))
+            {
                 font.name = Arc::from(name.as_ref());
             }
             r.skip(t);
@@ -431,7 +474,11 @@ fn parse_paragraph<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, out
     each_child(r, tag, |r, t| match t.name {
         "pPr" => {
             if out.align.is_none() {
-                out.align = Some(t.attr("algn").and_then(|name| TextAlign::from_ooxml_name(&name)).unwrap_or_default());
+                out.align = Some(
+                    t.attr("algn")
+                        .and_then(|name| TextAlign::from_ooxml_name(&name))
+                        .unwrap_or_default(),
+                );
             }
             r.skip(t);
         }
@@ -476,7 +523,13 @@ fn parse_paragraph<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, out
 }
 
 /// The first `a:rPr` under an element, however deep.
-fn find_run_properties<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette, found: &mut Option<RawRun>, depth: usize) {
+fn find_run_properties<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    palette: &Palette,
+    found: &mut Option<RawRun>,
+    depth: usize,
+) {
     each_child(r, tag, |r, t| {
         if found.is_none() && t.name == "rPr" && t.attr("sz").is_some() {
             *found = Some(parse_run_properties(r, t, palette));
@@ -491,12 +544,26 @@ fn find_run_properties<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palette,
 /// `<a:prstTxWarp>`; `textNoShape` and presets that do not exist are no
 /// warp.
 fn parse_warp<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<TextWarp> {
-    let mut warp = tag.attr("prst").and_then(|name| WarpPreset::from_ooxml_name(&name)).map(TextWarp::from);
+    let mut warp = tag
+        .attr("prst")
+        .and_then(|name| WarpPreset::from_ooxml_name(&name))
+        .map(TextWarp::from);
     each_child(r, tag, |r, list| {
         each_child(r, list, |r, guide| {
             // `fmla="val 12345"`.
-            let value = guide.attr("fmla").and_then(|formula| formula.trim().strip_prefix("val")?.trim().parse::<f64>().ok());
-            if let (Some(warp), Some(name), Some(value)) = (warp.as_mut(), guide.attr("name"), value.filter(|v| v.is_finite())) {
+            let value = guide.attr("fmla").and_then(|formula| {
+                formula
+                    .trim()
+                    .strip_prefix("val")?
+                    .trim()
+                    .parse::<f64>()
+                    .ok()
+            });
+            if let (Some(warp), Some(name), Some(value)) = (
+                warp.as_mut(),
+                guide.attr("name"),
+                value.filter(|v| v.is_finite()),
+            ) {
                 warp.set_adjustment(&name, value.clamp(i32::MIN as f64, i32::MAX as f64) as i32);
             }
             r.skip(guide);
@@ -510,7 +577,11 @@ pub(super) fn parse_text<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, palette: &Palett
     let mut paragraphs = 0;
     each_child(r, tag, |r, t| match t.name {
         "bodyPr" => {
-            out.anchor = Some(t.attr("anchor").and_then(|name| TextAnchor::from_ooxml_name(&name)).unwrap_or_default());
+            out.anchor = Some(
+                t.attr("anchor")
+                    .and_then(|name| TextAnchor::from_ooxml_name(&name))
+                    .unwrap_or_default(),
+            );
             out.unwrapped = t.attr("wrap").as_deref() == Some("none");
             each_child(r, t, |r, c| {
                 if c.name == "prstTxWarp" {

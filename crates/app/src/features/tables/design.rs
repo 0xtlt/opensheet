@@ -198,7 +198,12 @@ pub(super) fn groups(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Ve
                     ])
                     .items_start(),
                 )
-                .child(app.cmd_large("td-slicer", crate::features::slicers::Cmd::InsertSlicer, false, cx)),
+                .child(app.cmd_large(
+                    "td-slicer",
+                    crate::features::slicers::Cmd::InsertSlicer,
+                    false,
+                    cx,
+                )),
         )
         .into_any_element(),
         group(
@@ -227,10 +232,13 @@ pub(super) fn groups(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Ve
         )
         .into_any_element(),
         // The last group takes the room left, for as many styles as fit.
-        group(t("Table Styles", "Styles de tableau"), styles::strip(app, cx))
-            .flex_1()
-            .min_w(px(80.))
-            .border_r_0()
-            .into_any_element(),
+        group(
+            t("Table Styles", "Styles de tableau"),
+            styles::strip(app, cx),
+        )
+        .flex_1()
+        .min_w(px(80.))
+        .border_r_0()
+        .into_any_element(),
     ]
 }

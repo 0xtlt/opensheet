@@ -10,7 +10,9 @@ use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -33,8 +35,14 @@ fn sample() -> Workbook {
     site.tooltip = "Open the \"site\" <now>".to_string();
     wb.set_hyperlink(0, site);
     wb.set_hyperlink(0, Hyperlink::place(rect("A2:B2"), "'Sheet2'!C3"));
-    wb.set_hyperlink(0, Hyperlink::email(rect("A3"), "ann@example.org", "Budget & plans"));
-    wb.set_hyperlink(0, Hyperlink::external(rect("A4"), "Reports/2024 final.xlsx"));
+    wb.set_hyperlink(
+        0,
+        Hyperlink::email(rect("A3"), "ann@example.org", "Budget & plans"),
+    );
+    wb.set_hyperlink(
+        0,
+        Hyperlink::external(rect("A4"), "Reports/2024 final.xlsx"),
+    );
     wb.set_hyperlink(1, Hyperlink::place(rect("B2"), "Sheet1!A1"));
     wb.commit("links");
     wb
@@ -53,19 +61,32 @@ fn links_survive_a_round_trip() {
     // The addresses are relationships leading outside the package, after
     // those of the notes; a place needs none.
     assert!(sheet.contains("<hyperlink ref=\"A1\" r:id=\"rId3\" location=\"part\" tooltip=\"Open the &quot;site&quot; &lt;now&gt;\"/>"), "{sheet}");
-    assert!(sheet.contains("<hyperlink ref=\"A2:B2\" location=\"'Sheet2'!C3\"/>"), "{sheet}");
+    assert!(
+        sheet.contains("<hyperlink ref=\"A2:B2\" location=\"'Sheet2'!C3\"/>"),
+        "{sheet}"
+    );
     assert!(rels.contains(
         "<Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink\" Target=\"https://example.org/a?b=1&amp;c=2\" TargetMode=\"External\"/>"
     ), "{rels}");
     assert_eq!(rels.matches("TargetMode=\"External\"").count(), 3);
     // The second sheet has a link and no relationship at all.
-    assert!(part(&bytes, "xl/worksheets/sheet2.xml").contains("<hyperlinks><hyperlink ref=\"B2\" location=\"Sheet1!A1\"/></hyperlinks>"));
-    assert!(!common::part_names(&bytes).iter().any(|name| name.ends_with("sheet2.xml.rels")));
+    assert!(
+        part(&bytes, "xl/worksheets/sheet2.xml")
+            .contains("<hyperlinks><hyperlink ref=\"B2\" location=\"Sheet1!A1\"/></hyperlinks>")
+    );
+    assert!(
+        !common::part_names(&bytes)
+            .iter()
+            .any(|name| name.ends_with("sheet2.xml.rels"))
+    );
 
     let back = load(&bytes);
     assert_eq!(back.sheets[0].hyperlinks, wb.sheets[0].hyperlinks);
     assert_eq!(back.sheets[1].hyperlinks, wb.sheets[1].hyperlinks);
-    assert_eq!(back.hyperlink_at(0, 2, 0).and_then(Hyperlink::email_parts), Some(("ann@example.org".into(), "Budget & plans".into())));
+    assert_eq!(
+        back.hyperlink_at(0, 2, 0).and_then(Hyperlink::email_parts),
+        Some(("ann@example.org".into(), "Budget & plans".into()))
+    );
     // The note still has its parts.
     assert!(back.comment_at(0, 4, 0).is_some());
     // And once more, unchanged.
@@ -94,18 +115,41 @@ fn links_from_excel() {
     let links = &wb.sheets[0].hyperlinks;
     let seen: Vec<(String, LinkKind, &str, &str, &str)> = links
         .iter()
-        .map(|link| (link.range.name(), link.kind(), link.address.as_str(), link.location.as_str(), link.tooltip.as_str()))
+        .map(|link| {
+            (
+                link.range.name(),
+                link.kind(),
+                link.address.as_str(),
+                link.location.as_str(),
+                link.tooltip.as_str(),
+            )
+        })
         .collect();
     assert_eq!(
         seen,
         [
-            ("A1".to_string(), LinkKind::Web, "https://www.microsoft.com/", "", "Le site"),
+            (
+                "A1".to_string(),
+                LinkKind::Web,
+                "https://www.microsoft.com/",
+                "",
+                "Le site"
+            ),
             ("A2".to_string(), LinkKind::Place, "", "Feuil1!C10", ""),
-            ("A3".to_string(), LinkKind::Email, "mailto:ann@example.org?subject=Bonjour%20Ann", "", ""),
+            (
+                "A3".to_string(),
+                LinkKind::Email,
+                "mailto:ann@example.org?subject=Bonjour%20Ann",
+                "",
+                ""
+            ),
             ("A4".to_string(), LinkKind::File, "Budget.xlsx", "Plan", ""),
         ]
     );
-    assert_eq!(links[2].email_parts(), Some(("ann@example.org".into(), "Bonjour Ann".into())));
+    assert_eq!(
+        links[2].email_parts(),
+        Some(("ann@example.org".into(), "Bonjour Ann".into()))
+    );
     // Written again, the same links come back.
     let again = load(&to_bytes(&wb));
     assert_eq!(&again.sheets[0].hyperlinks, links);
@@ -114,8 +158,15 @@ fn links_from_excel() {
 #[test]
 fn damaged_links_are_dropped() {
     let sheet = r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetData/><hyperlinks><hyperlink ref="A1" r:id="rId9"/><hyperlink ref="nowhere" location="A1"/><hyperlink location="A1"/><hyperlink ref="B2" location="Feuil1!A1"/><hyperlink ref="B3" r:id="rId1""#;
-    let bytes = package(&[("xl/workbook.xml", WORKBOOK), ("xl/worksheets/sheet1.xml", sheet)]);
+    let bytes = package(&[
+        ("xl/workbook.xml", WORKBOOK),
+        ("xl/worksheets/sheet1.xml", sheet),
+    ]);
     let wb = load(&bytes);
-    let ranges: Vec<String> = wb.sheets[0].hyperlinks.iter().map(|link| link.range.name()).collect();
+    let ranges: Vec<String> = wb.sheets[0]
+        .hyperlinks
+        .iter()
+        .map(|link| link.range.name())
+        .collect();
     assert_eq!(ranges, ["B2"]);
 }

@@ -48,7 +48,11 @@ fn submenus(reach: &Reach) -> Vec<(&'static str, Vec<Cmd>)> {
         ),
         (
             t_ctx("table", "Select", "Sélectionner"),
-            vec![Cmd::SelectColumnData, Cmd::SelectEntireColumn, Cmd::SelectRow],
+            vec![
+                Cmd::SelectColumnData,
+                Cmd::SelectEntireColumn,
+                Cmd::SelectRow,
+            ],
         ),
     ]
 }
@@ -61,7 +65,10 @@ pub(super) fn add_entries(app: &ExcelApp, target: &MenuTarget, menu: &mut Contex
         return;
     };
     for (title, commands) in submenus(&reach) {
-        let entries = commands.into_iter().map(|cmd| MenuEntry::command(cmd, app)).collect();
+        let entries = commands
+            .into_iter()
+            .map(|cmd| MenuEntry::command(cmd, app))
+            .collect();
         menu.add(MenuSection::Edit, MenuEntry::submenu(title, entries));
     }
     menu.add(
@@ -97,16 +104,20 @@ pub(super) fn run(cmd: Cmd, app: &mut ExcelApp, cx: &mut Cx) {
     }
     let at = |place: Option<(u32, u32)>| place.ok_or(TableError::InvalidRange);
     let result = match cmd {
-        Cmd::InsertColumnsLeft => app.wb.table_insert_cols(sheet, id, reach.cols.0, reach.cols.1),
+        Cmd::InsertColumnsLeft => app
+            .wb
+            .table_insert_cols(sheet, id, reach.cols.0, reach.cols.1),
         Cmd::InsertColumnRight => at(reach.col_right.map(|col| (col, 1)))
             .and_then(|(col, count)| app.wb.table_insert_cols(sheet, id, col, count)),
-        Cmd::InsertRowsAbove => {
-            at(reach.rows_above).and_then(|(row, count)| app.wb.table_insert_rows(sheet, id, row, count))
-        }
+        Cmd::InsertRowsAbove => at(reach.rows_above)
+            .and_then(|(row, count)| app.wb.table_insert_rows(sheet, id, row, count)),
         Cmd::InsertRowBelow => at(reach.row_below.map(|row| (row, 1)))
             .and_then(|(row, count)| app.wb.table_insert_rows(sheet, id, row, count)),
-        Cmd::DeleteColumns => app.wb.table_delete_cols(sheet, id, reach.cols.0, reach.cols.1),
-        Cmd::DeleteRows => at(reach.data_rows).and_then(|(row, count)| app.wb.table_delete_rows(sheet, id, row, count)),
+        Cmd::DeleteColumns => app
+            .wb
+            .table_delete_cols(sheet, id, reach.cols.0, reach.cols.1),
+        Cmd::DeleteRows => at(reach.data_rows)
+            .and_then(|(row, count)| app.wb.table_delete_rows(sheet, id, row, count)),
         _ => return,
     };
     match result {
@@ -131,7 +142,8 @@ mod tests {
         let mut wb = Workbook::new(Locale::en());
         for row in 0..4 {
             for col in 0..3 {
-                wb.set_cell_text(0, row, col, &format!("v{row}{col}")).unwrap();
+                wb.set_cell_text(0, row, col, &format!("v{row}{col}"))
+                    .unwrap();
             }
         }
         wb.add_table(0, Rect::new(0, 0, 3, 2), true).unwrap();
@@ -140,7 +152,10 @@ mod tests {
     }
 
     fn listed(reach: &Reach) -> Vec<Vec<Cmd>> {
-        submenus(reach).into_iter().map(|(_, commands)| commands).collect()
+        submenus(reach)
+            .into_iter()
+            .map(|(_, commands)| commands)
+            .collect()
     }
 
     #[test]
@@ -152,7 +167,11 @@ mod tests {
         assert_eq!(menus[1], [Cmd::DeleteColumns, Cmd::DeleteRows]);
         assert_eq!(
             menus[2],
-            [Cmd::SelectColumnData, Cmd::SelectEntireColumn, Cmd::SelectRow]
+            [
+                Cmd::SelectColumnData,
+                Cmd::SelectEntireColumn,
+                Cmd::SelectRow
+            ]
         );
         // From the last cell both are offered, in Excel's order.
         let menus = listed(&reach_of((3, 2), Rect::cell(3, 2)));
@@ -169,7 +188,11 @@ mod tests {
         let menus = listed(&reach_of((1, 2), Rect::cell(1, 2)));
         assert_eq!(
             menus[0],
-            [Cmd::InsertColumnsLeft, Cmd::InsertColumnRight, Cmd::InsertRowsAbove]
+            [
+                Cmd::InsertColumnsLeft,
+                Cmd::InsertColumnRight,
+                Cmd::InsertRowsAbove
+            ]
         );
     }
 }

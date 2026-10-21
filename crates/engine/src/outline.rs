@@ -126,23 +126,37 @@ impl AxisOutline {
     /// Where the summary of a group lies: after it or before it; `None`
     /// at the edge of the sheet.
     pub fn summary_of(group: &Group, after: bool, count: u32) -> Option<u32> {
-        if after { Some(group.last + 1).filter(|i| *i < count) } else { group.first.checked_sub(1) }
+        if after {
+            Some(group.last + 1).filter(|i| *i < count)
+        } else {
+            group.first.checked_sub(1)
+        }
     }
 
     /// The groups whose summary is `index`, outermost first.
     pub fn summarized_by(&self, index: u32, after: bool) -> Vec<Group> {
-        let neighbour = if after { index.checked_sub(1) } else { index.checked_add(1) };
+        let neighbour = if after {
+            index.checked_sub(1)
+        } else {
+            index.checked_add(1)
+        };
         let Some(neighbour) = neighbour else {
             return Vec::new();
         };
         let own = self.level(index);
-        (own + 1..=self.level(neighbour)).filter_map(|level| self.group_at(neighbour, level)).collect()
+        (own + 1..=self.level(neighbour))
+            .filter_map(|level| self.group_at(neighbour, level))
+            .collect()
     }
 
     /// Forget the marks of summaries that summarize nothing any more.
     fn tidy(&mut self, after: bool) {
-        let stale: Vec<u32> =
-            self.collapsed.iter().copied().filter(|i| self.summarized_by(*i, after).is_empty()).collect();
+        let stale: Vec<u32> = self
+            .collapsed
+            .iter()
+            .copied()
+            .filter(|i| self.summarized_by(*i, after).is_empty())
+            .collect();
         for index in stale {
             self.collapsed.remove(&index);
         }
@@ -161,14 +175,23 @@ impl AxisOutline {
         };
         let moved = |index: u32| -> Option<u32> {
             if insert {
-                Some(if index >= at { index.checked_add(count)? } else { index }).filter(|i| *i < max)
+                Some(if index >= at {
+                    index.checked_add(count)?
+                } else {
+                    index
+                })
+                .filter(|i| *i < max)
             } else if index < at {
                 Some(index)
             } else {
                 (index >= at.saturating_add(count)).then(|| index - count)
             }
         };
-        self.levels = self.levels.iter().filter_map(|(i, level)| Some((moved(*i)?, *level))).collect();
+        self.levels = self
+            .levels
+            .iter()
+            .filter_map(|(i, level)| Some((moved(*i)?, *level)))
+            .collect();
         self.collapsed = self.collapsed.iter().filter_map(|i| moved(*i)).collect();
         if inherited > 0 {
             for index in at..at.saturating_add(count).min(max) {
@@ -289,7 +312,10 @@ impl Sheet {
             .groups(group.first, group.last)
             .into_iter()
             .filter(|g| g.level > group.level && g.first >= group.first && g.last <= group.last)
-            .filter(|g| AxisOutline::summary_of(g, after, count(axis)).is_some_and(|s| lines.collapsed.contains(&s)))
+            .filter(|g| {
+                AxisOutline::summary_of(g, after, count(axis))
+                    .is_some_and(|s| lines.collapsed.contains(&s))
+            })
             .collect();
         for g in inner {
             self.hidden_mut(axis).extend(g.first..=g.last);
@@ -312,13 +338,21 @@ pub enum OutlineError {
 
 impl Workbook {
     /// Data > Group: one level deeper for the rows (columns) `lo..=hi`.
-    pub fn outline_group(&mut self, sheet: usize, axis: Axis, lo: u32, hi: u32) -> Result<(), OutlineError> {
+    pub fn outline_group(
+        &mut self,
+        sheet: usize,
+        axis: Axis,
+        lo: u32,
+        hi: u32,
+    ) -> Result<(), OutlineError> {
         let Some(sh) = self.sheets.get(sheet) else {
             return Ok(());
         };
         let lines = sh.outline.axis(axis);
         let hi = hi.min(count(axis) - 1);
-        if (lo..=hi).all(|i| lines.level(i) >= MAX_LEVEL) || lines.levels.range(lo..=hi).any(|(_, l)| *l >= MAX_LEVEL) {
+        if (lo..=hi).all(|i| lines.level(i) >= MAX_LEVEL)
+            || lines.levels.range(lo..=hi).any(|(_, l)| *l >= MAX_LEVEL)
+        {
             return Err(OutlineError::TooDeep);
         }
         self.snapshot();
@@ -333,11 +367,23 @@ impl Workbook {
     }
 
     /// Data > Ungroup: one level less for the rows (columns) `lo..=hi`.
-    pub fn outline_ungroup(&mut self, sheet: usize, axis: Axis, lo: u32, hi: u32) -> Result<(), OutlineError> {
+    pub fn outline_ungroup(
+        &mut self,
+        sheet: usize,
+        axis: Axis,
+        lo: u32,
+        hi: u32,
+    ) -> Result<(), OutlineError> {
         let Some(sh) = self.sheets.get(sheet) else {
             return Ok(());
         };
-        let grouped: Vec<(u32, u8)> = sh.outline.axis(axis).levels.range(lo..=hi).map(|(i, l)| (*i, *l)).collect();
+        let grouped: Vec<(u32, u8)> = sh
+            .outline
+            .axis(axis)
+            .levels
+            .range(lo..=hi)
+            .map(|(i, l)| (*i, *l))
+            .collect();
         if grouped.is_empty() {
             return Err(OutlineError::NothingToUngroup);
         }
@@ -356,7 +402,13 @@ impl Workbook {
     }
 
     /// Fold or unfold one group (a click on its button, or on its bar).
-    pub fn outline_set_collapsed(&mut self, sheet: usize, axis: Axis, group: &Group, collapsed: bool) {
+    pub fn outline_set_collapsed(
+        &mut self,
+        sheet: usize,
+        axis: Axis,
+        group: &Group,
+        collapsed: bool,
+    ) {
         if sheet >= self.sheets.len() {
             return;
         }
@@ -403,13 +455,19 @@ impl Workbook {
             let summarized = lines.summarized_by(index, after);
             let found = if show {
                 // The outermost folded group opens first, as with its button.
-                summarized.into_iter().find(|g| sh.outline_collapsed(axis, g))
+                summarized
+                    .into_iter()
+                    .find(|g| sh.outline_collapsed(axis, g))
             } else {
                 summarized
                     .into_iter()
                     .rev()
                     .find(|g| !sh.outline_collapsed(axis, g))
-                    .or_else(|| lines.group_at(index, lines.level(index)).filter(|g| !sh.outline_collapsed(axis, g)))
+                    .or_else(|| {
+                        lines
+                            .group_at(index, lines.level(index))
+                            .filter(|g| !sh.outline_collapsed(axis, g))
+                    })
             };
             if let Some(group) = found {
                 if !out.contains(&group) {
@@ -422,11 +480,19 @@ impl Workbook {
 
     /// Data > Show Detail / Hide Detail on a selection: rows first, and
     /// columns when no group of rows answers.
-    pub fn outline_detail(&mut self, sheet: usize, selection: Rect, show: bool) -> Result<(), OutlineError> {
+    pub fn outline_detail(
+        &mut self,
+        sheet: usize,
+        selection: Rect,
+        show: bool,
+    ) -> Result<(), OutlineError> {
         if sheet >= self.sheets.len() {
             return Ok(());
         }
-        let spans = [(Axis::Rows, selection.r0, selection.r1), (Axis::Cols, selection.c0, selection.c1)];
+        let spans = [
+            (Axis::Rows, selection.r0, selection.r1),
+            (Axis::Cols, selection.c0, selection.c1),
+        ];
         for (axis, lo, hi) in spans {
             let groups = self.detail_groups(sheet, axis, lo, hi, show);
             if groups.is_empty() {
@@ -467,7 +533,9 @@ impl Workbook {
                 let Expr::Ref(r) = e else {
                     return;
                 };
-                if r.kind != RefKind::Cells || r.sheet.as_deref().is_some_and(|s| !same_name(s, &sh.name)) {
+                if r.kind != RefKind::Cells
+                    || r.sheet.as_deref().is_some_and(|s| !same_name(s, &sh.name))
+                {
                     return;
                 }
                 let mut read = r.rect();
@@ -503,7 +571,14 @@ impl Workbook {
                 (Axis::Rows, Some(a)) => i >= a.r0 && i <= a.r1,
                 (Axis::Cols, Some(a)) => i >= a.c0 && i <= a.c1,
             };
-            let old: Vec<u32> = sh.outline.axis(axis).levels.keys().copied().filter(|i| within(*i)).collect();
+            let old: Vec<u32> = sh
+                .outline
+                .axis(axis)
+                .levels
+                .keys()
+                .copied()
+                .filter(|i| within(*i))
+                .collect();
             for index in old {
                 sh.outline.axis_mut(axis).levels.remove(&index);
                 sh.hidden_mut(axis).remove(&index);
@@ -534,7 +609,12 @@ impl Workbook {
         };
         let grouped = |axis: Axis| -> Vec<u32> {
             let (lo, hi) = span(axis);
-            sh.outline.axis(axis).levels.range(lo..=hi).map(|(i, _)| *i).collect()
+            sh.outline
+                .axis(axis)
+                .levels
+                .range(lo..=hi)
+                .map(|(i, _)| *i)
+                .collect()
         };
         let (rows, cols) = (grouped(Axis::Rows), grouped(Axis::Cols));
         if rows.is_empty() && cols.is_empty() {
@@ -555,12 +635,20 @@ impl Workbook {
 
     /// The settings of the outline (the dialog behind the Outline group):
     /// where summaries lie, and whether the symbols show.
-    pub fn set_outline_settings(&mut self, sheet: usize, summary_below: bool, summary_right: bool, show_symbols: bool) {
+    pub fn set_outline_settings(
+        &mut self,
+        sheet: usize,
+        summary_below: bool,
+        summary_right: bool,
+        show_symbols: bool,
+    ) {
         let Some(sh) = self.sheets.get(sheet) else {
             return;
         };
         let o = &sh.outline;
-        if (o.summary_below, o.summary_right, o.show_symbols) == (summary_below, summary_right, show_symbols) {
+        if (o.summary_below, o.summary_right, o.show_symbols)
+            == (summary_below, summary_right, show_symbols)
+        {
             return;
         }
         self.snapshot();
@@ -593,10 +681,18 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     }
     let (below, right) = (sheet.outline.summary_below, sheet.outline.summary_right);
     match edit {
-        StructuralEdit::InsertRows { at, count } => sheet.outline.rows.shift(true, at, count, MAX_ROWS, below),
-        StructuralEdit::DeleteRows { at, count } => sheet.outline.rows.shift(false, at, count, MAX_ROWS, below),
-        StructuralEdit::InsertCols { at, count } => sheet.outline.cols.shift(true, at, count, MAX_COLS, right),
-        StructuralEdit::DeleteCols { at, count } => sheet.outline.cols.shift(false, at, count, MAX_COLS, right),
+        StructuralEdit::InsertRows { at, count } => {
+            sheet.outline.rows.shift(true, at, count, MAX_ROWS, below)
+        }
+        StructuralEdit::DeleteRows { at, count } => {
+            sheet.outline.rows.shift(false, at, count, MAX_ROWS, below)
+        }
+        StructuralEdit::InsertCols { at, count } => {
+            sheet.outline.cols.shift(true, at, count, MAX_COLS, right)
+        }
+        StructuralEdit::DeleteCols { at, count } => {
+            sheet.outline.cols.shift(false, at, count, MAX_COLS, right)
+        }
     }
 }
 
@@ -610,7 +706,9 @@ mod tests {
     }
 
     fn levels(wb: &Workbook, axis: Axis, lo: u32, hi: u32) -> Vec<u8> {
-        (lo..=hi).map(|i| wb.sheets[0].outline.axis(axis).level(i)).collect()
+        (lo..=hi)
+            .map(|i| wb.sheets[0].outline.axis(axis).level(i))
+            .collect()
     }
 
     fn hidden(wb: &Workbook) -> Vec<u32> {
@@ -631,35 +729,69 @@ mod tests {
     #[test]
     fn grouping_and_ungrouping_change_the_level() {
         let mut wb = nested();
-        assert_eq!(levels(&wb, Axis::Rows, 0, 9), [0, 2, 2, 2, 1, 2, 2, 2, 1, 0]);
+        assert_eq!(
+            levels(&wb, Axis::Rows, 0, 9),
+            [0, 2, 2, 2, 1, 2, 2, 2, 1, 0]
+        );
         let groups = wb.sheets[0].outline.rows.groups(0, 20);
         assert_eq!(
             groups,
             [
-                Group { level: 1, first: 1, last: 8 },
-                Group { level: 2, first: 1, last: 3 },
-                Group { level: 2, first: 5, last: 7 },
+                Group {
+                    level: 1,
+                    first: 1,
+                    last: 8
+                },
+                Group {
+                    level: 2,
+                    first: 1,
+                    last: 3
+                },
+                Group {
+                    level: 2,
+                    first: 5,
+                    last: 7
+                },
             ]
         );
         // Only the groups in sight, and those whose summary is.
         assert_eq!(wb.sheets[0].outline.rows.groups(4, 4).len(), 3);
         assert_eq!(wb.sheets[0].outline.rows.groups(2, 2).len(), 2);
-        assert_eq!(wb.sheets[0].outline.rows.groups(9, 30), [Group { level: 1, first: 1, last: 8 }]);
+        assert_eq!(
+            wb.sheets[0].outline.rows.groups(9, 30),
+            [Group {
+                level: 1,
+                first: 1,
+                last: 8
+            }]
+        );
         assert_eq!(wb.sheets[0].outline.rows.groups(11, 30), []);
 
         wb.outline_ungroup(0, Axis::Rows, 5, 7).unwrap();
         wb.commit("Ungroup");
-        assert_eq!(levels(&wb, Axis::Rows, 0, 9), [0, 2, 2, 2, 1, 1, 1, 1, 1, 0]);
-        assert_eq!(wb.outline_ungroup(0, Axis::Rows, 20, 30), Err(OutlineError::NothingToUngroup));
+        assert_eq!(
+            levels(&wb, Axis::Rows, 0, 9),
+            [0, 2, 2, 2, 1, 1, 1, 1, 1, 0]
+        );
+        assert_eq!(
+            wb.outline_ungroup(0, Axis::Rows, 20, 30),
+            Err(OutlineError::NothingToUngroup)
+        );
         wb.undo();
-        assert_eq!(levels(&wb, Axis::Rows, 0, 9), [0, 2, 2, 2, 1, 2, 2, 2, 1, 0]);
+        assert_eq!(
+            levels(&wb, Axis::Rows, 0, 9),
+            [0, 2, 2, 2, 1, 2, 2, 2, 1, 0]
+        );
 
         // Eight levels and no more.
         for _ in 0..5 {
             wb.outline_group(0, Axis::Rows, 1, 3).unwrap();
         }
         assert_eq!(wb.sheets[0].outline.rows.level(1), MAX_LEVEL);
-        assert_eq!(wb.outline_group(0, Axis::Rows, 0, 3), Err(OutlineError::TooDeep));
+        assert_eq!(
+            wb.outline_group(0, Axis::Rows, 0, 3),
+            Err(OutlineError::TooDeep)
+        );
         // Columns have their own outline.
         wb.outline_group(0, Axis::Cols, 1, 2).unwrap();
         assert_eq!(levels(&wb, Axis::Cols, 0, 3), [0, 1, 1, 0]);
@@ -668,8 +800,16 @@ mod tests {
     #[test]
     fn folding_hides_rows_and_inner_groups_stay_folded() {
         let mut wb = nested();
-        let inner = Group { level: 2, first: 1, last: 3 };
-        let outer = Group { level: 1, first: 1, last: 8 };
+        let inner = Group {
+            level: 2,
+            first: 1,
+            last: 3,
+        };
+        let outer = Group {
+            level: 1,
+            first: 1,
+            last: 8,
+        };
         wb.outline_set_collapsed(0, Axis::Rows, &inner, true);
         wb.commit("Hide Detail");
         assert_eq!(hidden(&wb), [1, 2, 3]);
@@ -699,8 +839,26 @@ mod tests {
         assert_eq!(hidden(&wb), [1, 2, 3, 4, 5, 6, 7, 8]);
         // The inner groups are marked too: they stay folded when the
         // outer one opens.
-        assert_eq!(wb.sheets[0].outline.rows.collapsed.iter().copied().collect::<Vec<_>>(), [4, 8, 9]);
-        wb.outline_set_collapsed(0, Axis::Rows, &Group { level: 1, first: 1, last: 8 }, false);
+        assert_eq!(
+            wb.sheets[0]
+                .outline
+                .rows
+                .collapsed
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [4, 8, 9]
+        );
+        wb.outline_set_collapsed(
+            0,
+            Axis::Rows,
+            &Group {
+                level: 1,
+                first: 1,
+                last: 8,
+            },
+            false,
+        );
         assert_eq!(hidden(&wb), [1, 2, 3, 5, 6, 7]);
         wb.outline_show_level(0, Axis::Rows, 2);
         assert_eq!(hidden(&wb), [1, 2, 3, 5, 6, 7]);
@@ -721,11 +879,17 @@ mod tests {
         assert_eq!(hidden(&wb), [5, 6, 7]);
         wb.outline_detail(0, Rect::cell(8, 0), true).unwrap();
         assert_eq!(hidden(&wb), []);
-        assert_eq!(wb.outline_detail(0, Rect::cell(20, 0), false), Err(OutlineError::NoGroup));
+        assert_eq!(
+            wb.outline_detail(0, Rect::cell(20, 0), false),
+            Err(OutlineError::NoGroup)
+        );
         // Columns answer when the rows of the selection have no group.
         wb.outline_group(0, Axis::Cols, 1, 2).unwrap();
         wb.outline_detail(0, Rect::cell(20, 3), false).unwrap();
-        assert_eq!(wb.sheets[0].hidden_cols.iter().copied().collect::<Vec<_>>(), [1, 2]);
+        assert_eq!(
+            wb.sheets[0].hidden_cols.iter().copied().collect::<Vec<_>>(),
+            [1, 2]
+        );
     }
 
     #[test]
@@ -747,13 +911,25 @@ mod tests {
     #[test]
     fn the_outline_follows_inserted_and_deleted_rows() {
         let mut wb = nested();
-        wb.outline_set_collapsed(0, Axis::Rows, &Group { level: 2, first: 5, last: 7 }, true);
+        wb.outline_set_collapsed(
+            0,
+            Axis::Rows,
+            &Group {
+                level: 2,
+                first: 5,
+                last: 7,
+            },
+            true,
+        );
         wb.commit("Hide Detail");
         // A row inserted inside a group joins it; so does one inserted
         // just above the summary.
         wb.insert_rows(0, 2, 1);
         wb.commit("Insert");
-        assert_eq!(levels(&wb, Axis::Rows, 0, 10), [0, 2, 2, 2, 2, 1, 2, 2, 2, 1, 0]);
+        assert_eq!(
+            levels(&wb, Axis::Rows, 0, 10),
+            [0, 2, 2, 2, 2, 1, 2, 2, 2, 1, 0]
+        );
         assert_eq!(hidden(&wb), [6, 7, 8]);
         assert!(wb.sheets[0].outline.rows.collapsed.contains(&9));
         wb.insert_rows(0, 5, 1);
@@ -802,17 +978,26 @@ mod tests {
         wb.commit("Enter");
         wb.auto_outline(0, None).unwrap();
         wb.commit("Auto Outline");
-        assert_eq!(levels(&wb, Axis::Rows, 0, 9), [0, 2, 2, 2, 1, 2, 2, 2, 1, 0]);
+        assert_eq!(
+            levels(&wb, Axis::Rows, 0, 9),
+            [0, 2, 2, 2, 1, 2, 2, 2, 1, 0]
+        );
         // The formulas across make the columns' outline.
         assert_eq!(levels(&wb, Axis::Cols, 0, 3), [0, 1, 1, 0]);
 
         wb.clear_outline(0, Some(Rect::new(0, 0, 4, 0))).unwrap();
         wb.commit("Clear Outline");
-        assert_eq!(levels(&wb, Axis::Rows, 0, 9), [0, 0, 0, 0, 0, 2, 2, 2, 1, 0]);
+        assert_eq!(
+            levels(&wb, Axis::Rows, 0, 9),
+            [0, 0, 0, 0, 0, 2, 2, 2, 1, 0]
+        );
         assert_eq!(levels(&wb, Axis::Cols, 0, 3), [0, 1, 1, 0]);
         wb.clear_outline(0, None).unwrap();
         assert!(wb.sheets[0].outline.is_empty());
-        assert_eq!(wb.clear_outline(0, None), Err(OutlineError::NothingToUngroup));
+        assert_eq!(
+            wb.clear_outline(0, None),
+            Err(OutlineError::NothingToUngroup)
+        );
 
         let mut plain = workbook();
         plain.set_cell_text(0, 0, 0, "=B1+1").unwrap();

@@ -3,7 +3,7 @@
 //! arrows), alignment.
 
 use super::paint;
-use super::{Cmd, Drawings, DrawingUi, edit, edit_shape, selected, tool};
+use super::{Cmd, DrawingUi, Drawings, edit, edit_shape, selected, tool};
 use crate::app::{ExcelApp, MenuEntry, Popup, PopupKind};
 use crate::features::{Command, Cx, Intent, object_id};
 use crate::i18n::{Lang, lang, t, t_ctx};
@@ -13,8 +13,8 @@ use crate::theme::{self, c};
 use crate::view::{icon, tooltip};
 use crate::widgets::{self, ColorGrid, NumberField};
 use gpui::{
-    AnyElement, AnyView, App, Context, Entity, Focusable, FontWeight, Subscription, WeakEntity, Window, div,
-    point, prelude::*, px,
+    AnyElement, AnyView, App, Context, Entity, Focusable, FontWeight, Subscription, WeakEntity,
+    Window, div, point, prelude::*, px,
 };
 use opensheet_engine::Locale;
 use opensheet_engine::drawing::{Dash, Drawing, LineEnd, Outline, ShapeTool};
@@ -60,7 +60,12 @@ pub(super) fn in_units(pixels: f64) -> f64 {
 
 /// The size of a drawing after one of its sides was typed: the other side
 /// follows when the proportions are locked.
-pub(super) fn with_side(size: (f32, f32), lock_aspect: bool, height: bool, value: f32) -> (f32, f32) {
+pub(super) fn with_side(
+    size: (f32, f32),
+    lock_aspect: bool,
+    height: bool,
+    value: f32,
+) -> (f32, f32) {
     let value = value.max(0.0);
     let (w, h) = size;
     match (height, lock_aspect && w > 0.0 && h > 0.0) {
@@ -74,9 +79,14 @@ pub(super) fn with_side(size: (f32, f32), lock_aspect: bool, height: bool, value
 /// Give the selected drawing a height or a width, in the unit shown.
 pub(super) fn set_side(app: &mut ExcelApp, height: bool, units: f64, cx: &mut Cx) {
     let pixels = (units * length_unit().1) as f32;
-    edit(app, t("Size Object", "Dimensionner l'objet"), cx, |drawing| {
-        drawing.size = with_side(drawing.size, drawing.lock_aspect, height, pixels);
-    });
+    edit(
+        app,
+        t("Size Object", "Dimensionner l'objet"),
+        cx,
+        |drawing| {
+            drawing.size = with_side(drawing.size, drawing.lock_aspect, height, pixels);
+        },
+    );
 }
 
 /// The size of the selected drawing in the unit shown: (id, width,
@@ -89,7 +99,14 @@ fn shown_size(app: &ExcelApp) -> Option<(u32, f64, f64)> {
 
 /// A number typed in a size field was confirmed (Return, Tab, leaving the
 /// field) or stepped with the spinner.
-fn on_size_event(app: &mut ExcelApp, height: bool, field: &Entity<TextInput>, event: &InputEvent, window: &mut Window, cx: &mut Cx) {
+fn on_size_event(
+    app: &mut ExcelApp,
+    height: bool,
+    field: &Entity<TextInput>,
+    event: &InputEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let confirmed = match event {
         InputEvent::Enter { .. } | InputEvent::Tab { .. } | InputEvent::Blurred => true,
         // The spinner leaves the whole number selected; typing does not.
@@ -103,7 +120,8 @@ fn on_size_event(app: &mut ExcelApp, height: bool, field: &Entity<TextInput>, ev
         return;
     }
     let typed = field.read(cx).number();
-    let current = shown_size(app).map(|(_, width, height_now)| if height { height_now } else { width });
+    let current =
+        shown_size(app).map(|(_, width, height_now)| if height { height_now } else { width });
     if let (Some(typed), Some(current)) = (typed, current) {
         if (typed - current).abs() > 0.004 && typed > 0.0 {
             set_side(app, height, typed, cx);
@@ -121,7 +139,11 @@ fn on_size_event(app: &mut ExcelApp, height: bool, field: &Entity<TextInput>, ev
 
 /// The two fields (height, width), created on first use and filled with
 /// the size of the selected drawing unless one of them is being typed in.
-fn size_fields(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Option<(Entity<TextInput>, Entity<TextInput>)> {
+fn size_fields(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<(Entity<TextInput>, Entity<TextInput>)> {
     if app.ext_mut::<DrawingUi>().tabs.size.is_none() {
         let limit = 5000.0 / length_unit().1;
         let height = widgets::number_input(cx, None, 0.0, limit, 0.1);
@@ -145,10 +167,16 @@ fn size_fields(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Option<(
     let decimal = lang().locale().decimal_sep;
     let fields = app.ext_mut::<DrawingUi>().tabs.size.as_mut()?;
     let (height, width) = (fields.height.clone(), fields.width.clone());
-    let typing = [&height, &width].iter().any(|field| field.read(cx).focus_handle(cx).is_focused(window));
+    let typing = [&height, &width]
+        .iter()
+        .any(|field| field.read(cx).focus_handle(cx).is_focused(window));
     if fields.shown != now && !typing {
         fields.shown = now;
-        let text = |value: Option<f64>| value.map(|v| widgets::number_text(v, decimal)).unwrap_or_default();
+        let text = |value: Option<f64>| {
+            value
+                .map(|v| widgets::number_text(v, decimal))
+                .unwrap_or_default()
+        };
         height.update(cx, |field, cx| field.set_text(text(now.map(|n| n.2)), cx));
         width.update(cx, |field, cx| field.set_text(text(now.map(|n| n.1)), cx));
     }
@@ -156,17 +184,36 @@ fn size_fields(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Option<(
 }
 
 /// A size field with its label and its unit.
-pub(super) fn length_field(id: &'static str, label: &'static str, field: &Entity<TextInput>) -> gpui::Div {
+pub(super) fn length_field(
+    id: &'static str,
+    label: &'static str,
+    field: &Entity<TextInput>,
+) -> gpui::Div {
     div()
         .flex()
         .items_center()
         .gap(px(4.))
-        .child(div().w(px(52.)).flex_none().text_size(px(11.5)).child(label))
+        .child(
+            div()
+                .w(px(52.))
+                .flex_none()
+                .text_size(px(11.5))
+                .child(label),
+        )
         .child(NumberField::new(id, field).width(72.0))
-        .child(div().text_color(c(theme::TEXT_MUTED)).child(length_unit().0))
+        .child(
+            div()
+                .text_color(c(theme::TEXT_MUTED))
+                .child(length_unit().0),
+        )
 }
 
-pub(super) fn size_group(app: &mut ExcelApp, crop: bool, window: &mut Window, cx: &mut Cx) -> gpui::Div {
+pub(super) fn size_group(
+    app: &mut ExcelApp,
+    crop: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> gpui::Div {
     let fields: Vec<AnyElement> = size_fields(app, window, cx)
         .map(|(height, width)| {
             vec![
@@ -181,7 +228,9 @@ pub(super) fn size_group(app: &mut ExcelApp, crop: bool, window: &mut Window, cx
             .flex()
             .items_center()
             .gap(px(6.))
-            .when(crop, |d| d.child(app.cmd_large("pf-crop", Cmd::Crop, true, cx)))
+            .when(crop, |d| {
+                d.child(app.cmd_large("pf-crop", Cmd::Crop, true, cx))
+            })
             .child(rows(fields)),
         Some(app.launcher(
             "dw-size-launcher",
@@ -196,11 +245,20 @@ pub(super) fn size_group(app: &mut ExcelApp, crop: bool, window: &mut Window, cx
 
 /// A button that acts at once, with a caret that opens the menu of its
 /// variants (Bring Forward / Bring to Front).
-fn split(app: &ExcelApp, id: &'static str, caret: &'static str, menu: [Cmd; 2], cx: &mut Cx) -> AnyElement {
+fn split(
+    app: &ExcelApp,
+    id: &'static str,
+    caret: &'static str,
+    menu: [Cmd; 2],
+    cx: &mut Cx,
+) -> AnyElement {
     row(vec![
         app.cmd_labeled(id, menu[0], false, cx),
         app.caret_btn(caret, menu[0].label(), cx, move |this, window, cx| {
-            let entries = menu.iter().map(|cmd| MenuEntry::command(*cmd, this)).collect();
+            let entries = menu
+                .iter()
+                .map(|cmd| MenuEntry::command(*cmd, this))
+                .collect();
             this.open_menu(id, entries, 240.0, window, cx);
         }),
     ])
@@ -215,8 +273,20 @@ pub(super) fn arrange_group(app: &ExcelApp, cx: &mut Cx) -> gpui::Div {
             .items_center()
             .gap(px(2.))
             .child(rows(vec![
-                split(app, "dw-forward", "dw-forward-more", [Cmd::BringForward, Cmd::BringToFront], cx),
-                split(app, "dw-backward", "dw-backward-more", [Cmd::SendBackward, Cmd::SendToBack], cx),
+                split(
+                    app,
+                    "dw-forward",
+                    "dw-forward-more",
+                    [Cmd::BringForward, Cmd::BringToFront],
+                    cx,
+                ),
+                split(
+                    app,
+                    "dw-backward",
+                    "dw-backward-more",
+                    [Cmd::SendBackward, Cmd::SendToBack],
+                    cx,
+                ),
                 app.cmd_labeled("dw-selection", Cmd::SelectionPane, false, cx),
             ]))
             .child(rows(vec![
@@ -266,14 +336,19 @@ pub(super) fn picture_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) 
                     app.cmd_labeled("pf-border", Cmd::PictureBorder, true, cx),
                     app.cmd_labeled("pf-effects", Cmd::PictureEffects, true, cx),
                 ])),
-            Some(app.launcher("pf-styles-launcher", t("Format Picture", "Format de l'image"), cx, |this, window, cx| {
-                Cmd::FormatPicture.run(this, window, cx)
-            })),
+            Some(app.launcher(
+                "pf-styles-launcher",
+                t("Format Picture", "Format de l'image"),
+                cx,
+                |this, window, cx| Cmd::FormatPicture.run(this, window, cx),
+            )),
         )
         .into_any_element(),
         accessibility_group(app, cx).into_any_element(),
         arrange_group(app, cx).into_any_element(),
-        size_group(app, true, window, cx).border_r_0().into_any_element(),
+        size_group(app, true, window, cx)
+            .border_r_0()
+            .into_any_element(),
     ]
 }
 
@@ -305,9 +380,12 @@ fn mini_gallery(cx: &mut Cx) -> gpui::Div {
         .border_color(c(theme::BORDER))
         .rounded(px(3.))
         .children(tools.chunks(per_row).enumerate().map(|(r, chunk)| {
-            div()
-                .flex()
-                .children(chunk.iter().enumerate().map(|(i, tool)| button(r * per_row + i, *tool, cx)))
+            div().flex().children(
+                chunk
+                    .iter()
+                    .enumerate()
+                    .map(|(i, tool)| button(r * per_row + i, *tool, cx)),
+            )
         }))
 }
 
@@ -340,9 +418,12 @@ pub(super) fn shape_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) ->
                     app.cmd_labeled("sf-outline", Cmd::ShapeOutline, true, cx),
                     app.cmd_labeled("sf-effects", Cmd::ShapeEffects, true, cx),
                 ])),
-            Some(app.launcher("sf-styles-launcher", t("Format Shape", "Format de la forme"), cx, |this, window, cx| {
-                Cmd::FormatShape.run(this, window, cx)
-            })),
+            Some(app.launcher(
+                "sf-styles-launcher",
+                t("Format Shape", "Format de la forme"),
+                cx,
+                |this, window, cx| Cmd::FormatShape.run(this, window, cx),
+            )),
         )
         .into_any_element(),
         group(
@@ -361,7 +442,9 @@ pub(super) fn shape_tab(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) ->
         .into_any_element(),
         accessibility_group(app, cx).into_any_element(),
         arrange_group(app, cx).into_any_element(),
-        size_group(app, false, window, cx).border_r_0().into_any_element(),
+        size_group(app, false, window, cx)
+            .border_r_0()
+            .into_any_element(),
     ]
 }
 
@@ -384,12 +467,27 @@ fn gallery_sections() -> Vec<(&'static str, Vec<ShapeTool>)> {
     use ShapeTool::*;
     vec![
         (t("Lines", "Lignes"), vec![Line, Arrow, DoubleArrow]),
-        (t("Rectangles", "Rectangles"), vec![Rectangle, RoundedRectangle]),
+        (
+            t("Rectangles", "Rectangles"),
+            vec![Rectangle, RoundedRectangle],
+        ),
         (
             t("Basic Shapes", "Formes de base"),
-            vec![TextBox, Ellipse, Triangle, RightTriangle, Trapezoid, Diamond, Pentagon, Hexagon],
+            vec![
+                TextBox,
+                Ellipse,
+                Triangle,
+                RightTriangle,
+                Trapezoid,
+                Diamond,
+                Pentagon,
+                Hexagon,
+            ],
         ),
-        (t("Block Arrows", "Flèches pleines"), vec![RightArrow, LeftArrow, UpArrow, DownArrow, Chevron]),
+        (
+            t("Block Arrows", "Flèches pleines"),
+            vec![RightArrow, LeftArrow, UpArrow, DownArrow, Chevron],
+        ),
         (t("Stars and Banners", "Étoiles et bannières"), vec![Star5]),
         (t("Callouts", "Bulles et légendes"), vec![Callout]),
     ]
@@ -397,7 +495,10 @@ fn gallery_sections() -> Vec<(&'static str, Vec<ShapeTool>)> {
 
 /// Every shape of the gallery, section after section.
 fn gallery_order() -> Vec<ShapeTool> {
-    gallery_sections().into_iter().flat_map(|(_, tools)| tools).collect()
+    gallery_sections()
+        .into_iter()
+        .flat_map(|(_, tools)| tools)
+        .collect()
 }
 
 /// The drop-down of Insert ▸ Shapes.
@@ -442,21 +543,39 @@ impl Render for Gallery {
                         .child(paint::thumbnail(tool, 22.0))
                         .tooltip(tooltip(tool_name(tool, locale)))
                         .on_click(move |_, window, cx| {
-                            app.update(cx, |app, cx| tool::arm(app, tool, window, cx)).ok();
+                            app.update(cx, |app, cx| tool::arm(app, tool, window, cx))
+                                .ok();
                         })
                         .into_any_element()
                 })
                 .collect();
-            sections.push(div().flex().flex_wrap().gap(px(2.)).py(px(2.)).children(buttons).into_any_element());
+            sections.push(
+                div()
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(2.))
+                    .py(px(2.))
+                    .children(buttons)
+                    .into_any_element(),
+            );
         }
-        div().w(px(262.)).p(px(6.)).text_size(px(12.)).children(sections)
+        div()
+            .w(px(262.))
+            .p(px(6.))
+            .text_size(px(12.))
+            .children(sections)
     }
 }
 
 /// Hang a view under the ribbon control whose command is running (or at
 /// the pointer). A click on the control while its drop-down is open closes
 /// it: the press closes it and the click must not open it again.
-pub(super) fn open_dropdown<V: Render>(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx, build: impl FnOnce(&mut Context<V>) -> V) {
+pub(super) fn open_dropdown<V: Render>(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+    build: impl FnOnce(&mut Context<V>) -> V,
+) {
     let anchor = app.command_anchor;
     let closed = app.ext_mut::<DrawingUi>().tabs.closed.clone();
     if let (Some((control, at)), Some(anchor)) = (closed.take(), anchor) {
@@ -466,11 +585,17 @@ pub(super) fn open_dropdown<V: Render>(app: &mut ExcelApp, window: &mut Window, 
     }
     let position = anchor
         .and_then(|id| app.anchors.borrow().get(id).copied())
-        .map(|bounds| point(bounds.origin.x, bounds.origin.y + bounds.size.height + px(2.)))
+        .map(|bounds| {
+            point(
+                bounds.origin.x,
+                bounds.origin.y + bounds.size.height + px(2.),
+            )
+        })
         .unwrap_or_else(|| window.mouse_position());
     let view = cx.new(|cx| {
         if let Some(anchor) = anchor {
-            cx.on_release(move |_, _| closed.set(Some((anchor, Instant::now())))).detach();
+            cx.on_release(move |_, _| closed.set(Some((anchor, Instant::now()))))
+                .detach();
         }
         build(cx)
     });
@@ -516,8 +641,14 @@ pub(super) fn dashes() -> [(Dash, &'static str); 8] {
         (Dash::Dash, t("Dash", "Tiret")),
         (Dash::DashDot, t("Dash Dot", "Tiret-point")),
         (Dash::LongDash, t("Long Dash", "Tiret cadratin")),
-        (Dash::LongDashDot, t("Long Dash Dot", "Tiret cadratin-point")),
-        (Dash::LongDashDotDot, t("Long Dash Dot Dot", "Tiret cadratin-point-point")),
+        (
+            Dash::LongDashDot,
+            t("Long Dash Dot", "Tiret cadratin-point"),
+        ),
+        (
+            Dash::LongDashDotDot,
+            t("Long Dash Dot Dot", "Tiret cadratin-point-point"),
+        ),
     ]
 }
 
@@ -561,7 +692,9 @@ pub(super) fn set_outline_color(app: &mut ExcelApp, color: Option<Color>, cx: &m
 /// Change the outline of the selected shape (giving it one if it has
 /// none).
 pub(super) fn set_outline(app: &mut ExcelApp, cx: &mut Cx, change: impl Fn(&mut Outline)) {
-    edit_shape(app, Cmd::ShapeOutline.label(), cx, |shape| change(shape.outline.get_or_insert_with(new_outline)));
+    edit_shape(app, Cmd::ShapeOutline.label(), cx, |shape| {
+        change(shape.outline.get_or_insert_with(new_outline))
+    });
 }
 
 /// The part of the outline drop-down shown beside the colours.
@@ -581,7 +714,11 @@ struct ColorMenu {
 
 impl ColorMenu {
     /// Run a change on the application and close the drop-down.
-    fn apply(app: &WeakEntity<ExcelApp>, cx: &mut App, change: impl FnOnce(&mut ExcelApp, &mut Cx)) {
+    fn apply(
+        app: &WeakEntity<ExcelApp>,
+        cx: &mut App,
+        change: impl FnOnce(&mut ExcelApp, &mut Cx),
+    ) {
         app.update(cx, |app, cx| {
             app.popup = None;
             change(app, cx);
@@ -591,7 +728,13 @@ impl ColorMenu {
     }
 
     /// A row that opens a list beside the colours.
-    fn side_row(&self, side: Side, label: &'static str, enabled: bool, cx: &mut Context<Self>) -> AnyElement {
+    fn side_row(
+        &self,
+        side: Side,
+        label: &'static str,
+        enabled: bool,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let open = self.side == Some(side);
         div()
             .id(label)
@@ -605,7 +748,15 @@ impl ColorMenu {
             .when(enabled, |d| d.hover(|s| s.bg(c(theme::HOVER))))
             .when(!enabled, |d| d.text_color(c(theme::TEXT_DISABLED)))
             .child(label)
-            .child(icon("chevron-right", 10.0, if enabled { theme::TEXT_MUTED } else { theme::TEXT_DISABLED }))
+            .child(icon(
+                "chevron-right",
+                10.0,
+                if enabled {
+                    theme::TEXT_MUTED
+                } else {
+                    theme::TEXT_DISABLED
+                },
+            ))
             .on_mouse_move(cx.listener(move |this, _, _, cx| {
                 if enabled && this.side != Some(side) {
                     this.side = Some(side);
@@ -629,7 +780,11 @@ impl ColorMenu {
             color: Color(0x404040),
             ..current.unwrap_or_else(new_outline)
         };
-        let item = |index: usize, on: bool, name: Option<&'static str>, content: AnyElement, change: Rc<dyn Fn(&mut Outline)>| {
+        let item = |index: usize,
+                    on: bool,
+                    name: Option<&'static str>,
+                    content: AnyElement,
+                    change: Rc<dyn Fn(&mut Outline)>| {
             let app = self.app.clone();
             div()
                 .id(("dw-outline-item", index))
@@ -645,7 +800,9 @@ impl ColorMenu {
                 .when_some(name, |d, name| d.tooltip(tooltip(name)))
                 .on_click(move |_, _, cx| {
                     let change = change.clone();
-                    ColorMenu::apply(&app, cx, move |app, cx| set_outline(app, cx, |outline| change(outline)));
+                    ColorMenu::apply(&app, cx, move |app, cx| {
+                        set_outline(app, cx, |outline| change(outline))
+                    });
                 })
                 .into_any_element()
         };
@@ -670,7 +827,13 @@ impl ColorMenu {
                         .child(sample(line, 96.0))
                         .into_any_element();
                     let on = current.is_some_and(|outline| outline.width == points);
-                    item(i, on, None, content, Rc::new(move |outline: &mut Outline| outline.width = points))
+                    item(
+                        i,
+                        on,
+                        None,
+                        content,
+                        Rc::new(move |outline: &mut Outline| outline.width = points),
+                    )
                 })
                 .collect(),
             Side::Dashes => dashes()
@@ -685,7 +848,13 @@ impl ColorMenu {
                         ..base
                     };
                     let on = current.is_some_and(|outline| outline.dash == dash);
-                    item(i, on, Some(name), sample(line, 140.0).into_any_element(), Rc::new(move |outline: &mut Outline| outline.dash = dash))
+                    item(
+                        i,
+                        on,
+                        Some(name),
+                        sample(line, 140.0).into_any_element(),
+                        Rc::new(move |outline: &mut Outline| outline.dash = dash),
+                    )
                 })
                 .collect(),
             Side::Arrows => ARROWS
@@ -700,13 +869,16 @@ impl ColorMenu {
                         end,
                         ..base
                     };
-                    let on = current.is_some_and(|outline| (outline.start, outline.end) == (start, end));
+                    let on =
+                        current.is_some_and(|outline| (outline.start, outline.end) == (start, end));
                     item(
                         i,
                         on,
                         None,
                         sample(line, 140.0).into_any_element(),
-                        Rc::new(move |outline: &mut Outline| (outline.start, outline.end) = (start, end)),
+                        Rc::new(move |outline: &mut Outline| {
+                            (outline.start, outline.end) = (start, end)
+                        }),
                     )
                 })
                 .collect(),
@@ -731,13 +903,20 @@ impl Render for ColorMenu {
             .upgrade()
             .and_then(|app| selected(app.read(cx)).and_then(Drawing::as_shape).cloned());
         let (current, none_label) = match self.paint {
-            Paint::Fill => (shape.as_ref().map(|s| s.fill), t("No Fill", "Aucun remplissage")),
+            Paint::Fill => (
+                shape.as_ref().map(|s| s.fill),
+                t("No Fill", "Aucun remplissage"),
+            ),
             Paint::Outline => (
-                shape.as_ref().map(|s| s.outline.map(|outline| outline.color)),
+                shape
+                    .as_ref()
+                    .map(|s| s.outline.map(|outline| outline.color)),
                 t("No Outline", "Sans contour"),
             ),
             Paint::Text => (
-                shape.as_ref().map(|s| s.font.color.filter(|_| !s.effects.hollow)),
+                shape
+                    .as_ref()
+                    .map(|s| s.font.color.filter(|_| !s.effects.hollow)),
                 t("No Fill", "Aucun remplissage"),
             ),
         };
@@ -776,7 +955,11 @@ impl Render for ColorMenu {
             .flex()
             .text_size(px(12.))
             .child(column)
-            .children(self.side.filter(|_| paint == Paint::Outline).map(|side| self.side_panel(side, outline)))
+            .children(
+                self.side
+                    .filter(|_| paint == Paint::Outline)
+                    .map(|side| self.side_panel(side, outline)),
+            )
     }
 }
 
@@ -813,7 +996,11 @@ pub(super) fn open_align_menu(app: &mut ExcelApp, window: &mut Window, cx: &mut 
         MenuEntry::separator(),
         MenuEntry::command(Cmd::SnapToGrid, app).checked(app.snap_to_grid()),
         MenuEntry::command(Cmd::SnapToShape, app).checked(app.snap_to_shape()),
-        MenuEntry::new(t("View Gridlines", "Afficher le quadrillage"), |app, _, cx| app.toggle_gridlines(cx)).checked(gridlines),
+        MenuEntry::new(
+            t("View Gridlines", "Afficher le quadrillage"),
+            |app, _, cx| app.toggle_gridlines(cx),
+        )
+        .checked(gridlines),
     ];
     app.open_command_menu(entries, 250.0, window, cx);
 }
@@ -822,7 +1009,11 @@ pub(super) fn open_align_menu(app: &mut ExcelApp, window: &mut Window, cx: &mut 
 /// (the panes grey their controls otherwise).
 pub(super) fn editable(app: &ExcelApp) -> bool {
     selected(app).is_some_and(|drawing| {
-        crate::features::guard(app, &Intent::EditObject(Some(object_id(&Drawings, drawing.id)))).is_none()
+        crate::features::guard(
+            app,
+            &Intent::EditObject(Some(object_id(&Drawings, drawing.id))),
+        )
+        .is_none()
     })
 }
 
@@ -853,7 +1044,12 @@ mod tests {
         // Every dash of the menu is a different one, the solid line first.
         let listed: Vec<Dash> = dashes().iter().map(|(dash, _)| *dash).collect();
         assert_eq!(listed[0], Dash::Solid);
-        assert!(listed.iter().enumerate().all(|(i, dash)| !listed[..i].contains(dash)));
+        assert!(
+            listed
+                .iter()
+                .enumerate()
+                .all(|(i, dash)| !listed[..i].contains(dash))
+        );
         assert!(WEIGHTS.windows(2).all(|pair| pair[0].0 < pair[1].0));
         assert_eq!(ARROWS[0], (LineEnd::None, LineEnd::None));
     }

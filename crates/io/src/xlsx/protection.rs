@@ -10,7 +10,9 @@
 
 use super::xml::{Event, Reader, Tag, push_attr};
 use opensheet_engine::Rect;
-use opensheet_engine::protect::{PasswordHash, Permission, ProtectedRange, SheetProtection, WorkbookProtection};
+use opensheet_engine::protect::{
+    PasswordHash, Permission, ProtectedRange, SheetProtection, WorkbookProtection,
+};
 use std::borrow::Cow;
 use std::fmt::Write as _;
 
@@ -143,10 +145,19 @@ pub(crate) fn read_ranges<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Vec<Protecte
         match r.next() {
             Event::Open(t) => {
                 if t.name == "protectedRange" {
-                    let cells: Vec<Rect> = t.attr("sqref").map(|sqref| sqref.split_whitespace().filter_map(|part| Rect::parse(&part.replace('$', ""))).collect()).unwrap_or_default();
+                    let cells: Vec<Rect> = t
+                        .attr("sqref")
+                        .map(|sqref| {
+                            sqref
+                                .split_whitespace()
+                                .filter_map(|part| Rect::parse(&part.replace('$', "")))
+                                .collect()
+                        })
+                        .unwrap_or_default();
                     if let (Some(name), false) = (t.attr("name"), cells.is_empty()) {
                         let mut range = ProtectedRange::new(&name, cells, read_password(&t, false));
-                        range.security_descriptor = t.attr("securityDescriptor").map(|text| text.into_owned());
+                        range.security_descriptor =
+                            t.attr("securityDescriptor").map(|text| text.into_owned());
                         ranges.push(range);
                     }
                 }

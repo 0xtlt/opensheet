@@ -49,7 +49,10 @@ pub(crate) fn read_view(view: &Tag, sheet: &mut Sheet) {
 /// The attributes of `<sheetFormatPr>` that say how deep the outline
 /// goes: Excel sizes the outline margin from them.
 pub(crate) fn push_format_attrs(x: &mut String, sheet: &Sheet) {
-    let (rows, cols) = (sheet.outline.rows.max_level(), sheet.outline.cols.max_level());
+    let (rows, cols) = (
+        sheet.outline.rows.max_level(),
+        sheet.outline.cols.max_level(),
+    );
     if rows > 0 {
         w!(x, " outlineLevelRow=\"{rows}\"");
     }
@@ -75,7 +78,10 @@ pub(crate) fn push_level(x: &mut String, level: u8, collapsed: bool) {
 /// Take the outline attributes of a `<row>` or a `<col>` covering the
 /// rows (columns) `lo..=hi`.
 pub(crate) fn read_attrs(t: &Tag, lines: &mut AxisOutline, lo: u32, hi: u32) {
-    let level = t.attr_u32("outlineLevel").unwrap_or(0).min(MAX_LEVEL as u32) as u8;
+    let level = t
+        .attr_u32("outlineLevel")
+        .unwrap_or(0)
+        .min(MAX_LEVEL as u32) as u8;
     let collapsed = t.attr_bool("collapsed").unwrap_or(false);
     if level == 0 && !collapsed {
         return;

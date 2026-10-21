@@ -37,12 +37,20 @@ pub(crate) struct Scope {
 impl Scope {
     /// The expression that gives a sheet.
     pub fn sheet(&self, name: &str) -> String {
-        if self.start.as_deref() == Some(name) { "selectedSheet".to_string() } else { format!("workbook.getWorksheet({})", quote(name)) }
+        if self.start.as_deref() == Some(name) {
+            "selectedSheet".to_string()
+        } else {
+            format!("workbook.getWorksheet({})", quote(name))
+        }
     }
 
     /// The sheet in the words of a comment.
     pub fn on(&self, name: &str) -> String {
-        if self.start.as_deref() == Some(name) { "selectedSheet".to_string() } else { name.to_string() }
+        if self.start.as_deref() == Some(name) {
+            "selectedSheet".to_string()
+        } else {
+            name.to_string()
+        }
     }
 
     /// A range of a sheet: `selectedSheet.getRange("A1:B2")`.
@@ -64,7 +72,9 @@ pub(crate) fn quote(text: &str) -> String {
             '\t' => out.push_str("\\t"),
             // Control characters, and the two line ends a string of a
             // script cannot hold as they are.
-            ch if (ch as u32) < 0x20 || ch == '\u{2028}' || ch == '\u{2029}' => out.push_str(&format!("\\u{:04x}", ch as u32)),
+            ch if (ch as u32) < 0x20 || ch == '\u{2028}' || ch == '\u{2029}' => {
+                out.push_str(&format!("\\u{:04x}", ch as u32))
+            }
             ch => out.push(ch),
         }
     }
@@ -75,7 +85,11 @@ pub(crate) fn quote(text: &str) -> String {
 /// A number as TypeScript writes it: no more digits than it takes to
 /// read the same number back.
 pub(crate) fn number(n: f64) -> String {
-    if n == n.trunc() && n.abs() < 1e15 { format!("{}", n as i64) } else { format!("{n}") }
+    if n == n.trunc() && n.abs() < 1e15 {
+        format!("{}", n as i64)
+    } else {
+        format!("{n}")
+    }
 }
 
 /// A size in points from pixels, short enough to read.
@@ -102,7 +116,10 @@ pub(crate) fn rects_of(cells: &BTreeSet<(u32, u32)>) -> Vec<Rect> {
     let flush = |row_runs: &mut Vec<Rect>, open: &mut Vec<Rect>, done: &mut Vec<Rect>| {
         let mut next = Vec::new();
         for run in row_runs.drain(..) {
-            match open.iter().position(|o| o.c0 == run.c0 && o.c1 == run.c1 && o.r1 + 1 == run.r0) {
+            match open
+                .iter()
+                .position(|o| o.c0 == run.c0 && o.c1 == run.c1 && o.r1 + 1 == run.r0)
+            {
                 Some(index) => {
                     let mut grown = open.swap_remove(index);
                     grown.r1 = run.r0;
@@ -178,7 +195,12 @@ pub(crate) fn text_of(step: &Step, indent: &str) -> String {
 
 /// Run some steps on a workbook, `selectedSheet` being the sheet at
 /// `front`. On an error the workbook is left as it was.
-pub(crate) fn play(wb: &mut Workbook, front: usize, user: &str, steps: &[Step]) -> Result<Outcome, String> {
+pub(crate) fn play(
+    wb: &mut Workbook,
+    front: usize,
+    user: &str,
+    steps: &[Step],
+) -> Result<Outcome, String> {
     let mut context = Context {
         active_sheet: front,
         ..Context::default()
@@ -211,14 +233,31 @@ mod tests {
     #[test]
     fn cells_are_gathered_into_rectangles() {
         let cells = |rects: &[Rect]| -> BTreeSet<(u32, u32)> {
-            rects.iter().flat_map(|r| (r.r0..=r.r1).flat_map(move |row| (r.c0..=r.c1).map(move |col| (row, col)))).collect()
+            rects
+                .iter()
+                .flat_map(|r| {
+                    (r.r0..=r.r1).flat_map(move |row| (r.c0..=r.c1).map(move |col| (row, col)))
+                })
+                .collect()
         };
-        let names = |cells: &BTreeSet<(u32, u32)>| rects_of(cells).iter().map(Rect::name).collect::<Vec<_>>();
+        let names = |cells: &BTreeSet<(u32, u32)>| {
+            rects_of(cells).iter().map(Rect::name).collect::<Vec<_>>()
+        };
         assert_eq!(names(&cells(&[Rect::new(0, 0, 3, 2)])), ["A1:C4"]);
         assert_eq!(names(&cells(&[Rect::cell(4, 4)])), ["E5"]);
-        assert_eq!(names(&cells(&[Rect::new(0, 0, 1, 1), Rect::new(0, 3, 1, 3), Rect::new(5, 0, 5, 4)])), ["A1:B2", "D1:D2", "A6:E6"]);
+        assert_eq!(
+            names(&cells(&[
+                Rect::new(0, 0, 1, 1),
+                Rect::new(0, 3, 1, 3),
+                Rect::new(5, 0, 5, 4)
+            ])),
+            ["A1:B2", "D1:D2", "A6:E6"]
+        );
         // An L: the wide row cannot join the narrow ones.
-        assert_eq!(names(&cells(&[Rect::new(0, 0, 2, 0), Rect::new(2, 1, 2, 2)])), ["A1:A2", "A3:C3"]);
+        assert_eq!(
+            names(&cells(&[Rect::new(0, 0, 2, 0), Rect::new(2, 1, 2, 2)])),
+            ["A1:A2", "A3:C3"]
+        );
         assert!(rects_of(&BTreeSet::new()).is_empty());
         assert_eq!(runs_of([2, 3, 4, 7]), [(2, 4), (7, 7)]);
     }
@@ -236,9 +275,15 @@ mod tests {
             start: Some("Data".to_string()),
             ..Scope::default()
         };
-        assert_eq!(scope.range("Data", Rect::new(0, 0, 1, 1)), "selectedSheet.getRange(\"A1:B2\")");
+        assert_eq!(
+            scope.range("Data", Rect::new(0, 0, 1, 1)),
+            "selectedSheet.getRange(\"A1:B2\")"
+        );
         assert_eq!(scope.sheet("It's"), "workbook.getWorksheet(\"It's\")");
-        let step = Step::new("Set range A1 on selectedSheet", "selectedSheet.getRange(\"A1\").setValue(1);");
+        let step = Step::new(
+            "Set range A1 on selectedSheet",
+            "selectedSheet.getRange(\"A1\").setValue(1);",
+        );
         assert_eq!(
             script(&[step]),
             "function main(workbook: ExcelScript.Workbook) {\n\tlet selectedSheet = workbook.getActiveWorksheet();\n\t// Set range A1 on selectedSheet\n\tselectedSheet.getRange(\"A1\").setValue(1);\n}\n"

@@ -131,7 +131,10 @@ impl Rule {
     /// Colour scales, data bars and icon sets: rules that grade every
     /// number of the range instead of testing a condition.
     pub fn is_graded(&self) -> bool {
-        matches!(self, Rule::ColorScale(_) | Rule::DataBar(_) | Rule::IconSet(_))
+        matches!(
+            self,
+            Rule::ColorScale(_) | Rule::DataBar(_) | Rule::IconSet(_)
+        )
     }
 
     /// Every formula of the rule: operands, the formula of a formula rule,
@@ -149,7 +152,9 @@ impl Rule {
                 out.extend(bar.min.value());
                 out.extend(bar.max.value());
             }
-            Rule::IconSet(icons) => out.extend(icons.thresholds.iter().filter_map(|t| t.value.value())),
+            Rule::IconSet(icons) => {
+                out.extend(icons.thresholds.iter().filter_map(|t| t.value.value()))
+            }
             _ => {}
         }
         out
@@ -170,7 +175,10 @@ impl Rule {
                 bar.min.map_expr(f);
                 bar.max.map_expr(f);
             }
-            Rule::IconSet(icons) => icons.thresholds.iter_mut().for_each(|t| t.value.map_expr(f)),
+            Rule::IconSet(icons) => icons
+                .thresholds
+                .iter_mut()
+                .for_each(|t| t.value.map_expr(f)),
             _ => {}
         }
     }
@@ -392,7 +400,9 @@ impl Cfvo {
 
     fn map_expr(&mut self, f: &mut dyn FnMut(&Expr) -> Expr) {
         match self {
-            Cfvo::Number(e) | Cfvo::Percent(e) | Cfvo::Percentile(e) | Cfvo::Formula(e) => *e = f(e),
+            Cfvo::Number(e) | Cfvo::Percent(e) | Cfvo::Percentile(e) | Cfvo::Formula(e) => {
+                *e = f(e)
+            }
             Cfvo::Min | Cfvo::Max | Cfvo::Automatic => {}
         }
     }
@@ -633,7 +643,10 @@ impl IconSet {
 
     /// Sets that only exist in the x14 extension (Excel 2010 and later).
     pub fn is_x14(self) -> bool {
-        matches!(self, IconSet::ThreeStars | IconSet::ThreeTriangles | IconSet::FiveBoxes)
+        matches!(
+            self,
+            IconSet::ThreeStars | IconSet::ThreeTriangles | IconSet::FiveBoxes
+        )
     }
 
     /// The icons of the set, the one for the lowest numbers first (the
@@ -645,17 +658,34 @@ impl IconSet {
             IconSet::ThreeArrowsGray => &[GrayDownArrow, GraySideArrow, GrayUpArrow],
             IconSet::ThreeFlags => &[RedFlag, YellowFlag, GreenFlag],
             IconSet::ThreeTrafficLights1 => &[RedCircleWithBorder, YellowCircle, GreenCircle],
-            IconSet::ThreeTrafficLights2 => &[RedTrafficLight, YellowTrafficLight, GreenTrafficLight],
+            IconSet::ThreeTrafficLights2 => {
+                &[RedTrafficLight, YellowTrafficLight, GreenTrafficLight]
+            }
             IconSet::ThreeSigns => &[RedDiamond, YellowTriangle, GreenCircle],
             IconSet::ThreeSymbols => &[RedCrossSymbol, YellowExclamationSymbol, GreenCheckSymbol],
             IconSet::ThreeSymbols2 => &[RedCross, YellowExclamation, GreenCheck],
             IconSet::ThreeStars => &[SilverStar, HalfGoldStar, GoldStar],
             IconSet::ThreeTriangles => &[RedDownTriangle, YellowDash, GreenUpTriangle],
-            IconSet::FourArrows => &[RedDownArrow, YellowDownInclineArrow, YellowUpInclineArrow, GreenUpArrow],
-            IconSet::FourArrowsGray => &[GrayDownArrow, GrayDownInclineArrow, GrayUpInclineArrow, GrayUpArrow],
+            IconSet::FourArrows => &[
+                RedDownArrow,
+                YellowDownInclineArrow,
+                YellowUpInclineArrow,
+                GreenUpArrow,
+            ],
+            IconSet::FourArrowsGray => &[
+                GrayDownArrow,
+                GrayDownInclineArrow,
+                GrayUpInclineArrow,
+                GrayUpArrow,
+            ],
             IconSet::FourRedToBlack => &[BlackCircle, GrayCircle, PinkCircle, RedCircle],
             IconSet::FourRating => &[OneBar, TwoBars, ThreeBars, FourBars],
-            IconSet::FourTrafficLights => &[BlackCircleWithBorder, RedCircleWithBorder, YellowCircle, GreenCircle],
+            IconSet::FourTrafficLights => &[
+                BlackCircleWithBorder,
+                RedCircleWithBorder,
+                YellowCircle,
+                GreenCircle,
+            ],
             IconSet::FiveArrows => &[
                 RedDownArrow,
                 YellowDownInclineArrow,

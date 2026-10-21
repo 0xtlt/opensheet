@@ -21,8 +21,8 @@ mod ui_tests;
 
 use super::preferences::settings;
 use super::{
-    Command, Cx, Feature, ObjectInfo, ObjectVerb, PaintLayer, Painter, Placement, ZMove, Zone, ZoneEvent,
-    ZoneResponse, object_id,
+    Command, Cx, Feature, ObjectInfo, ObjectVerb, PaintLayer, Painter, Placement, ZMove, Zone,
+    ZoneEvent, ZoneResponse, object_id,
 };
 use crate::app::{ExcelApp, MenuEntry};
 use crate::grid::GridLayout;
@@ -136,22 +136,44 @@ impl Pen {
     /// A pen as "Add Pen" makes it.
     pub fn new(kind: PenKind) -> Pen {
         match kind {
-            PenKind::Pen => Pen { kind, color: 0x000000, mm: 0.5 },
-            PenKind::Pencil => Pen { kind, color: 0x404040, mm: 1.0 },
-            PenKind::Highlighter => Pen { kind, color: 0xFFFC00, mm: 6.0 },
+            PenKind::Pen => Pen {
+                kind,
+                color: 0x000000,
+                mm: 0.5,
+            },
+            PenKind::Pencil => Pen {
+                kind,
+                color: 0x404040,
+                mm: 1.0,
+            },
+            PenKind::Highlighter => Pen {
+                kind,
+                color: 0xFFFC00,
+                mm: 6.0,
+            },
         }
     }
 
     /// One line of the settings file: "pen 000000 0.5".
     pub fn to_setting(&self) -> String {
-        format!("{} {:06X} {}", self.kind.file_name(), self.color & 0xFF_FFFF, self.mm)
+        format!(
+            "{} {:06X} {}",
+            self.kind.file_name(),
+            self.color & 0xFF_FFFF,
+            self.mm
+        )
     }
 
     pub fn from_setting(text: &str) -> Option<Pen> {
         let mut words = text.split_whitespace();
         let kind = PenKind::from_file_name(words.next()?)?;
         let color = u32::from_str_radix(words.next()?, 16).ok()? & 0xFF_FFFF;
-        let mm = words.next()?.parse::<f32>().ok().filter(|mm| mm.is_finite())?.clamp(0.1, 20.0);
+        let mm = words
+            .next()?
+            .parse::<f32>()
+            .ok()
+            .filter(|mm| mm.is_finite())?
+            .clamp(0.1, 20.0);
         Some(Pen { kind, color, mm })
     }
 }
@@ -176,13 +198,14 @@ pub fn pens() -> Vec<Pen> {
 
 /// The colours a pen can be given, by rows of eight.
 pub const PEN_COLORS: [u32; 16] = [
-    0x000000, 0xFFFFFF, 0x849398, 0x5B2D90, 0x004F8B, 0x00A0D7, 0x33CCFF, 0x008C3A, 0x66CC00, 0xFFC114, 0xF6630D,
-    0xE71224, 0xFF0066, 0xAB008B, 0xAE7C5B, 0x6C3B2A,
+    0x000000, 0xFFFFFF, 0x849398, 0x5B2D90, 0x004F8B, 0x00A0D7, 0x33CCFF, 0x008C3A, 0x66CC00,
+    0xFFC114, 0xF6630D, 0xE71224, 0xFF0066, 0xAB008B, 0xAE7C5B, 0x6C3B2A,
 ];
 
 /// The colours of highlighters.
-pub const HIGHLIGHTER_COLORS: [u32; 8] =
-    [0xFFFC00, 0x00F900, 0x00FDFF, 0xFF40FF, 0xFF8517, 0xFF2600, 0x0096FF, 0xD2D2D2];
+pub const HIGHLIGHTER_COLORS: [u32; 8] = [
+    0xFFFC00, 0x00F900, 0x00FDFF, 0xFF40FF, 0xFF8517, 0xFF2600, 0x0096FF, 0xD2D2D2,
+];
 
 fn add_pen(app: &mut ExcelApp, kind: PenKind, window: &mut Window, cx: &mut Cx) {
     let mut all = pens();
@@ -266,15 +289,36 @@ impl Feature for InkFeature {
         }
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         tools::mouse_down(app, zone, ev, window, cx)
     }
 
-    fn zone_drag(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) {
+    fn zone_drag(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) {
         tools::mouse_drag(app, zone, ev, cx);
     }
 
-    fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) {
+    fn zone_mouse_up(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) {
         tools::mouse_up(app, zone, ev, cx);
     }
 
@@ -312,14 +356,22 @@ impl Feature for InkFeature {
             return;
         };
         let (x, y) = app.wb.sheets[sheet].corner_point((place.anchor, place.offset));
-        app.wb.set_ink_frame(sheet, id, Frame::new(x, y, place.size.0 as f64, place.size.1 as f64));
+        app.wb.set_ink_frame(
+            sheet,
+            id,
+            Frame::new(x, y, place.size.0 as f64, place.size.1 as f64),
+        );
         let (dx, dy) = (x - before.x, y - before.y);
         if dx == 0.0 && dy == 0.0 {
             return;
         }
         for other in group(app) {
             if let Some(frame) = app.wb.ink_frame(sheet, other) {
-                app.wb.set_ink_frame(sheet, other, Frame::new(frame.x + dx, frame.y + dy, frame.width, frame.height));
+                app.wb.set_ink_frame(
+                    sheet,
+                    other,
+                    Frame::new(frame.x + dx, frame.y + dy, frame.width, frame.height),
+                );
             }
         }
     }
@@ -356,17 +408,33 @@ impl Feature for InkFeature {
 
     /// The copies keep their places among themselves; the corner of their
     /// common box goes to `at`.
-    fn paste_object(&self, app: &mut ExcelApp, data: &dyn Any, at: ((u32, u32), (f32, f32))) -> Option<u32> {
+    fn paste_object(
+        &self,
+        app: &mut ExcelApp,
+        data: &dyn Any,
+        at: ((u32, u32), (f32, f32)),
+    ) -> Option<u32> {
         let Copied(strokes) = data.downcast_ref::<Copied>()?;
-        let left = strokes.iter().map(|(_, frame)| frame.x).fold(f64::INFINITY, f64::min);
-        let top = strokes.iter().map(|(_, frame)| frame.y).fold(f64::INFINITY, f64::min);
+        let left = strokes
+            .iter()
+            .map(|(_, frame)| frame.x)
+            .fold(f64::INFINITY, f64::min);
+        let top = strokes
+            .iter()
+            .map(|(_, frame)| frame.y)
+            .fold(f64::INFINITY, f64::min);
         let (x, y) = app.wb.sheets[app.sheet].corner_point(at);
         let mut new = Vec::new();
         for (ink, frame) in strokes {
             let mut copy = ink.clone();
             // The copy gets a name of its own.
             copy.name.clear();
-            let place = Frame::new(x + frame.x - left, y + frame.y - top, frame.width, frame.height);
+            let place = Frame::new(
+                x + frame.x - left,
+                y + frame.y - top,
+                frame.width,
+                frame.height,
+            );
             new.extend(app.wb.add_ink(app.sheet, copy, place));
         }
         let first = *new.first()?;
@@ -396,7 +464,14 @@ impl Feature for InkFeature {
     }
 
     /// A stroke is hit on its line, not anywhere in its box.
-    fn object_hit(&self, app: &ExcelApp, id: u32, layout: &GridLayout, x: f32, y: f32) -> Option<bool> {
+    fn object_hit(
+        &self,
+        app: &ExcelApp,
+        id: u32,
+        layout: &GridLayout,
+        x: f32,
+        y: f32,
+    ) -> Option<bool> {
         Some(tools::hits(app, id, layout, x, y))
     }
 
@@ -404,7 +479,6 @@ impl Feature for InkFeature {
     fn cancel(&self, app: &mut ExcelApp, cx: &mut Cx) -> bool {
         tools::put_down(app, cx)
     }
-
 }
 
 /// The id of a stroke among the floating objects.
@@ -421,7 +495,10 @@ mod tests {
         for pen in default_pens() {
             assert_eq!(Pen::from_setting(&pen.to_setting()), Some(pen));
         }
-        assert_eq!(Pen::new(PenKind::Highlighter).to_setting(), "highlighter FFFC00 6");
+        assert_eq!(
+            Pen::new(PenKind::Highlighter).to_setting(),
+            "highlighter FFFC00 6"
+        );
         assert_eq!(
             Pen::from_setting("pencil 00ff00 0.35"),
             Some(Pen {
@@ -431,7 +508,13 @@ mod tests {
             })
         );
         // What is not a pen is not read.
-        for bad in ["", "brush 000000 1", "pen red 1", "pen 000000", "pen 000000 NaN"] {
+        for bad in [
+            "",
+            "brush 000000 1",
+            "pen red 1",
+            "pen 000000",
+            "pen 000000 NaN",
+        ] {
             assert_eq!(Pen::from_setting(bad), None, "{bad:?}");
         }
         // Half a millimetre is nearly two pixels.

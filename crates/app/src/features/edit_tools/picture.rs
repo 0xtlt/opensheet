@@ -42,30 +42,65 @@ const MAX_SIDE: f64 = 4096.0;
 struct Floating<'a>(&'a PaperPainter);
 
 impl ObjectPainter for Floating<'_> {
-    fn paint_chart(&self, wb: &Workbook, sheet: usize, chart: &Chart, size: (f64, f64), canvas: &mut Canvas) {
+    fn paint_chart(
+        &self,
+        wb: &Workbook,
+        sheet: usize,
+        chart: &Chart,
+        size: (f64, f64),
+        canvas: &mut Canvas,
+    ) {
         self.0.paint_chart(wb, sheet, chart, size, canvas);
     }
 
-    fn paint_drawing(&self, wb: &Workbook, sheet: usize, drawing: &Drawing, size: (f64, f64), canvas: &mut Canvas) {
-        if drawing.as_picture().is_none_or(|picture| picture.link.is_none()) {
+    fn paint_drawing(
+        &self,
+        wb: &Workbook,
+        sheet: usize,
+        drawing: &Drawing,
+        size: (f64, f64),
+        canvas: &mut Canvas,
+    ) {
+        if drawing
+            .as_picture()
+            .is_none_or(|picture| picture.link.is_none())
+        {
             self.0.paint_drawing(wb, sheet, drawing, size, canvas);
         }
     }
 
-    fn paint_adornment(&self, wb: &Workbook, sheet: usize, cell: (u32, u32), adornment: &Adornment, size: (f64, f64), canvas: &mut Canvas) {
-        self.0.paint_adornment(wb, sheet, cell, adornment, size, canvas);
+    fn paint_adornment(
+        &self,
+        wb: &Workbook,
+        sheet: usize,
+        cell: (u32, u32),
+        adornment: &Adornment,
+        size: (f64, f64),
+        canvas: &mut Canvas,
+    ) {
+        self.0
+            .paint_adornment(wb, sheet, cell, adornment, size, canvas);
     }
 }
 
 /// A range of cells as a drawing: the SVG document and the size of the
 /// range on the sheet, in pixels at 100 %. `None` when the range shows
 /// nothing.
-fn range_document(wb: &Workbook, sheet: usize, range: Rect, look: RangeLook, painter: &PaperPainter) -> Option<(String, (f64, f64))> {
+fn range_document(
+    wb: &Workbook,
+    sheet: usize,
+    range: Rect,
+    look: RangeLook,
+    painter: &PaperPainter,
+) -> Option<(String, (f64, f64))> {
     let scene = render_range(wb, sheet, range, look, None, Some(&Floating(painter)))?;
     // The scene is in points: three quarters of a pixel.
     let size = (scene.size.0 / 0.75, scene.size.1 / 0.75);
     let sharp = SHARPNESS.min(MAX_SIDE / size.0.max(size.1)).max(0.05);
-    let pixels = ((size.0 * sharp).round().max(1.0), (size.1 * sharp).round().max(1.0));
+    let pixels = (
+        (size.0 * sharp).round().max(1.0),
+        (size.1 * sharp).round().max(1.0),
+    );
     Some((scene_svg(&scene, pixels), size))
 }
 
@@ -73,7 +108,12 @@ fn range_document(wb: &Workbook, sheet: usize, range: Rect, look: RangeLook, pai
 /// it is meant to be seen: the size of the cells.
 fn document_png(document: &str, size: (f64, f64), cx: &App) -> Option<Vec<u8>> {
     let (width, height, pixels) = drawings::svg_pixels(document.as_bytes(), cx)?;
-    png_file(width, height, &pixels, Some(96.0 * width as f64 / size.0.max(1.0)))
+    png_file(
+        width,
+        height,
+        &pixels,
+        Some(96.0 * width as f64 / size.0.max(1.0)),
+    )
 }
 
 /// How the window shows the cells of a sheet.
@@ -84,7 +124,13 @@ fn on_screen(app: &ExcelApp, sheet: usize) -> RangeLook {
 }
 
 /// A picture of a range: the image file and the size of the range.
-pub(super) fn range_picture(app: &ExcelApp, sheet: usize, range: Rect, look: RangeLook, cx: &App) -> Option<(Vec<u8>, (f64, f64))> {
+pub(super) fn range_picture(
+    app: &ExcelApp,
+    sheet: usize,
+    range: Rect,
+    look: RangeLook,
+    cx: &App,
+) -> Option<(Vec<u8>, (f64, f64))> {
     let painter = PaperPainter::new(cx);
     let (document, size) = range_document(&app.wb, sheet, range, look, &painter)?;
     Some((document_png(&document, size, cx)?, size))
@@ -110,7 +156,12 @@ fn link_formula(wb: &Workbook, sheet: usize, from: usize, range: Rect) -> Expr {
 /// Paste ▸ Picture (and Linked Picture with `linked`): the copied cells
 /// as a picture whose top-left corner is that of the active cell.
 pub(super) fn paste(app: &mut ExcelApp, linked: bool, cx: &mut Cx) {
-    let Some((from, range)) = app.clip.as_ref().filter(|state| !state.cut).map(|state| (state.clip.sheet, state.clip.rect)) else {
+    let Some((from, range)) = app
+        .clip
+        .as_ref()
+        .filter(|state| !state.cut)
+        .map(|state| (state.clip.sheet, state.clip.rect))
+    else {
         return;
     };
     if from >= app.wb.sheets.len() {
@@ -160,7 +211,10 @@ fn fingerprint(document: &str) -> u64 {
 /// an image made before its cells last changed.
 pub(super) fn follow_links(app: &mut ExcelApp, cx: &App) {
     let generation = app.wb.generation;
-    if app.ext::<Followed>().is_some_and(|followed| followed.generation == Some(generation)) {
+    if app
+        .ext::<Followed>()
+        .is_some_and(|followed| followed.generation == Some(generation))
+    {
         return;
     }
     let linked = app.wb.linked_pictures();
@@ -169,11 +223,15 @@ pub(super) fn follow_links(app: &mut ExcelApp, cx: &App) {
         let painter = PaperPainter::new(cx);
         for (sheet, id, source) in linked {
             let look = on_screen(app, source.sheet);
-            let Some((document, size)) = range_document(&app.wb, source.sheet, source.rect, look, &painter) else {
+            let Some((document, size)) =
+                range_document(&app.wb, source.sheet, source.rect, look, &painter)
+            else {
                 continue;
             };
             let print = fingerprint(&document);
-            let known = app.ext::<Followed>().and_then(|followed| followed.shown.get(&(sheet, id)).copied());
+            let known = app
+                .ext::<Followed>()
+                .and_then(|followed| followed.shown.get(&(sheet, id)).copied());
             if known != Some(print)
                 && let Some(image) = document_png(&document, size, cx)
             {
@@ -202,7 +260,10 @@ pub(super) fn open_copy(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
         );
         return;
     }
-    app.open_modal(window, cx, |modal, _, _| CopyPicture { modal, printed: false });
+    app.open_modal(window, cx, |modal, _, _| CopyPicture {
+        modal,
+        printed: false,
+    });
 }
 
 /// Put the picture of the selection on the clipboard: what Paste then
@@ -211,14 +272,21 @@ pub(super) fn copy(app: &mut ExcelApp, printed: bool, cx: &mut Cx) -> bool {
     let range = app.sel().current();
     // Whole rows and columns stop where the sheet does.
     let range = app.wb.copy(app.sheet, range).rect;
-    let look = if printed { RangeLook::Printed } else { on_screen(app, app.sheet) };
+    let look = if printed {
+        RangeLook::Printed
+    } else {
+        on_screen(app, app.sheet)
+    };
     let Some((image, _)) = range_picture(app, app.sheet, range, look, cx) else {
         return false;
     };
     // The cells that were copied before are no longer what Paste pastes.
     app.clip = None;
     app.object_clip = None;
-    cx.write_to_clipboard(ClipboardItem::new_image(&gpui::Image::from_bytes(gpui::ImageFormat::Png, image)));
+    cx.write_to_clipboard(ClipboardItem::new_image(&gpui::Image::from_bytes(
+        gpui::ImageFormat::Png,
+        image,
+    )));
     cx.notify();
     true
 }

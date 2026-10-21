@@ -22,25 +22,61 @@ pub enum Math {
     Text(String),
     /// `bar` false: one over the other without a line (a binomial
     /// coefficient).
-    Fraction { num: Row, den: Row, bar: bool },
+    Fraction {
+        num: Row,
+        den: Row,
+        bar: bool,
+    },
     /// A base with a subscript, a superscript or both.
-    Script { base: Row, sub: Option<Row>, sup: Option<Row> },
-    Radical { degree: Option<Row>, body: Row },
+    Script {
+        base: Row,
+        sub: Option<Row>,
+        sup: Option<Row>,
+    },
+    Radical {
+        degree: Option<Row>,
+        body: Row,
+    },
     /// A large operator with its limits (under and over it, or beside it
     /// as scripts) and what it applies to.
-    Nary { op: char, sub: Option<Row>, sup: Option<Row>, limits_beside: bool, body: Row },
+    Nary {
+        op: char,
+        sub: Option<Row>,
+        sup: Option<Row>,
+        limits_beside: bool,
+        body: Row,
+    },
     /// Delimiters that grow with what they hold; several items are set
     /// apart by a bar.
-    Delimited { open: Option<char>, close: Option<char>, items: Vec<Row> },
+    Delimited {
+        open: Option<char>,
+        close: Option<char>,
+        items: Vec<Row>,
+    },
     /// A function name set upright, applied to its argument.
-    Function { name: Row, arg: Row },
+    Function {
+        name: Row,
+        arg: Row,
+    },
     /// A mark over a body: the combining character says which.
-    Accent { mark: char, body: Row },
+    Accent {
+        mark: char,
+        body: Row,
+    },
     /// A line over (or under) a body.
-    Bar { over: bool, body: Row },
+    Bar {
+        over: bool,
+        body: Row,
+    },
     /// Text under (or over) a base: `lim` and what it tends to.
-    Limit { base: Row, limit: Row, upper: bool },
-    Matrix { rows: Vec<Vec<Row>> },
+    Limit {
+        base: Row,
+        limit: Row,
+        upper: bool,
+    },
+    Matrix {
+        rows: Vec<Vec<Row>>,
+    },
 }
 
 pub type Row = Vec<Math>;
@@ -87,39 +123,158 @@ const UNDERBAR: char = '▁';
 
 /// The names typed after a backslash and the characters they stand for.
 pub const NAMES: &[(&str, char)] = &[
-    ("alpha", 'α'), ("beta", 'β'), ("gamma", 'γ'), ("delta", 'δ'), ("epsilon", 'ϵ'), ("varepsilon", 'ε'),
-    ("zeta", 'ζ'), ("eta", 'η'), ("theta", 'θ'), ("vartheta", 'ϑ'), ("iota", 'ι'), ("kappa", 'κ'),
-    ("lambda", 'λ'), ("mu", 'μ'), ("nu", 'ν'), ("xi", 'ξ'), ("pi", 'π'), ("rho", 'ρ'), ("sigma", 'σ'),
-    ("tau", 'τ'), ("upsilon", 'υ'), ("phi", 'ϕ'), ("varphi", 'φ'), ("chi", 'χ'), ("psi", 'ψ'), ("omega", 'ω'),
-    ("Gamma", 'Γ'), ("Delta", 'Δ'), ("Theta", 'Θ'), ("Lambda", 'Λ'), ("Xi", 'Ξ'), ("Pi", 'Π'),
-    ("Sigma", 'Σ'), ("Upsilon", 'Υ'), ("Phi", 'Φ'), ("Psi", 'Ψ'), ("Omega", 'Ω'),
-    ("infty", '∞'), ("pm", '±'), ("mp", '∓'), ("times", '×'), ("div", '÷'), ("cdot", '⋅'), ("ast", '∗'),
-    ("le", '≤'), ("ge", '≥'), ("ne", '≠'), ("approx", '≈'), ("equiv", '≡'), ("sim", '∼'), ("cong", '≅'),
-    ("propto", '∝'), ("ll", '≪'), ("gg", '≫'), ("to", '→'), ("rightarrow", '→'), ("leftarrow", '←'),
-    ("leftrightarrow", '↔'), ("Rightarrow", '⇒'), ("Leftarrow", '⇐'), ("Leftrightarrow", '⇔'), ("mapsto", '↦'),
-    ("partial", '∂'), ("nabla", '∇'), ("forall", '∀'), ("exists", '∃'), ("in", '∈'), ("notin", '∉'),
-    ("ni", '∋'), ("subset", '⊂'), ("supset", '⊃'), ("subseteq", '⊆'), ("supseteq", '⊇'), ("cup", '∪'),
-    ("cap", '∩'), ("emptyset", '∅'), ("angle", '∠'), ("degree", '°'), ("perp", '⊥'), ("parallel", '∥'),
-    ("therefore", '∴'), ("because", '∵'), ("neg", '¬'), ("wedge", '∧'), ("vee", '∨'), ("oplus", '⊕'),
-    ("otimes", '⊗'), ("circ", '∘'), ("bullet", '∙'), ("star", '⋆'), ("hbar", 'ℏ'), ("ell", 'ℓ'),
-    ("Re", 'ℜ'), ("Im", 'ℑ'), ("aleph", 'ℵ'), ("ldots", '…'), ("cdots", '⋯'), ("vdots", '⋮'), ("ddots", '⋱'),
-    ("sqrt", '√'), ("cbrt", '∛'), ("qdrt", '∜'), ("int", '∫'), ("iint", '∬'), ("iiint", '∭'), ("oint", '∮'),
-    ("sum", '∑'), ("prod", '∏'), ("coprod", '∐'), ("bigcup", '⋃'), ("bigcap", '⋂'), ("bigvee", '⋁'),
-    ("bigwedge", '⋀'), ("hat", '\u{302}'), ("tilde", '\u{303}'), ("bar", '\u{305}'), ("dot", '\u{307}'),
-    ("ddot", '\u{308}'), ("vec", '\u{20d7}'), ("check", '\u{30c}'), ("matrix", MATRIX), ("of", OF),
-    ("funcapply", APPLY), ("begin", GROUP_OPEN), ("end", GROUP_CLOSE), ("below", BELOW), ("above", ABOVE),
-    ("atop", NO_BAR), ("overbar", OVERBAR), ("underbar", UNDERBAR), ("langle", '⟨'), ("rangle", '⟩'),
-    ("lfloor", '⌊'), ("rfloor", '⌋'), ("lceil", '⌈'), ("rceil", '⌉'), ("norm", '‖'), ("box", PLACEHOLDER),
+    ("alpha", 'α'),
+    ("beta", 'β'),
+    ("gamma", 'γ'),
+    ("delta", 'δ'),
+    ("epsilon", 'ϵ'),
+    ("varepsilon", 'ε'),
+    ("zeta", 'ζ'),
+    ("eta", 'η'),
+    ("theta", 'θ'),
+    ("vartheta", 'ϑ'),
+    ("iota", 'ι'),
+    ("kappa", 'κ'),
+    ("lambda", 'λ'),
+    ("mu", 'μ'),
+    ("nu", 'ν'),
+    ("xi", 'ξ'),
+    ("pi", 'π'),
+    ("rho", 'ρ'),
+    ("sigma", 'σ'),
+    ("tau", 'τ'),
+    ("upsilon", 'υ'),
+    ("phi", 'ϕ'),
+    ("varphi", 'φ'),
+    ("chi", 'χ'),
+    ("psi", 'ψ'),
+    ("omega", 'ω'),
+    ("Gamma", 'Γ'),
+    ("Delta", 'Δ'),
+    ("Theta", 'Θ'),
+    ("Lambda", 'Λ'),
+    ("Xi", 'Ξ'),
+    ("Pi", 'Π'),
+    ("Sigma", 'Σ'),
+    ("Upsilon", 'Υ'),
+    ("Phi", 'Φ'),
+    ("Psi", 'Ψ'),
+    ("Omega", 'Ω'),
+    ("infty", '∞'),
+    ("pm", '±'),
+    ("mp", '∓'),
+    ("times", '×'),
+    ("div", '÷'),
+    ("cdot", '⋅'),
+    ("ast", '∗'),
+    ("le", '≤'),
+    ("ge", '≥'),
+    ("ne", '≠'),
+    ("approx", '≈'),
+    ("equiv", '≡'),
+    ("sim", '∼'),
+    ("cong", '≅'),
+    ("propto", '∝'),
+    ("ll", '≪'),
+    ("gg", '≫'),
+    ("to", '→'),
+    ("rightarrow", '→'),
+    ("leftarrow", '←'),
+    ("leftrightarrow", '↔'),
+    ("Rightarrow", '⇒'),
+    ("Leftarrow", '⇐'),
+    ("Leftrightarrow", '⇔'),
+    ("mapsto", '↦'),
+    ("partial", '∂'),
+    ("nabla", '∇'),
+    ("forall", '∀'),
+    ("exists", '∃'),
+    ("in", '∈'),
+    ("notin", '∉'),
+    ("ni", '∋'),
+    ("subset", '⊂'),
+    ("supset", '⊃'),
+    ("subseteq", '⊆'),
+    ("supseteq", '⊇'),
+    ("cup", '∪'),
+    ("cap", '∩'),
+    ("emptyset", '∅'),
+    ("angle", '∠'),
+    ("degree", '°'),
+    ("perp", '⊥'),
+    ("parallel", '∥'),
+    ("therefore", '∴'),
+    ("because", '∵'),
+    ("neg", '¬'),
+    ("wedge", '∧'),
+    ("vee", '∨'),
+    ("oplus", '⊕'),
+    ("otimes", '⊗'),
+    ("circ", '∘'),
+    ("bullet", '∙'),
+    ("star", '⋆'),
+    ("hbar", 'ℏ'),
+    ("ell", 'ℓ'),
+    ("Re", 'ℜ'),
+    ("Im", 'ℑ'),
+    ("aleph", 'ℵ'),
+    ("ldots", '…'),
+    ("cdots", '⋯'),
+    ("vdots", '⋮'),
+    ("ddots", '⋱'),
+    ("sqrt", '√'),
+    ("cbrt", '∛'),
+    ("qdrt", '∜'),
+    ("int", '∫'),
+    ("iint", '∬'),
+    ("iiint", '∭'),
+    ("oint", '∮'),
+    ("sum", '∑'),
+    ("prod", '∏'),
+    ("coprod", '∐'),
+    ("bigcup", '⋃'),
+    ("bigcap", '⋂'),
+    ("bigvee", '⋁'),
+    ("bigwedge", '⋀'),
+    ("hat", '\u{302}'),
+    ("tilde", '\u{303}'),
+    ("bar", '\u{305}'),
+    ("dot", '\u{307}'),
+    ("ddot", '\u{308}'),
+    ("vec", '\u{20d7}'),
+    ("check", '\u{30c}'),
+    ("matrix", MATRIX),
+    ("of", OF),
+    ("funcapply", APPLY),
+    ("begin", GROUP_OPEN),
+    ("end", GROUP_CLOSE),
+    ("below", BELOW),
+    ("above", ABOVE),
+    ("atop", NO_BAR),
+    ("overbar", OVERBAR),
+    ("underbar", UNDERBAR),
+    ("langle", '⟨'),
+    ("rangle", '⟩'),
+    ("lfloor", '⌊'),
+    ("rfloor", '⌋'),
+    ("lceil", '⌈'),
+    ("rceil", '⌉'),
+    ("norm", '‖'),
+    ("box", PLACEHOLDER),
 ];
 
 /// The names set upright, as functions, when they are typed.
 pub const FUNCTIONS: &[&str] = &[
-    "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "coth", "sin", "cos", "tan", "cot", "sec", "csc", "log", "ln",
-    "lim", "exp", "min", "max", "det", "gcd", "sup", "inf", "arg", "dim", "ker", "mod",
+    "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "coth", "sin", "cos", "tan", "cot",
+    "sec", "csc", "log", "ln", "lim", "exp", "min", "max", "det", "gcd", "sup", "inf", "arg",
+    "dim", "ker", "mod",
 ];
 
 fn is_nary(ch: char) -> bool {
-    matches!(ch, '∑' | '∏' | '∐' | '∫' | '∬' | '∭' | '∮' | '⋃' | '⋂' | '⋁' | '⋀')
+    matches!(
+        ch,
+        '∑' | '∏' | '∐' | '∫' | '∬' | '∭' | '∮' | '⋃' | '⋂' | '⋁' | '⋀'
+    )
 }
 
 /// Integrals have their limits beside them, the others under and over.
@@ -128,7 +283,10 @@ pub fn limits_beside(op: char) -> bool {
 }
 
 fn is_accent(ch: char) -> bool {
-    matches!(ch, '\u{302}' | '\u{303}' | '\u{305}' | '\u{307}' | '\u{308}' | '\u{20d7}' | '\u{30c}')
+    matches!(
+        ch,
+        '\u{302}' | '\u{303}' | '\u{305}' | '\u{307}' | '\u{308}' | '\u{20d7}' | '\u{30c}'
+    )
 }
 
 fn closer(open: char) -> Option<char> {
@@ -157,7 +315,10 @@ pub fn expand_names(text: &str) -> String {
     let mut rest = text;
     while let Some(ch) = rest.chars().next() {
         if ch == '\\' {
-            let name: String = rest[1..].chars().take_while(|c| c.is_ascii_alphabetic()).collect();
+            let name: String = rest[1..]
+                .chars()
+                .take_while(|c| c.is_ascii_alphabetic())
+                .collect();
             if let Some((_, symbol)) = NAMES.iter().find(|(known, _)| *known == name) {
                 out.push(*symbol);
                 rest = &rest[1 + name.len()..];
@@ -168,9 +329,17 @@ pub fn expand_names(text: &str) -> String {
                 continue;
             }
         }
-        let sign = [("->", '→'), ("<=", '≤'), (">=", '≥'), ("+-", '±'), ("-+", '∓'), ("...", '…'), ("!=", '≠')]
-            .into_iter()
-            .find(|(typed, _)| rest.starts_with(typed));
+        let sign = [
+            ("->", '→'),
+            ("<=", '≤'),
+            (">=", '≥'),
+            ("+-", '±'),
+            ("-+", '∓'),
+            ("...", '…'),
+            ("!=", '≠'),
+        ]
+        .into_iter()
+        .find(|(typed, _)| rest.starts_with(typed));
         match sign {
             Some((typed, symbol)) => {
                 out.push(symbol);
@@ -204,7 +373,11 @@ pub fn tokens(text: &str) -> Row {
     while at < chars.len() {
         let start = at;
         if chars[at].is_ascii_digit() {
-            while at < chars.len() && (chars[at].is_ascii_digit() || (matches!(chars[at], '.' | ',') && chars.get(at + 1).is_some_and(char::is_ascii_digit))) {
+            while at < chars.len()
+                && (chars[at].is_ascii_digit()
+                    || (matches!(chars[at], '.' | ',')
+                        && chars.get(at + 1).is_some_and(char::is_ascii_digit)))
+            {
                 at += 1;
             }
         } else {
@@ -244,7 +417,11 @@ impl Parser {
         let rest: String = self.chars[self.at..].iter().take(8).collect();
         FUNCTIONS.iter().copied().find(|name| {
             // Not the start of a longer word.
-            rest.starts_with(name) && !self.chars.get(self.at + name.len()).is_some_and(|c| c.is_ascii_alphabetic())
+            rest.starts_with(name)
+                && !self
+                    .chars
+                    .get(self.at + name.len())
+                    .is_some_and(|c| c.is_ascii_alphabetic())
         })
     }
 
@@ -315,7 +492,10 @@ impl Parser {
             match self.peek() {
                 Some(mark) if is_accent(mark) => {
                     self.at += 1;
-                    node = Math::Accent { mark, body: body_of(node) };
+                    node = Math::Accent {
+                        mark,
+                        body: body_of(node),
+                    };
                 }
                 Some('_' | '^') => {
                     let (mut sub, mut sup) = (None, None);
@@ -327,7 +507,11 @@ impl Parser {
                         self.at += 1;
                         *slot = Some(self.argument());
                     }
-                    node = Math::Script { base: body_of(node), sub, sup };
+                    node = Math::Script {
+                        base: body_of(node),
+                        sub,
+                        sup,
+                    };
                 }
                 Some(place @ (BELOW | ABOVE)) => {
                     self.at += 1;
@@ -417,11 +601,18 @@ impl Parser {
             if self.peek() == Some('(') {
                 self.at += 1;
                 let first = self.expression(&['&']);
-                let (degree, body) = if self.eat('&') { (Some(first), self.expression(&[])) } else { (degree, first) };
+                let (degree, body) = if self.eat('&') {
+                    (Some(first), self.expression(&[]))
+                } else {
+                    (degree, first)
+                };
                 self.eat(')');
                 return Some(Math::Radical { degree, body });
             }
-            return Some(Math::Radical { degree, body: self.argument() });
+            return Some(Math::Radical {
+                degree,
+                body: self.argument(),
+            });
         }
         if is_nary(ch) {
             self.at += 1;
@@ -484,9 +675,14 @@ impl Parser {
                         let (mut sub, mut sup) = (None, None);
                         while let Some(which @ ('_' | '^')) = self.peek() {
                             self.at += 1;
-                            *(if which == '_' { &mut sub } else { &mut sup }) = Some(self.argument());
+                            *(if which == '_' { &mut sub } else { &mut sup }) =
+                                Some(self.argument());
                         }
-                        head = Math::Script { base: vec![head], sub, sup };
+                        head = Math::Script {
+                            base: vec![head],
+                            sub,
+                            sup,
+                        };
                     }
                     Some(place @ (BELOW | ABOVE)) => {
                         self.at += 1;
@@ -505,18 +701,33 @@ impl Parser {
                 Some(inner) => inner,
                 None => self.scripted().into_iter().collect(),
             };
-            return Some(Math::Function { name: vec![head], arg });
+            return Some(Math::Function {
+                name: vec![head],
+                arg,
+            });
         }
         if ch.is_ascii_digit() {
             let start = self.at;
-            while self.peek().is_some_and(|c| c.is_ascii_digit() || (matches!(c, '.' | ',') && self.chars.get(self.at + 1).is_some_and(char::is_ascii_digit))) {
+            while self.peek().is_some_and(|c| {
+                c.is_ascii_digit()
+                    || (matches!(c, '.' | ',')
+                        && self
+                            .chars
+                            .get(self.at + 1)
+                            .is_some_and(char::is_ascii_digit))
+            }) {
                 self.at += 1;
             }
             return Some(Math::Text(self.chars[start..self.at].iter().collect()));
         }
         // Letters, the placeholder and the signs that follow an operand
         // closely are operands; anything else is for the caller.
-        if ch.is_alphabetic() || matches!(ch, PLACEHOLDER | '∞' | '!' | '′' | '°' | '∂' | '∇' | '…' | '⋯' | '∅' | 'ℏ') {
+        if ch.is_alphabetic()
+            || matches!(
+                ch,
+                PLACEHOLDER | '∞' | '!' | '′' | '°' | '∂' | '∇' | '…' | '⋯' | '∅' | 'ℏ'
+            )
+        {
             self.at += 1;
             return Some(Math::Text(ch.to_string()));
         }
@@ -544,7 +755,11 @@ fn unwrapped(mut row: Row) -> Row {
 /// group gives its row.
 fn body_of(node: Math) -> Row {
     match node {
-        Math::Delimited { open: None, close: None, mut items } if items.len() == 1 => items.remove(0),
+        Math::Delimited {
+            open: None,
+            close: None,
+            mut items,
+        } if items.len() == 1 => items.remove(0),
         node => vec![node],
     }
 }
@@ -554,7 +769,11 @@ fn flatten(row: Row) -> Row {
     let mut out = Vec::with_capacity(row.len());
     for node in row {
         match node {
-            Math::Delimited { open: None, close: None, items } => {
+            Math::Delimited {
+                open: None,
+                close: None,
+                items,
+            } => {
                 for item in items {
                     out.extend(flatten(item));
                 }
@@ -574,7 +793,13 @@ fn flatten(row: Row) -> Row {
                 degree: degree.map(flatten),
                 body: flatten(body),
             }),
-            Math::Nary { op, sub, sup, limits_beside, body } => out.push(Math::Nary {
+            Math::Nary {
+                op,
+                sub,
+                sup,
+                limits_beside,
+                body,
+            } => out.push(Math::Nary {
                 op,
                 sub: sub.map(flatten),
                 sup: sup.map(flatten),
@@ -590,15 +815,24 @@ fn flatten(row: Row) -> Row {
                 name: flatten(name),
                 arg: flatten(arg),
             }),
-            Math::Accent { mark, body } => out.push(Math::Accent { mark, body: flatten(body) }),
-            Math::Bar { over, body } => out.push(Math::Bar { over, body: flatten(body) }),
+            Math::Accent { mark, body } => out.push(Math::Accent {
+                mark,
+                body: flatten(body),
+            }),
+            Math::Bar { over, body } => out.push(Math::Bar {
+                over,
+                body: flatten(body),
+            }),
             Math::Limit { base, limit, upper } => out.push(Math::Limit {
                 base: flatten(base),
                 limit: flatten(limit),
                 upper,
             }),
             Math::Matrix { rows } => out.push(Math::Matrix {
-                rows: rows.into_iter().map(|row| row.into_iter().map(flatten).collect()).collect(),
+                rows: rows
+                    .into_iter()
+                    .map(|row| row.into_iter().map(flatten).collect())
+                    .collect(),
             }),
         }
     }
@@ -608,7 +842,10 @@ fn flatten(row: Row) -> Row {
 /// Build an equation up from the linear format.
 pub fn parse(text: &str) -> Row {
     let mut parser = Parser {
-        chars: expand_names(text).chars().filter(|ch| !matches!(ch, '\n' | '\r' | '\t')).collect(),
+        chars: expand_names(text)
+            .chars()
+            .filter(|ch| !matches!(ch, '\n' | '\r' | '\t'))
+            .collect(),
         at: 0,
         bars: 0,
     };
@@ -630,8 +867,21 @@ pub fn parse(text: &str) -> Row {
 /// brackets to be the argument of a script or of a fraction.
 fn is_operand(row: &Row) -> bool {
     match row.as_slice() {
-        [Math::Text(text)] => text.chars().all(|c| c.is_ascii_digit() || matches!(c, '.' | ',')) || text.chars().count() == 1 && text.chars().all(|c| c.is_alphabetic() || matches!(c, PLACEHOLDER | '∞')),
-        [Math::Delimited { open: Some(_), close: Some(_), .. }] => false,
+        [Math::Text(text)] => {
+            text.chars()
+                .all(|c| c.is_ascii_digit() || matches!(c, '.' | ','))
+                || text.chars().count() == 1
+                    && text
+                        .chars()
+                        .all(|c| c.is_alphabetic() || matches!(c, PLACEHOLDER | '∞'))
+        }
+        [
+            Math::Delimited {
+                open: Some(_),
+                close: Some(_),
+                ..
+            },
+        ] => false,
         _ => false,
     }
 }
@@ -639,24 +889,38 @@ fn is_operand(row: &Row) -> bool {
 /// A row as the argument of a script, a radical or a limit: in round
 /// brackets (which do not show there) unless it is one operand.
 fn argument(row: &Row) -> String {
-    if is_operand(row) { to_linear(row) } else { format!("({})", to_linear(row)) }
+    if is_operand(row) {
+        to_linear(row)
+    } else {
+        format!("({})", to_linear(row))
+    }
 }
 
 /// A row that must be read as a whole where one operand is expected.
 fn grouped(row: &Row) -> String {
     // The name of a function is read as one word.
     let name = matches!(row.as_slice(), [Math::Text(text)] if FUNCTIONS.contains(&text.as_str()));
-    if is_operand(row) || name { to_linear(row) } else { format!("{GROUP_OPEN}{}{GROUP_CLOSE}", to_linear(row)) }
+    if is_operand(row) || name {
+        to_linear(row)
+    } else {
+        format!("{GROUP_OPEN}{}{GROUP_CLOSE}", to_linear(row))
+    }
 }
 
 /// The side of a fraction: what stands side by side needs no brackets.
 fn side(row: &Row) -> String {
     let plain = row.iter().all(|node| match node {
-        Math::Text(text) => text.chars().all(|c| c.is_alphanumeric() || matches!(c, '.' | ',' | '!' | PLACEHOLDER)),
+        Math::Text(text) => text
+            .chars()
+            .all(|c| c.is_alphanumeric() || matches!(c, '.' | ',' | '!' | PLACEHOLDER)),
         Math::Script { .. } | Math::Radical { .. } | Math::Accent { .. } => true,
         _ => false,
     });
-    if plain && !row.is_empty() { to_linear(row) } else { format!("({})", to_linear(row)) }
+    if plain && !row.is_empty() {
+        to_linear(row)
+    } else {
+        format!("({})", to_linear(row))
+    }
 }
 
 fn scripts(sub: &Option<Row>, sup: &Option<Row>) -> String {
@@ -681,36 +945,78 @@ pub fn to_linear(row: &Row) -> String {
             let first = text.chars().next();
             let last = out.chars().last();
             match (last, first) {
-                (Some(a), Some(b)) => (a.is_ascii_digit() && b.is_ascii_digit()) || (a.is_alphabetic() && b.is_alphabetic() && function_at(&out, text)),
+                (Some(a), Some(b)) => {
+                    (a.is_ascii_digit() && b.is_ascii_digit())
+                        || (a.is_alphabetic() && b.is_alphabetic() && function_at(&out, text))
+                }
                 _ => false,
             }
         };
         let piece = match node {
             Math::Text(text) => text.clone(),
-            Math::Fraction { num, den, bar } => format!("{}{}{}", side(num), if *bar { '/' } else { NO_BAR }, side(den)),
+            Math::Fraction { num, den, bar } => format!(
+                "{}{}{}",
+                side(num),
+                if *bar { '/' } else { NO_BAR },
+                side(den)
+            ),
             Math::Script { base, sub, sup } => format!("{}{}", grouped(base), scripts(sub, sup)),
             Math::Radical { degree: None, body } => format!("√{}", argument(body)),
-            Math::Radical { degree: Some(degree), body } => format!("√({}&{})", to_linear(degree), to_linear(body)),
-            Math::Nary { op, sub, sup, body, .. } => format!("{op}{}{OF}{GROUP_OPEN}{}{GROUP_CLOSE}", scripts(sub, sup), to_linear(body)),
+            Math::Radical {
+                degree: Some(degree),
+                body,
+            } => format!("√({}&{})", to_linear(degree), to_linear(body)),
+            Math::Nary {
+                op, sub, sup, body, ..
+            } => format!(
+                "{op}{}{OF}{GROUP_OPEN}{}{GROUP_CLOSE}",
+                scripts(sub, sup),
+                to_linear(body)
+            ),
             Math::Delimited { open, close, items } => {
                 let inner: Vec<String> = items.iter().map(to_linear).collect();
                 let open = open.map(String::from).unwrap_or_default();
                 let close = close.map(String::from).unwrap_or_default();
                 format!("{open}{}{close}", inner.join("|"))
             }
-            Math::Function { name, arg } => format!("{}{APPLY}{GROUP_OPEN}{}{GROUP_CLOSE}", to_linear(name), to_linear(arg)),
+            Math::Function { name, arg } => format!(
+                "{}{APPLY}{GROUP_OPEN}{}{GROUP_CLOSE}",
+                to_linear(name),
+                to_linear(arg)
+            ),
             Math::Accent { mark, body } => format!("{}{mark}", grouped(body)),
-            Math::Bar { over, body } => format!("{}{}", if *over { OVERBAR } else { UNDERBAR }, argument(body)),
-            Math::Limit { base, limit, upper } => format!("{}{}{}", grouped(base), if *upper { ABOVE } else { BELOW }, argument(limit)),
+            Math::Bar { over, body } => format!(
+                "{}{}",
+                if *over { OVERBAR } else { UNDERBAR },
+                argument(body)
+            ),
+            Math::Limit { base, limit, upper } => format!(
+                "{}{}{}",
+                grouped(base),
+                if *upper { ABOVE } else { BELOW },
+                argument(limit)
+            ),
             Math::Matrix { rows } => {
-                let rows: Vec<String> = rows.iter().map(|row| row.iter().map(to_linear).collect::<Vec<_>>().join("&")).collect();
+                let rows: Vec<String> = rows
+                    .iter()
+                    .map(|row| row.iter().map(to_linear).collect::<Vec<_>>().join("&"))
+                    .collect();
                 format!("{MATRIX}({})", rows.join("@"))
             }
         };
         // A fraction takes every operand beside it: one that follows
         // another, or a letter, is set apart by a blank.
-        let after_fraction = i > 0 && matches!(row[i - 1], Math::Fraction { .. }) && piece.chars().next().is_some_and(|c| c.is_alphanumeric() || c == '(' || c == '√');
-        let before_fraction = matches!(node, Math::Fraction { .. }) && out.chars().last().is_some_and(|c| c.is_alphanumeric() || c == ')' || c == '!');
+        let after_fraction = i > 0
+            && matches!(row[i - 1], Math::Fraction { .. })
+            && piece
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_alphanumeric() || c == '(' || c == '√');
+        let before_fraction = matches!(node, Math::Fraction { .. })
+            && out
+                .chars()
+                .last()
+                .is_some_and(|c| c.is_alphanumeric() || c == ')' || c == '!');
         if glued(&piece) || after_fraction || before_fraction {
             out.push(' ');
         }
@@ -722,10 +1028,19 @@ pub fn to_linear(row: &Row) -> String {
 /// True when writing `next` right after `written` would spell a function
 /// name that neither holds.
 fn function_at(written: &str, next: &str) -> bool {
-    let tail: String = written.chars().rev().take(7).collect::<Vec<_>>().into_iter().rev().collect();
+    let tail: String = written
+        .chars()
+        .rev()
+        .take(7)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
     let joined = format!("{tail}{next}");
     FUNCTIONS.iter().any(|name| {
-        joined.match_indices(name).any(|(at, _)| at < tail.len() && at + name.len() > tail.len())
+        joined
+            .match_indices(name)
+            .any(|(at, _)| at < tail.len() && at + name.len() > tail.len())
     })
 }
 
@@ -735,14 +1050,26 @@ fn function_at(written: &str, next: &str) -> bool {
 /// Excel gives them.
 pub const BUILT_IN: [(&str, &str); 9] = [
     ("Area of Circle", "A=πr^2"),
-    ("Binomial Theorem", "(x+a)^n=∑_(k=0)^n▒〖(n¦k) x^k a^(n-k)〗"),
+    (
+        "Binomial Theorem",
+        "(x+a)^n=∑_(k=0)^n▒〖(n¦k) x^k a^(n-k)〗",
+    ),
     ("Expansion of a Sum", "(1+x)^n=1+nx/1! +(n(n-1) x^2)/2! +…"),
-    ("Fourier Series", "f(x)=a_0+∑_(n=1)^∞▒(a_n cos\u{2061}〖nπx/L〗+b_n sin\u{2061}〖nπx/L〗)"),
+    (
+        "Fourier Series",
+        "f(x)=a_0+∑_(n=1)^∞▒(a_n cos\u{2061}〖nπx/L〗+b_n sin\u{2061}〖nπx/L〗)",
+    ),
     ("Pythagorean Theorem", "a^2+b^2=c^2"),
     ("Quadratic Formula", "x=(-b±√(b^2-4ac))/2a"),
     ("Taylor Expansion", "e^x=1+x/1! +x^2/2! +x^3/3! +…, -∞<x<∞"),
-    ("Trig Identity 1", "sin\u{2061}α±sin\u{2061}β=2 sin\u{2061}〖1/2 (α±β)〗 cos\u{2061}〖1/2 (α∓β)〗"),
-    ("Trig Identity 2", "cos\u{2061}α+cos\u{2061}β=2 cos\u{2061}〖1/2 (α+β)〗 cos\u{2061}〖1/2 (α-β)〗"),
+    (
+        "Trig Identity 1",
+        "sin\u{2061}α±sin\u{2061}β=2 sin\u{2061}〖1/2 (α±β)〗 cos\u{2061}〖1/2 (α∓β)〗",
+    ),
+    (
+        "Trig Identity 2",
+        "cos\u{2061}α+cos\u{2061}β=2 cos\u{2061}〖1/2 (α+β)〗 cos\u{2061}〖1/2 (α-β)〗",
+    ),
 ];
 
 /// The galleries of structures of the Equation tab.
@@ -782,21 +1109,129 @@ impl Structure {
         match self {
             Structure::Fraction => &["⬚/⬚", "⬚¦⬚", "dy/dx", "Δy/Δx", "∂y/∂x", "δy/δx", "π/2"],
             Structure::Script => &["⬚^⬚", "⬚_⬚", "⬚_⬚^⬚", "x_(y^2)", "e^(-iωt)", "x^2"],
-            Structure::Radical => &["√⬚", "√(⬚&⬚)", "√(2&⬚)", "√(3&⬚)", "(-b±√(b^2-4ac))/2a", "√(a^2+b^2)"],
-            Structure::Integral => &["∫▒⬚", "∫_⬚^⬚▒⬚", "∬▒⬚", "∬_⬚^⬚▒⬚", "∭▒⬚", "∮▒⬚", "∮_⬚^⬚▒⬚", "dx", "dy", "dθ"],
-            Structure::LargeOperator => &["∑▒⬚", "∑_⬚^⬚▒⬚", "∑_⬚▒⬚", "∏▒⬚", "∏_⬚^⬚▒⬚", "∐_⬚^⬚▒⬚", "⋃_⬚^⬚▒⬚", "⋂_⬚^⬚▒⬚", "⋁_⬚^⬚▒⬚", "⋀_⬚^⬚▒⬚", "∑_(k=0)^n▒〖(n¦k)〗"],
-            Structure::Bracket => &["(⬚)", "[⬚]", "{⬚}", "⟨⬚⟩", "⌊⬚⌋", "⌈⬚⌉", "|⬚|", "‖⬚‖", "(⬚|⬚)", "(n¦k)", "⟨n¦k⟩"],
-            Structure::Function => &["sin\u{2061}⬚", "cos\u{2061}⬚", "tan\u{2061}⬚", "csc\u{2061}⬚", "sec\u{2061}⬚", "cot\u{2061}⬚", "sin^(-1)\u{2061}⬚", "cos^(-1)\u{2061}⬚", "tan^(-1)\u{2061}⬚", "sinh\u{2061}⬚", "cosh\u{2061}⬚", "tanh\u{2061}⬚", "sin\u{2061}θ", "cos\u{2061}2x", "tan\u{2061}θ=sin\u{2061}θ/cos\u{2061}θ"],
-            Structure::Accent => &["⬚\u{307}", "⬚\u{308}", "⬚\u{302}", "⬚\u{30c}", "⬚\u{303}", "⬚\u{305}", "⬚\u{20d7}", "¯⬚", "▁⬚", "¯A", "¯(ABC)"],
-            Structure::LimitAndLog => &["log_⬚\u{2061}⬚", "log\u{2061}⬚", "ln\u{2061}⬚", "lim┬⬚\u{2061}⬚", "min┬⬚\u{2061}⬚", "max┬⬚\u{2061}⬚", "lim┬(n→∞)\u{2061}〖(1+1/n)^n〗", "max┬(0≤x≤1)\u{2061}〖xe^(-x^2)〗"],
-            Structure::Operator => &["≔", "==", "+=", "−=", "≝", "≞", "≜", "→┴⬚", "←┴⬚", "→┬⬚", "⇒┴⬚", "→┴yields", "→┴∆"],
-            Structure::Matrix => &["■(⬚&⬚)", "■(⬚@⬚)", "■(⬚&⬚&⬚)", "■(⬚@⬚@⬚)", "■(⬚&⬚@⬚&⬚)", "■(⬚&⬚&⬚@⬚&⬚&⬚@⬚&⬚&⬚)", "■(1&0@0&1)", "(■(⬚&⬚@⬚&⬚))", "[■(⬚&⬚@⬚&⬚)]", "(■(1&0&0@0&1&0@0&0&1))", "■(⋯)", "■(⋮)", "■(⋱)"],
+            Structure::Radical => &[
+                "√⬚",
+                "√(⬚&⬚)",
+                "√(2&⬚)",
+                "√(3&⬚)",
+                "(-b±√(b^2-4ac))/2a",
+                "√(a^2+b^2)",
+            ],
+            Structure::Integral => &[
+                "∫▒⬚",
+                "∫_⬚^⬚▒⬚",
+                "∬▒⬚",
+                "∬_⬚^⬚▒⬚",
+                "∭▒⬚",
+                "∮▒⬚",
+                "∮_⬚^⬚▒⬚",
+                "dx",
+                "dy",
+                "dθ",
+            ],
+            Structure::LargeOperator => &[
+                "∑▒⬚",
+                "∑_⬚^⬚▒⬚",
+                "∑_⬚▒⬚",
+                "∏▒⬚",
+                "∏_⬚^⬚▒⬚",
+                "∐_⬚^⬚▒⬚",
+                "⋃_⬚^⬚▒⬚",
+                "⋂_⬚^⬚▒⬚",
+                "⋁_⬚^⬚▒⬚",
+                "⋀_⬚^⬚▒⬚",
+                "∑_(k=0)^n▒〖(n¦k)〗",
+            ],
+            Structure::Bracket => &[
+                "(⬚)",
+                "[⬚]",
+                "{⬚}",
+                "⟨⬚⟩",
+                "⌊⬚⌋",
+                "⌈⬚⌉",
+                "|⬚|",
+                "‖⬚‖",
+                "(⬚|⬚)",
+                "(n¦k)",
+                "⟨n¦k⟩",
+            ],
+            Structure::Function => &[
+                "sin\u{2061}⬚",
+                "cos\u{2061}⬚",
+                "tan\u{2061}⬚",
+                "csc\u{2061}⬚",
+                "sec\u{2061}⬚",
+                "cot\u{2061}⬚",
+                "sin^(-1)\u{2061}⬚",
+                "cos^(-1)\u{2061}⬚",
+                "tan^(-1)\u{2061}⬚",
+                "sinh\u{2061}⬚",
+                "cosh\u{2061}⬚",
+                "tanh\u{2061}⬚",
+                "sin\u{2061}θ",
+                "cos\u{2061}2x",
+                "tan\u{2061}θ=sin\u{2061}θ/cos\u{2061}θ",
+            ],
+            Structure::Accent => &[
+                "⬚\u{307}",
+                "⬚\u{308}",
+                "⬚\u{302}",
+                "⬚\u{30c}",
+                "⬚\u{303}",
+                "⬚\u{305}",
+                "⬚\u{20d7}",
+                "¯⬚",
+                "▁⬚",
+                "¯A",
+                "¯(ABC)",
+            ],
+            Structure::LimitAndLog => &[
+                "log_⬚\u{2061}⬚",
+                "log\u{2061}⬚",
+                "ln\u{2061}⬚",
+                "lim┬⬚\u{2061}⬚",
+                "min┬⬚\u{2061}⬚",
+                "max┬⬚\u{2061}⬚",
+                "lim┬(n→∞)\u{2061}〖(1+1/n)^n〗",
+                "max┬(0≤x≤1)\u{2061}〖xe^(-x^2)〗",
+            ],
+            Structure::Operator => &[
+                "≔",
+                "==",
+                "+=",
+                "−=",
+                "≝",
+                "≞",
+                "≜",
+                "→┴⬚",
+                "←┴⬚",
+                "→┬⬚",
+                "⇒┴⬚",
+                "→┴yields",
+                "→┴∆",
+            ],
+            Structure::Matrix => &[
+                "■(⬚&⬚)",
+                "■(⬚@⬚)",
+                "■(⬚&⬚&⬚)",
+                "■(⬚@⬚@⬚)",
+                "■(⬚&⬚@⬚&⬚)",
+                "■(⬚&⬚&⬚@⬚&⬚&⬚@⬚&⬚&⬚)",
+                "■(1&0@0&1)",
+                "(■(⬚&⬚@⬚&⬚))",
+                "[■(⬚&⬚@⬚&⬚)]",
+                "(■(1&0&0@0&1&0@0&0&1))",
+                "■(⋯)",
+                "■(⋮)",
+                "■(⋱)",
+            ],
         }
     }
 }
 
 /// The characters of the Symbols gallery.
-pub const SYMBOLS: &str = "±∞=≠∼×÷!∝<≪>≫≤≥∓≅≈≡∀∁∂√∛∜∪∩∅%°℉℃∆∇∃∄∈∋←↑→↓↔∴+−¬αβγδεϵθϑμπρστφωΓΔΘΛΞΠΣΦΨΩ∗∙⋮⋯⋰⋱ℵℶ∎";
+pub const SYMBOLS: &str =
+    "±∞=≠∼×÷!∝<≪>≫≤≥∓≅≈≡∀∁∂√∛∜∪∩∅%°℉℃∆∇∃∄∈∋←↑→↓↔∴+−¬αβγδεϵθϑμπρστφωΓΔΘΛΞΠΣΦΨΩ∗∙⋮⋯⋰⋱ℵℶ∎";
 
 #[cfg(test)]
 mod tests {
@@ -812,18 +1247,80 @@ mod tests {
 
     #[test]
     fn fractions_scripts_and_radicals() {
-        assert_eq!(parse("a/b"), vec![Math::Fraction { num: row("a"), den: row("b"), bar: true }]);
+        assert_eq!(
+            parse("a/b"),
+            vec![Math::Fraction {
+                num: row("a"),
+                den: row("b"),
+                bar: true
+            }]
+        );
         // Operands side by side go into the fraction; parentheses typed
         // around a side do not show.
-        assert_eq!(parse("(a+b)/2c"), vec![Math::Fraction { num: row("a+b"), den: row("2c"), bar: true }]);
-        assert_eq!(parse("1+x/2 y"), vec![t("1"), t("+"), Math::Fraction { num: row("x"), den: row("2"), bar: true }, t("y")]);
+        assert_eq!(
+            parse("(a+b)/2c"),
+            vec![Math::Fraction {
+                num: row("a+b"),
+                den: row("2c"),
+                bar: true
+            }]
+        );
+        assert_eq!(
+            parse("1+x/2 y"),
+            vec![
+                t("1"),
+                t("+"),
+                Math::Fraction {
+                    num: row("x"),
+                    den: row("2"),
+                    bar: true
+                },
+                t("y")
+            ]
+        );
         // A script takes the operand before it, not the word.
-        assert_eq!(parse("xy^2"), vec![t("x"), Math::Script { base: row("y"), sub: None, sup: Some(row("2")) }]);
+        assert_eq!(
+            parse("xy^2"),
+            vec![
+                t("x"),
+                Math::Script {
+                    base: row("y"),
+                    sub: None,
+                    sup: Some(row("2"))
+                }
+            ]
+        );
         assert_eq!(parse("x_i^2"), parse("x^2_i"));
-        assert_eq!(parse("x_(i+1)"), vec![Math::Script { base: row("x"), sub: Some(row("i+1")), sup: None }]);
-        assert_eq!(parse("e^-x"), vec![Math::Script { base: row("e"), sub: None, sup: Some(row("-x")) }]);
-        assert_eq!(parse("\\sqrt x"), vec![Math::Radical { degree: None, body: row("x") }]);
-        assert_eq!(parse("√(3&x+1)"), vec![Math::Radical { degree: Some(row("3")), body: row("x+1") }]);
+        assert_eq!(
+            parse("x_(i+1)"),
+            vec![Math::Script {
+                base: row("x"),
+                sub: Some(row("i+1")),
+                sup: None
+            }]
+        );
+        assert_eq!(
+            parse("e^-x"),
+            vec![Math::Script {
+                base: row("e"),
+                sub: None,
+                sup: Some(row("-x"))
+            }]
+        );
+        assert_eq!(
+            parse("\\sqrt x"),
+            vec![Math::Radical {
+                degree: None,
+                body: row("x")
+            }]
+        );
+        assert_eq!(
+            parse("√(3&x+1)"),
+            vec![Math::Radical {
+                degree: Some(row("3")),
+                body: row("x+1")
+            }]
+        );
         assert_eq!(parse("∛x"), parse("√(3&x)"));
         // Names typed after a backslash, and the signs of plain text.
         assert_eq!(parse("\\alpha+\\beta -> \\infty"), row("α+β→∞"));
@@ -842,14 +1339,29 @@ mod tests {
                 sub: Some(row("k=0")),
                 sup: Some(row("n")),
                 limits_beside: false,
-                body: vec![Math::Script { base: row("a"), sub: Some(row("k")), sup: None }],
+                body: vec![Math::Script {
+                    base: row("a"),
+                    sub: Some(row("k")),
+                    sup: None
+                }],
             }]
         );
-        let Math::Nary { limits_beside, body, .. } = &parse("∫_0^1▒〖x^2 dx〗")[0] else {
+        let Math::Nary {
+            limits_beside,
+            body,
+            ..
+        } = &parse("∫_0^1▒〖x^2 dx〗")[0]
+        else {
             panic!("an integral");
         };
         assert!(*limits_beside && body.len() == 3);
-        assert_eq!(parse("sin x"), vec![Math::Function { name: row_text("sin"), arg: row("x") }]);
+        assert_eq!(
+            parse("sin x"),
+            vec![Math::Function {
+                name: row_text("sin"),
+                arg: row("x")
+            }]
+        );
         assert_eq!(parse("sin\u{2061}〖2x〗+1").len(), 3);
         // A word that only starts like a function is letters.
         assert_eq!(parse("since"), row("since"));
@@ -857,18 +1369,92 @@ mod tests {
         let Math::Function { name, .. } = &limit[0] else {
             panic!("a function");
         };
-        assert_eq!(name[0], Math::Limit { base: row_text("lim"), limit: row("n→∞"), upper: false });
-        assert_eq!(parse("[a,b)"), vec![Math::Delimited { open: Some('['), close: Some(')'), items: vec![row("a,b")] }]);
-        assert_eq!(parse("|x|+1"), vec![Math::Delimited { open: Some('|'), close: Some('|'), items: vec![row("x")] }, t("+"), t("1")]);
-        assert_eq!(parse("‖x‖"), vec![Math::Delimited { open: Some('‖'), close: Some('‖'), items: vec![row("x")] }]);
-        assert_eq!(parse("(a|b)"), vec![Math::Delimited { open: Some('('), close: Some(')'), items: vec![row("a"), row("b")] }]);
-        assert_eq!(parse("(n¦k)"), vec![Math::Delimited { open: Some('('), close: Some(')'), items: vec![vec![Math::Fraction { num: row("n"), den: row("k"), bar: false }]] }]);
-        assert_eq!(parse("x\\hat"), vec![Math::Accent { mark: '\u{302}', body: row("x") }]);
-        assert_eq!(parse("¯(AB)"), vec![Math::Bar { over: true, body: row("AB") }]);
-        assert_eq!(parse("■(a&b@c&d)"), vec![Math::Matrix { rows: vec![vec![row("a"), row("b")], vec![row("c"), row("d")]] }]);
+        assert_eq!(
+            name[0],
+            Math::Limit {
+                base: row_text("lim"),
+                limit: row("n→∞"),
+                upper: false
+            }
+        );
+        assert_eq!(
+            parse("[a,b)"),
+            vec![Math::Delimited {
+                open: Some('['),
+                close: Some(')'),
+                items: vec![row("a,b")]
+            }]
+        );
+        assert_eq!(
+            parse("|x|+1"),
+            vec![
+                Math::Delimited {
+                    open: Some('|'),
+                    close: Some('|'),
+                    items: vec![row("x")]
+                },
+                t("+"),
+                t("1")
+            ]
+        );
+        assert_eq!(
+            parse("‖x‖"),
+            vec![Math::Delimited {
+                open: Some('‖'),
+                close: Some('‖'),
+                items: vec![row("x")]
+            }]
+        );
+        assert_eq!(
+            parse("(a|b)"),
+            vec![Math::Delimited {
+                open: Some('('),
+                close: Some(')'),
+                items: vec![row("a"), row("b")]
+            }]
+        );
+        assert_eq!(
+            parse("(n¦k)"),
+            vec![Math::Delimited {
+                open: Some('('),
+                close: Some(')'),
+                items: vec![vec![Math::Fraction {
+                    num: row("n"),
+                    den: row("k"),
+                    bar: false
+                }]]
+            }]
+        );
+        assert_eq!(
+            parse("x\\hat"),
+            vec![Math::Accent {
+                mark: '\u{302}',
+                body: row("x")
+            }]
+        );
+        assert_eq!(
+            parse("¯(AB)"),
+            vec![Math::Bar {
+                over: true,
+                body: row("AB")
+            }]
+        );
+        assert_eq!(
+            parse("■(a&b@c&d)"),
+            vec![Math::Matrix {
+                rows: vec![vec![row("a"), row("b")], vec![row("c"), row("d")]]
+            }]
+        );
         // What nothing opened or closed stands for itself.
         assert_eq!(parse("a)"), row("a)"));
-        assert_eq!(parse("(a"), vec![Math::Delimited { open: Some('('), close: None, items: vec![row("a")] }]);
+        assert_eq!(
+            parse("(a"),
+            vec![Math::Delimited {
+                open: Some('('),
+                close: None,
+                items: vec![row("a")]
+            }]
+        );
         assert_eq!(parse(""), Vec::new());
     }
 
@@ -882,7 +1468,19 @@ mod tests {
         for structure in Structure::ALL {
             all.extend(structure.templates());
         }
-        all.extend(["x_(y^2)^(z_1)", "(a/b)/(c/d)", "a/b c", "2 3", "x sin\u{2061}y", "√(x/2)y", "(1/2)x", "a_1 b", "〖ab〗^2", "f(x)/g(x)", "(a+b)\u{305}"]);
+        all.extend([
+            "x_(y^2)^(z_1)",
+            "(a/b)/(c/d)",
+            "a/b c",
+            "2 3",
+            "x sin\u{2061}y",
+            "√(x/2)y",
+            "(1/2)x",
+            "a_1 b",
+            "〖ab〗^2",
+            "f(x)/g(x)",
+            "(a+b)\u{305}",
+        ]);
         for linear in all {
             let tree = parse(linear);
             let written = to_linear(&tree);

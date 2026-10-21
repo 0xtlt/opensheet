@@ -5,21 +5,25 @@
 use crate::i18n::{t, t_ctx};
 use opensheet_engine::Locale;
 use opensheet_engine::condfmt::{
-    BarColor, CellOp, CondFormat, HighlightFormat, IconSet, Rule, ScalePreset, TextOp, TimePeriod, operand_text,
+    BarColor, CellOp, CondFormat, HighlightFormat, IconSet, Rule, ScalePreset, TextOp, TimePeriod,
+    operand_text,
 };
 
 /// The entries of the "with" list of the Highlight Cells dialogs.
 pub fn highlight_name(format: HighlightFormat) -> &'static str {
     match format {
-        HighlightFormat::LightRedFillDarkRedText => {
-            t("Light Red Fill with Dark Red Text", "Remplissage rouge clair avec texte rouge foncé")
-        }
-        HighlightFormat::YellowFillDarkYellowText => {
-            t("Yellow Fill with Dark Yellow Text", "Remplissage jaune avec texte jaune foncé")
-        }
-        HighlightFormat::GreenFillDarkGreenText => {
-            t("Green Fill with Dark Green Text", "Remplissage vert avec texte vert foncé")
-        }
+        HighlightFormat::LightRedFillDarkRedText => t(
+            "Light Red Fill with Dark Red Text",
+            "Remplissage rouge clair avec texte rouge foncé",
+        ),
+        HighlightFormat::YellowFillDarkYellowText => t(
+            "Yellow Fill with Dark Yellow Text",
+            "Remplissage jaune avec texte jaune foncé",
+        ),
+        HighlightFormat::GreenFillDarkGreenText => t(
+            "Green Fill with Dark Green Text",
+            "Remplissage vert avec texte vert foncé",
+        ),
         HighlightFormat::LightRedFill => t("Light Red Fill", "Remplissage rouge clair"),
         HighlightFormat::RedText => t("Red Text", "Texte rouge"),
         HighlightFormat::RedBorder => t("Red Border", "Bordure rouge"),
@@ -110,17 +114,49 @@ pub fn average_names() -> [&'static str; 10] {
 
 fn average_rule(above: bool, or_equal: bool, std_dev: u32) -> String {
     match (std_dev, or_equal, above) {
-        (0, false, true) => t_ctx("rule", "Above Average", "Valeurs supérieures à la moyenne").to_string(),
-        (0, false, false) => t_ctx("rule", "Below Average", "Valeurs inférieures à la moyenne").to_string(),
-        (0, true, true) => t("Equal to or Above Average", "Égales ou au-dessus de la moyenne").to_string(),
-        (0, true, false) => t("Equal to or Below Average", "Égales ou en dessous de la moyenne").to_string(),
+        (0, false, true) => {
+            t_ctx("rule", "Above Average", "Valeurs supérieures à la moyenne").to_string()
+        }
+        (0, false, false) => {
+            t_ctx("rule", "Below Average", "Valeurs inférieures à la moyenne").to_string()
+        }
+        (0, true, true) => t(
+            "Equal to or Above Average",
+            "Égales ou au-dessus de la moyenne",
+        )
+        .to_string(),
+        (0, true, false) => t(
+            "Equal to or Below Average",
+            "Égales ou en dessous de la moyenne",
+        )
+        .to_string(),
         (n, _, true) => match n {
-            1 => t("1 std dev above Average", "1 écart type au-dessus de la moyenne").to_string(),
-            _ => format!("{n} {}", t("std dev above Average", "écarts types au-dessus de la moyenne")),
+            1 => t(
+                "1 std dev above Average",
+                "1 écart type au-dessus de la moyenne",
+            )
+            .to_string(),
+            _ => format!(
+                "{n} {}",
+                t(
+                    "std dev above Average",
+                    "écarts types au-dessus de la moyenne"
+                )
+            ),
         },
         (n, _, false) => match n {
-            1 => t("1 std dev below Average", "1 écart type en dessous de la moyenne").to_string(),
-            _ => format!("{n} {}", t("std dev below Average", "écarts types en dessous de la moyenne")),
+            1 => t(
+                "1 std dev below Average",
+                "1 écart type en dessous de la moyenne",
+            )
+            .to_string(),
+            _ => format!(
+                "{n} {}",
+                t(
+                    "std dev below Average",
+                    "écarts types en dessous de la moyenne"
+                )
+            ),
         },
     }
 }
@@ -138,18 +174,54 @@ pub fn bar_color_name(color: BarColor) -> &'static str {
 
 pub fn scale_name(scale: ScalePreset) -> &'static str {
     match scale {
-        ScalePreset::GreenYellowRed => t("Green - Yellow - Red Color Scale", "Échelle de couleur Vert - Jaune - Rouge"),
-        ScalePreset::RedYellowGreen => t("Red - Yellow - Green Color Scale", "Échelle de couleur Rouge - Jaune - Vert"),
-        ScalePreset::GreenWhiteRed => t("Green - White - Red Color Scale", "Échelle de couleur Vert - Blanc - Rouge"),
-        ScalePreset::RedWhiteGreen => t("Red - White - Green Color Scale", "Échelle de couleur Rouge - Blanc - Vert"),
-        ScalePreset::BlueWhiteRed => t("Blue - White - Red Color Scale", "Échelle de couleur Bleu - Blanc - Rouge"),
-        ScalePreset::RedWhiteBlue => t("Red - White - Blue Color Scale", "Échelle de couleur Rouge - Blanc - Bleu"),
-        ScalePreset::WhiteRed => t("White - Red Color Scale", "Échelle de couleur Blanc - Rouge"),
-        ScalePreset::RedWhite => t("Red - White Color Scale", "Échelle de couleur Rouge - Blanc"),
-        ScalePreset::GreenWhite => t("Green - White Color Scale", "Échelle de couleur Vert - Blanc"),
-        ScalePreset::WhiteGreen => t("White - Green Color Scale", "Échelle de couleur Blanc - Vert"),
-        ScalePreset::GreenYellow => t("Green - Yellow Color Scale", "Échelle de couleur Vert - Jaune"),
-        ScalePreset::YellowGreen => t("Yellow - Green Color Scale", "Échelle de couleur Jaune - Vert"),
+        ScalePreset::GreenYellowRed => t(
+            "Green - Yellow - Red Color Scale",
+            "Échelle de couleur Vert - Jaune - Rouge",
+        ),
+        ScalePreset::RedYellowGreen => t(
+            "Red - Yellow - Green Color Scale",
+            "Échelle de couleur Rouge - Jaune - Vert",
+        ),
+        ScalePreset::GreenWhiteRed => t(
+            "Green - White - Red Color Scale",
+            "Échelle de couleur Vert - Blanc - Rouge",
+        ),
+        ScalePreset::RedWhiteGreen => t(
+            "Red - White - Green Color Scale",
+            "Échelle de couleur Rouge - Blanc - Vert",
+        ),
+        ScalePreset::BlueWhiteRed => t(
+            "Blue - White - Red Color Scale",
+            "Échelle de couleur Bleu - Blanc - Rouge",
+        ),
+        ScalePreset::RedWhiteBlue => t(
+            "Red - White - Blue Color Scale",
+            "Échelle de couleur Rouge - Blanc - Bleu",
+        ),
+        ScalePreset::WhiteRed => t(
+            "White - Red Color Scale",
+            "Échelle de couleur Blanc - Rouge",
+        ),
+        ScalePreset::RedWhite => t(
+            "Red - White Color Scale",
+            "Échelle de couleur Rouge - Blanc",
+        ),
+        ScalePreset::GreenWhite => t(
+            "Green - White Color Scale",
+            "Échelle de couleur Vert - Blanc",
+        ),
+        ScalePreset::WhiteGreen => t(
+            "White - Green Color Scale",
+            "Échelle de couleur Blanc - Vert",
+        ),
+        ScalePreset::GreenYellow => t(
+            "Green - Yellow Color Scale",
+            "Échelle de couleur Vert - Jaune",
+        ),
+        ScalePreset::YellowGreen => t(
+            "Yellow - Green Color Scale",
+            "Échelle de couleur Jaune - Vert",
+        ),
     }
 }
 
@@ -158,8 +230,13 @@ pub fn set_name(set: IconSet) -> &'static str {
         IconSet::ThreeArrows => t("3 Arrows (Colored)", "3 Flèches (en couleur)"),
         IconSet::ThreeArrowsGray => t("3 Arrows (Gray)", "3 Flèches (grises)"),
         IconSet::ThreeFlags => t("3 Flags", "3 Drapeaux"),
-        IconSet::ThreeTrafficLights1 => t("3 Traffic Lights (Unrimmed)", "3 Indicateurs (sans bordure)"),
-        IconSet::ThreeTrafficLights2 => t("3 Traffic Lights (Rimmed)", "3 Indicateurs (avec bordure)"),
+        IconSet::ThreeTrafficLights1 => t(
+            "3 Traffic Lights (Unrimmed)",
+            "3 Indicateurs (sans bordure)",
+        ),
+        IconSet::ThreeTrafficLights2 => {
+            t("3 Traffic Lights (Rimmed)", "3 Indicateurs (avec bordure)")
+        }
         IconSet::ThreeSigns => t("3 Signs", "3 Signes"),
         IconSet::ThreeSymbols => t("3 Symbols (Circled)", "3 Symboles (avec cercle)"),
         IconSet::ThreeSymbols2 => t("3 Symbols (Uncircled)", "3 symboles (sans cercle)"),
@@ -206,14 +283,26 @@ pub fn describe(cf: &CondFormat, locale: &Locale, active: (u32, u32)) -> String 
             let second = second.as_ref().map(&operand).unwrap_or_default();
             match op {
                 CellOp::Between => match crate::i18n::lang() {
-                    crate::i18n::Lang::Fr => format!("La valeur de la cellule est comprise entre {first} et {second}"),
-                    _ => format!("{value} {} {first} {} {second}", t("between", "comprise entre"), t("and", "et")),
+                    crate::i18n::Lang::Fr => {
+                        format!("La valeur de la cellule est comprise entre {first} et {second}")
+                    }
+                    _ => format!(
+                        "{value} {} {first} {} {second}",
+                        t("between", "comprise entre"),
+                        t("and", "et")
+                    ),
                 },
                 CellOp::NotBetween => match crate::i18n::lang() {
                     crate::i18n::Lang::Fr => {
-                        format!("La valeur de la cellule n'est pas comprise entre {first} et {second}")
+                        format!(
+                            "La valeur de la cellule n'est pas comprise entre {first} et {second}"
+                        )
                     }
-                    _ => format!("{value} {} {first} {} {second}", t("not between", "non comprise entre"), t("and", "et")),
+                    _ => format!(
+                        "{value} {} {first} {} {second}",
+                        t("not between", "non comprise entre"),
+                        t("and", "et")
+                    ),
                 },
                 CellOp::Equal => format!("{value} = {first}"),
                 CellOp::NotEqual => format!("{value} <> {first}"),
@@ -228,19 +317,40 @@ pub fn describe(cf: &CondFormat, locale: &Locale, active: (u32, u32)) -> String 
             t("Formula:", "Formule :"),
             operand_text(e, locale, anchor, active, false)
         ),
-        Rule::TopBottom { rank, percent, bottom } => {
-            let side = if *bottom { t_ctx("rule", "Bottom", "Bas") } else { t_ctx("rule", "Top", "Haut") };
+        Rule::TopBottom {
+            rank,
+            percent,
+            bottom,
+        } => {
+            let side = if *bottom {
+                t_ctx("rule", "Bottom", "Bas")
+            } else {
+                t_ctx("rule", "Top", "Haut")
+            };
             format!("{side} {rank}{}", if *percent { "%" } else { "" })
         }
-        Rule::Average { above, or_equal, std_dev } => average_rule(*above, *or_equal, *std_dev),
+        Rule::Average {
+            above,
+            or_equal,
+            std_dev,
+        } => average_rule(*above, *or_equal, *std_dev),
         Rule::DuplicateValues => t("Duplicate Values", "Valeurs en double").to_string(),
         Rule::UniqueValues => t("Unique Values", "Valeurs uniques").to_string(),
         Rule::Text { op, text } => {
             let verb = match op {
                 TextOp::Contains => t("Cell Value contains", "La valeur de la cellule contient"),
-                TextOp::NotContains => t("Cell Value does not contain", "La valeur de la cellule ne contient pas"),
-                TextOp::BeginsWith => t("Cell Value begins with", "La valeur de la cellule commence par"),
-                TextOp::EndsWith => t("Cell Value ends with", "La valeur de la cellule se termine par"),
+                TextOp::NotContains => t(
+                    "Cell Value does not contain",
+                    "La valeur de la cellule ne contient pas",
+                ),
+                TextOp::BeginsWith => t(
+                    "Cell Value begins with",
+                    "La valeur de la cellule commence par",
+                ),
+                TextOp::EndsWith => t(
+                    "Cell Value ends with",
+                    "La valeur de la cellule se termine par",
+                ),
             };
             let shown = operand_text(text, locale, anchor, active, true);
             match text {
@@ -251,10 +361,22 @@ pub fn describe(cf: &CondFormat, locale: &Locale, active: (u32, u32)) -> String 
                 _ => format!("{verb} {shown}"),
             }
         }
-        Rule::Blanks => t("Cell contains a blank value", "La cellule contient une valeur vide").to_string(),
-        Rule::NoBlanks => t("Cell does not contain a blank value", "La cellule ne contient pas de valeur vide").to_string(),
+        Rule::Blanks => t(
+            "Cell contains a blank value",
+            "La cellule contient une valeur vide",
+        )
+        .to_string(),
+        Rule::NoBlanks => t(
+            "Cell does not contain a blank value",
+            "La cellule ne contient pas de valeur vide",
+        )
+        .to_string(),
         Rule::Errors => t("Cell contains an error", "La cellule contient une erreur").to_string(),
-        Rule::NoErrors => t("Cell does not contain an error", "La cellule ne contient pas d'erreur").to_string(),
+        Rule::NoErrors => t(
+            "Cell does not contain an error",
+            "La cellule ne contient pas d'erreur",
+        )
+        .to_string(),
         Rule::DateOccurring(period) => period_rule(*period).to_string(),
         Rule::ColorScale(_) => t("Graded Color Scale", "Échelle de couleurs graduée").to_string(),
         Rule::DataBar(_) => t("Data Bar", "Barre de données").to_string(),
@@ -284,8 +406,14 @@ mod tests {
     #[test]
     fn cell_value_rules_show_their_operands() {
         assert_eq!(en(Rule::greater_than(Expr::Number(5.0))), "Cell Value > 5");
-        assert_eq!(en(Rule::between(Expr::Number(1.5), Expr::Number(3.0))), "Cell Value between 1.5 and 3");
-        assert_eq!(en(Rule::equal_to(Expr::Text("yes".into()))), "Cell Value = \"yes\"");
+        assert_eq!(
+            en(Rule::between(Expr::Number(1.5), Expr::Number(3.0))),
+            "Cell Value between 1.5 and 3"
+        );
+        assert_eq!(
+            en(Rule::equal_to(Expr::Text("yes".into()))),
+            "Cell Value = \"yes\""
+        );
         let reference = parse_operand("=$D$1", Locale::en(), (1, 1), (1, 1)).unwrap();
         assert_eq!(en(Rule::less_than(reference)), "Cell Value < $D$1");
     }
@@ -295,7 +423,10 @@ mod tests {
         // Written for B2 (the anchor), read from B5: three rows further.
         let formula = parse_operand("=A2>10", Locale::en(), (1, 1), (1, 1)).unwrap();
         set_lang(Lang::En);
-        assert_eq!(describe(&rule(Rule::Formula(formula)), Locale::en(), (4, 1)), "Formula: =A5>10");
+        assert_eq!(
+            describe(&rule(Rule::Formula(formula)), Locale::en(), (4, 1)),
+            "Formula: =A5>10"
+        );
     }
 
     #[test]
@@ -323,18 +454,36 @@ mod tests {
 
     #[test]
     fn text_date_and_graded_rules() {
-        assert_eq!(en(Rule::text_contains(Expr::Text("abc".into()))), "Cell Value contains 'abc'");
-        assert_eq!(en(Rule::date_occurring(TimePeriod::Last7Days)), "Last 7 days");
+        assert_eq!(
+            en(Rule::text_contains(Expr::Text("abc".into()))),
+            "Cell Value contains 'abc'"
+        );
+        assert_eq!(
+            en(Rule::date_occurring(TimePeriod::Last7Days)),
+            "Last 7 days"
+        );
         assert_eq!(en(Rule::DuplicateValues), "Duplicate Values");
         assert_eq!(en(Rule::Blanks), "Cell contains a blank value");
-        assert_eq!(en(Rule::ColorScale(ColorScale::two(Color(0), Color(0xFFFFFF)))), "Graded Color Scale");
-        assert_eq!(en(Rule::DataBar(DataBar::legacy(Color(0x638EC6)))), "Data Bar");
-        assert_eq!(en(Rule::IconSet(IconRule::preset(IconSet::ThreeArrows))), "Icon Set");
+        assert_eq!(
+            en(Rule::ColorScale(ColorScale::two(Color(0), Color(0xFFFFFF)))),
+            "Graded Color Scale"
+        );
+        assert_eq!(
+            en(Rule::DataBar(DataBar::legacy(Color(0x638EC6)))),
+            "Data Bar"
+        );
+        assert_eq!(
+            en(Rule::IconSet(IconRule::preset(IconSet::ThreeArrows))),
+            "Icon Set"
+        );
     }
 
     #[test]
     fn the_average_lists_agree() {
         assert_eq!(AVERAGES.len(), average_names().len());
-        assert_eq!(set_groups().iter().map(|(_, count)| count).sum::<usize>(), IconSet::ALL.len());
+        assert_eq!(
+            set_groups().iter().map(|(_, count)| count).sum::<usize>(),
+            IconSet::ALL.len()
+        );
     }
 }

@@ -12,14 +12,20 @@ use crate::i18n::t;
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
-use crate::widgets::{self, Button, Checkbox, ListBox, NumberField, TabStrip, TextField, dialog, label, labeled, ok_cancel};
+use crate::widgets::{
+    self, Button, Checkbox, ListBox, NumberField, TabStrip, TextField, dialog, label, labeled,
+    ok_cancel,
+};
 use gpui::{Context, Entity, PathPromptOptions, SharedString, Window, div, prelude::*, px};
 use opensheet_engine::external::QueryProps;
 use opensheet_engine::text_columns::TextImport;
 
 /// The queries of the workbook, as the dialogs name them.
 fn queries(app: &ExcelApp) -> Vec<QueryRef> {
-    import::all_queries(app).into_iter().filter_map(|(sheet, index)| QueryRef::of(app, sheet, index)).collect()
+    import::all_queries(app)
+        .into_iter()
+        .filter_map(|(sheet, index)| QueryRef::of(app, sheet, index))
+        .collect()
 }
 
 /// Whether a query reads a file of this machine, whose path can change.
@@ -30,7 +36,11 @@ fn reads_a_file(import: &TextImport) -> bool {
 // ---------------------------------------------- Queries & Connections
 
 /// Data ▸ Queries & Connections.
-pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Entity<ConnectionsDialog> {
+pub(super) fn open(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<ConnectionsDialog> {
     let list = queries(app);
     let selected = (!list.is_empty()).then_some(0);
     app.open_modal(window, cx, move |modal, _, _| ConnectionsDialog {
@@ -74,7 +84,13 @@ impl ConnectionsDialog {
         let Some(query) = self.query() else { return };
         self.modal.update_app(cx, |app, cx| {
             if let Some(found) = query.find(app) {
-                if let Some(task) = import::refresh_queries(app, vec![found], t("Refresh", "Actualiser"), window, cx) {
+                if let Some(task) = import::refresh_queries(
+                    app,
+                    vec![found],
+                    t("Refresh", "Actualiser"),
+                    window,
+                    cx,
+                ) {
                     task.detach();
                 }
             }
@@ -154,27 +170,41 @@ impl ConnectionsDialog {
 /// The query now reads the file at `path`, written the way its address
 /// was (a path for text, a `file://` URL for documents).
 pub(super) fn set_path(app: &mut ExcelApp, query: &QueryRef, path: &std::path::Path, cx: &mut Cx) {
-    let Some((sheet, index)) = query.find(app) else { return };
+    let Some((sheet, index)) = query.find(app) else {
+        return;
+    };
     let address = match app.wb.sheets[sheet].text_imports[index].web {
         Some(_) => sources::file_url(path),
         None => path.to_string_lossy().into_owned(),
     };
-    app.wb.update_import(sheet, index, |import| import.path = address);
-    app.commit(t("Change File Path", "Modifier le chemin d’accès au fichier"), cx);
+    app.wb
+        .update_import(sheet, index, |import| import.path = address);
+    app.commit(
+        t("Change File Path", "Modifier le chemin d’accès au fichier"),
+        cx,
+    );
 }
 
 impl Render for ConnectionsDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.reload(cx);
-        let names: Vec<SharedString> = self.list.iter().map(|query| query.name.clone().into()).collect();
+        let names: Vec<SharedString> = self
+            .list
+            .iter()
+            .map(|query| query.name.clone().into())
+            .collect();
         let chosen = self.selected_import(cx);
         let none = chosen.is_none();
-        let file = chosen.as_ref().is_some_and(|(import, _)| reads_a_file(import));
+        let file = chosen
+            .as_ref()
+            .is_some_and(|(import, _)| reads_a_file(import));
         // Wide enough for the longest label in the five languages.
         let side = |button: Button| button.width(240.0);
         let modal = self.modal.clone();
         let locations = match (&chosen, self.locations) {
-            (Some((import, place)), true) => div().child(SharedString::from(format!("{}    {}", import.name, place))),
+            (Some((import, place)), true) => {
+                div().child(SharedString::from(format!("{}    {}", import.name, place)))
+            }
             _ => div().text_color(c(theme::ACCENT)).child(
                 div()
                     .id("connections-where")
@@ -189,59 +219,103 @@ impl Render for ConnectionsDialog {
                     })),
             ),
         };
-        dialog(&self.modal, t("Workbook Queries & Connections", "Requêtes et connexions du classeur"))
-            .width(600.0)
-            .child(
-                div()
-                    .flex()
-                    .gap(px(12.))
-                    .child(
-                        ListBox::new("connections", names, self.selected)
-                            .width(320.0)
-                            .height(widgets::ROW_H * 8.0)
-                            .on_change(cx.listener(|this, index: &usize, _, cx| this.select(*index, cx)))
-                            .on_activate(cx.listener(|this, index: &usize, window, cx| {
-                                this.select(*index, cx);
-                                this.properties(window, cx);
-                            })),
-                    )
-                    .child(
-                        div()
-                            .flex()
-                            .flex_col()
-                            .gap(px(6.))
-                            .child(side(Button::new("connections-refresh", t("Refresh", "Actualiser"))).disabled(none).on_click(cx.listener(|this, _, window, cx| this.refresh(window, cx))))
-                            .child(
-                                side(Button::new("connections-properties", t("Properties...", "Propriétés...")))
-                                    .disabled(none)
-                                    .on_click(cx.listener(|this, _, window, cx| this.properties(window, cx))),
-                            )
-                            .child(side(Button::new("connections-remove", t("Remove", "Supprimer"))).disabled(none).on_click(cx.listener(|this, _, window, cx| this.remove(window, cx))))
-                            .child(
-                                side(Button::new("connections-path", t("Change File Path...", "Modifier le chemin d’accès au fichier...")))
-                                    .disabled(!file)
-                                    .on_click(cx.listener(|this, _, window, cx| this.change_path(window, cx))),
-                            )
-                            // No source of this program asks for a sign-in,
-                            // so there is never a permission to clear.
-                            .child(side(Button::new("connections-permissions", t("Clear Permissions", "Effacer les autorisations"))).disabled(true)),
-                    ),
-            )
-            .child(label(t(
-                "Locations where connections are used in this workbook",
-                "Emplacements dans ce classeur où des connexions sont utilisées",
-            )))
-            .child(
-                div()
-                    .h(px(44.))
-                    .px(px(6.))
-                    .py(px(4.))
-                    .border_1()
-                    .border_color(c(theme::BORDER))
-                    .bg(c(0xFFFFFF))
-                    .when(!none, |d| d.child(locations)),
-            )
-            .footer(Button::new("connections-close", t("Close", "Fermer")).primary().on_click(move |_, window, cx| modal.close(window, cx)))
+        dialog(
+            &self.modal,
+            t(
+                "Workbook Queries & Connections",
+                "Requêtes et connexions du classeur",
+            ),
+        )
+        .width(600.0)
+        .child(
+            div()
+                .flex()
+                .gap(px(12.))
+                .child(
+                    ListBox::new("connections", names, self.selected)
+                        .width(320.0)
+                        .height(widgets::ROW_H * 8.0)
+                        .on_change(
+                            cx.listener(|this, index: &usize, _, cx| this.select(*index, cx)),
+                        )
+                        .on_activate(cx.listener(|this, index: &usize, window, cx| {
+                            this.select(*index, cx);
+                            this.properties(window, cx);
+                        })),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(6.))
+                        .child(
+                            side(Button::new(
+                                "connections-refresh",
+                                t("Refresh", "Actualiser"),
+                            ))
+                            .disabled(none)
+                            .on_click(cx.listener(|this, _, window, cx| this.refresh(window, cx))),
+                        )
+                        .child(
+                            side(Button::new(
+                                "connections-properties",
+                                t("Properties...", "Propriétés..."),
+                            ))
+                            .disabled(none)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.properties(window, cx)),
+                            ),
+                        )
+                        .child(
+                            side(Button::new("connections-remove", t("Remove", "Supprimer")))
+                                .disabled(none)
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.remove(window, cx)),
+                                ),
+                        )
+                        .child(
+                            side(Button::new(
+                                "connections-path",
+                                t(
+                                    "Change File Path...",
+                                    "Modifier le chemin d’accès au fichier...",
+                                ),
+                            ))
+                            .disabled(!file)
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.change_path(window, cx)),
+                            ),
+                        )
+                        // No source of this program asks for a sign-in,
+                        // so there is never a permission to clear.
+                        .child(
+                            side(Button::new(
+                                "connections-permissions",
+                                t("Clear Permissions", "Effacer les autorisations"),
+                            ))
+                            .disabled(true),
+                        ),
+                ),
+        )
+        .child(label(t(
+            "Locations where connections are used in this workbook",
+            "Emplacements dans ce classeur où des connexions sont utilisées",
+        )))
+        .child(
+            div()
+                .h(px(44.))
+                .px(px(6.))
+                .py(px(4.))
+                .border_1()
+                .border_color(c(theme::BORDER))
+                .bg(c(0xFFFFFF))
+                .when(!none, |d| d.child(locations)),
+        )
+        .footer(
+            Button::new("connections-close", t("Close", "Fermer"))
+                .primary()
+                .on_click(move |_, window, cx| modal.close(window, cx)),
+        )
     }
 }
 
@@ -255,23 +329,40 @@ fn kind_name(import: &TextImport) -> &'static str {
 }
 
 /// Connection Properties of a query; `None` when it is gone.
-pub(super) fn open_properties(app: &mut ExcelApp, query: &QueryRef, window: &mut Window, cx: &mut Cx) -> Option<Entity<PropertiesDialog>> {
+pub(super) fn open_properties(
+    app: &mut ExcelApp,
+    query: &QueryRef,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<Entity<PropertiesDialog>> {
     let (sheet, index) = query.find(app)?;
     let import = app.wb.sheets[sheet].text_imports[index].clone();
     let query = query.clone();
-    Some(app.open_modal(window, cx, move |modal, _, cx| PropertiesDialog {
-        name: widgets::input(cx, import.name.clone()),
-        description: widgets::input(cx, import.props.description.clone()),
-        // Excel proposes an hour.
-        minutes: widgets::number_input(cx, Some(if import.props.refresh_minutes == 0 { 60.0 } else { f64::from(import.props.refresh_minutes) }), 1.0, 32767.0, 1.0),
-        address: widgets::input(cx, import.path.clone()),
-        timed: import.props.refresh_minutes > 0,
-        props: import.props.clone(),
-        import,
-        query,
-        tab: 0,
-        modal,
-    }))
+    Some(
+        app.open_modal(window, cx, move |modal, _, cx| PropertiesDialog {
+            name: widgets::input(cx, import.name.clone()),
+            description: widgets::input(cx, import.props.description.clone()),
+            // Excel proposes an hour.
+            minutes: widgets::number_input(
+                cx,
+                Some(if import.props.refresh_minutes == 0 {
+                    60.0
+                } else {
+                    f64::from(import.props.refresh_minutes)
+                }),
+                1.0,
+                32767.0,
+                1.0,
+            ),
+            address: widgets::input(cx, import.path.clone()),
+            timed: import.props.refresh_minutes > 0,
+            props: import.props.clone(),
+            import,
+            query,
+            tab: 0,
+            modal,
+        }),
+    )
 }
 
 pub(super) struct PropertiesDialog {
@@ -291,15 +382,26 @@ pub(super) struct PropertiesDialog {
 
 impl PropertiesDialog {
     #[cfg(test)]
-    pub(super) fn set(&mut self, name: &str, description: &str, every: Option<u32>, on_open: bool, address: &str, cx: &mut Context<Self>) {
+    pub(super) fn set(
+        &mut self,
+        name: &str,
+        description: &str,
+        every: Option<u32>,
+        on_open: bool,
+        address: &str,
+        cx: &mut Context<Self>,
+    ) {
         self.name.update(cx, |field, cx| field.set_text(name, cx));
-        self.description.update(cx, |field, cx| field.set_text(description, cx));
+        self.description
+            .update(cx, |field, cx| field.set_text(description, cx));
         self.timed = every.is_some();
         if let Some(minutes) = every {
-            self.minutes.update(cx, |field, cx| field.set_text(minutes.to_string(), cx));
+            self.minutes
+                .update(cx, |field, cx| field.set_text(minutes.to_string(), cx));
         }
         self.props.refresh_on_open = on_open;
-        self.address.update(cx, |field, cx| field.set_text(address, cx));
+        self.address
+            .update(cx, |field, cx| field.set_text(address, cx));
         cx.notify();
     }
 
@@ -308,9 +410,15 @@ impl PropertiesDialog {
     fn edited(&self, app: &ExcelApp, cx: &Context<Self>) -> Result<TextImport, &'static str> {
         let mut import = self.import.clone();
         import.name = self.name.read(cx).text().trim().to_string();
-        let at = self.query.find(app).ok_or(t("The original external data range is no longer valid.", "La plage de données externes d'origine n'est plus valide."))?;
+        let at = self.query.find(app).ok_or(t(
+            "The original external data range is no longer valid.",
+            "La plage de données externes d'origine n'est plus valide.",
+        ))?;
         if !app.wb.import_name_free(&import.name, at) {
-            return Err(t("The name that you entered is not valid.", "Le nom que vous avez entré n’est pas valide."));
+            return Err(t(
+                "The name that you entered is not valid.",
+                "Le nom que vous avez entré n’est pas valide.",
+            ));
         }
         import.props = self.props.clone();
         import.props.description = self.description.read(cx).text().trim().to_string();
@@ -331,7 +439,10 @@ impl PropertiesDialog {
         let query = self.query.clone();
         let outcome = self.modal.read_app(cx, |app| self.edited(app, cx));
         let done = match outcome {
-            Some(Ok(import)) => self.modal.update_app(cx, |app, cx| apply(app, &query, import, cx)).is_some(),
+            Some(Ok(import)) => self
+                .modal
+                .update_app(cx, |app, cx| apply(app, &query, import, cx))
+                .is_some(),
             Some(Err(message)) => {
                 self.modal.update_app(cx, |app, cx| warn(app, message, cx));
                 false
@@ -355,7 +466,9 @@ impl PropertiesDialog {
 
 /// Give a query its edited name and properties, in one undo step.
 fn apply(app: &mut ExcelApp, query: &QueryRef, edited: TextImport, cx: &mut Cx) {
-    let Some((sheet, index)) = query.find(app) else { return };
+    let Some((sheet, index)) = query.find(app) else {
+        return;
+    };
     if app.wb.sheets[sheet].text_imports[index] == edited {
         return;
     }
@@ -377,29 +490,46 @@ impl Render for PropertiesDialog {
                 .flex_col()
                 .gap(px(8.))
                 .child(
-                    Checkbox::new("connection-background", t("Enable background refresh", "Actualiser en arrière-plan"), self.props.background).on_change(cx.listener(
-                        |this, on: &bool, _, cx| {
-                            this.props.background = *on;
-                            cx.notify();
-                        },
-                    )),
+                    Checkbox::new(
+                        "connection-background",
+                        t("Enable background refresh", "Actualiser en arrière-plan"),
+                        self.props.background,
+                    )
+                    .on_change(cx.listener(|this, on: &bool, _, cx| {
+                        this.props.background = *on;
+                        cx.notify();
+                    })),
                 )
                 .child(
                     div()
                         .flex()
                         .items_center()
                         .gap(px(6.))
-                        .child(Checkbox::new("connection-timed", t("Refresh every", "Actualiser toutes les"), self.timed).on_change(cx.listener(|this, on: &bool, _, cx| {
-                            this.timed = *on;
-                            cx.notify();
-                        })))
-                        .child(div().when(!self.timed, |d| d.opacity(0.5)).child(NumberField::new("connection-minutes", &self.minutes).width(70.0)))
+                        .child(
+                            Checkbox::new(
+                                "connection-timed",
+                                t("Refresh every", "Actualiser toutes les"),
+                                self.timed,
+                            )
+                            .on_change(cx.listener(
+                                |this, on: &bool, _, cx| {
+                                    this.timed = *on;
+                                    cx.notify();
+                                },
+                            )),
+                        )
+                        .child(div().when(!self.timed, |d| d.opacity(0.5)).child(
+                            NumberField::new("connection-minutes", &self.minutes).width(70.0),
+                        ))
                         .child(t("minutes", "minutes")),
                 )
                 .child(
                     Checkbox::new(
                         "connection-on-open",
-                        t("Refresh data when opening the file", "Actualiser les données lors de l’ouverture du fichier"),
+                        t(
+                            "Refresh data when opening the file",
+                            "Actualiser les données lors de l’ouverture du fichier",
+                        ),
                         self.props.refresh_on_open,
                     )
                     .on_change(cx.listener(|this, on: &bool, _, cx| {
@@ -412,37 +542,64 @@ impl Render for PropertiesDialog {
                 .flex()
                 .flex_col()
                 .gap(px(8.))
-                .child(labeled(t("Connection type:", "Type de connexion :"), div().child(kind_name(&self.import))))
+                .child(labeled(
+                    t("Connection type:", "Type de connexion :"),
+                    div().child(kind_name(&self.import)),
+                ))
                 .child(label(t("Connection string:", "Chaîne de connexion :")))
                 .child(TextField::new(&self.address).width(420.0))
                 .child(
                     div().flex().child(
-                        Button::new("connection-edit-query", t("Edit Query...", "Modifier la requête..."))
-                            .disabled(!web)
-                            .on_click(cx.listener(|this, _, window, cx| this.edit_query(window, cx))),
+                        Button::new(
+                            "connection-edit-query",
+                            t("Edit Query...", "Modifier la requête..."),
+                        )
+                        .disabled(!web)
+                        .on_click(cx.listener(|this, _, window, cx| this.edit_query(window, cx))),
                     ),
                 )
         };
-        dialog(&self.modal, t("Connection Properties", "Propriétés de connexion"))
-            .width(460.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(labeled(t("Connection name:", "Nom de la connexion :"), TextField::new(&self.name).width(280.0)))
-            .child(labeled(t("Description:", "Description :"), TextField::new(&self.description).width(280.0)))
-            .child(TabStrip::new("connection-tabs", vec![t("Usage", "Utilisation").into(), t("Definition", "Définition").into()], self.tab).on_change(cx.listener(
-                |this, tab: &usize, _, cx| {
-                    this.tab = *tab;
-                    cx.notify();
-                },
-            )))
-            .child(div().min_h(px(120.)).child(page))
-            .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+        dialog(
+            &self.modal,
+            t("Connection Properties", "Propriétés de connexion"),
+        )
+        .width(460.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(labeled(
+            t("Connection name:", "Nom de la connexion :"),
+            TextField::new(&self.name).width(280.0),
+        ))
+        .child(labeled(
+            t("Description:", "Description :"),
+            TextField::new(&self.description).width(280.0),
+        ))
+        .child(
+            TabStrip::new(
+                "connection-tabs",
+                vec![
+                    t("Usage", "Utilisation").into(),
+                    t("Definition", "Définition").into(),
+                ],
+                self.tab,
+            )
+            .on_change(cx.listener(|this, tab: &usize, _, cx| {
+                this.tab = *tab;
+                cx.notify();
+            })),
+        )
+        .child(div().min_h(px(120.)).child(page))
+        .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
 
 // --------------------------------------------- External Data Properties
 
 /// Data ▸ Properties: the external data range under the active cell.
-pub(super) fn open_range_properties(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Option<Entity<RangeDialog>> {
+pub(super) fn open_range_properties(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<Entity<RangeDialog>> {
     let (row, col) = app.active();
     let index = app.wb.text_import_at(app.sheet, row, col)?;
     let query = QueryRef::of(app, app.sheet, index)?;
@@ -466,7 +623,12 @@ pub(super) struct RangeDialog {
 
 impl RangeDialog {
     #[cfg(test)]
-    pub(super) fn set(&mut self, preserve_formatting: bool, adjust_width: bool, cx: &mut Context<Self>) {
+    pub(super) fn set(
+        &mut self,
+        preserve_formatting: bool,
+        adjust_width: bool,
+        cx: &mut Context<Self>,
+    ) {
         self.props.preserve_formatting = preserve_formatting;
         self.props.adjust_width = adjust_width;
         cx.notify();
@@ -477,12 +639,26 @@ impl RangeDialog {
         edited.name = self.name.read(cx).text().trim().to_string();
         edited.props = self.props.clone();
         let query = self.query.clone();
-        let free = self.modal.read_app(cx, |app| query.find(app).is_none_or(|at| app.wb.import_name_free(&edited.name, at)));
+        let free = self.modal.read_app(cx, |app| {
+            query
+                .find(app)
+                .is_none_or(|at| app.wb.import_name_free(&edited.name, at))
+        });
         if free == Some(false) {
-            self.modal.update_app(cx, |app, cx| warn(app, t("The name that you entered is not valid.", "Le nom que vous avez entré n’est pas valide."), cx));
+            self.modal.update_app(cx, |app, cx| {
+                warn(
+                    app,
+                    t(
+                        "The name that you entered is not valid.",
+                        "Le nom que vous avez entré n’est pas valide.",
+                    ),
+                    cx,
+                )
+            });
             return;
         }
-        self.modal.update_app(cx, |app, cx| apply(app, &query, edited, cx));
+        self.modal
+            .update_app(cx, |app, cx| apply(app, &query, edited, cx));
         self.modal.close(window, cx);
     }
 
@@ -498,41 +674,71 @@ impl RangeDialog {
 
 impl Render for RangeDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        dialog(&self.modal, t("External Data Properties", "Propriétés des données externes"))
-            .width(420.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(
-                div()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(labeled(t("Name:", "Nom :"), TextField::new(&self.name).width(200.0)))
-                    .child(Button::new("range-connection", t("Connection Properties...", "Propriétés de connexion...")).on_click(cx.listener(|this, _, window, cx| this.connection(window, cx)))),
-            )
-            .child(label(t("Data formatting and layout", "Format et disposition des données")))
-            .child(
-                div()
-                    .pl(px(10.))
-                    .flex()
-                    .flex_col()
-                    .gap(px(6.))
-                    .child(
-                        Checkbox::new("range-adjust", t("Adjust column width", "Ajustement de la largeur de la colonne"), self.props.adjust_width).on_change(cx.listener(
-                            |this, on: &bool, _, cx| {
-                                this.props.adjust_width = *on;
-                                cx.notify();
-                            },
-                        )),
+        dialog(
+            &self.modal,
+            t(
+                "External Data Properties",
+                "Propriétés des données externes",
+            ),
+        )
+        .width(420.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(labeled(
+                    t("Name:", "Nom :"),
+                    TextField::new(&self.name).width(200.0),
+                ))
+                .child(
+                    Button::new(
+                        "range-connection",
+                        t("Connection Properties...", "Propriétés de connexion..."),
                     )
-                    .child(
-                        Checkbox::new("range-preserve", t("Preserve cell formatting", "Conserver la mise en forme des cellules"), self.props.preserve_formatting).on_change(cx.listener(
-                            |this, on: &bool, _, cx| {
-                                this.props.preserve_formatting = *on;
-                                cx.notify();
-                            },
-                        )),
-                    ),
-            )
-            .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+                    .on_click(cx.listener(|this, _, window, cx| this.connection(window, cx))),
+                ),
+        )
+        .child(label(t(
+            "Data formatting and layout",
+            "Format et disposition des données",
+        )))
+        .child(
+            div()
+                .pl(px(10.))
+                .flex()
+                .flex_col()
+                .gap(px(6.))
+                .child(
+                    Checkbox::new(
+                        "range-adjust",
+                        t(
+                            "Adjust column width",
+                            "Ajustement de la largeur de la colonne",
+                        ),
+                        self.props.adjust_width,
+                    )
+                    .on_change(cx.listener(|this, on: &bool, _, cx| {
+                        this.props.adjust_width = *on;
+                        cx.notify();
+                    })),
+                )
+                .child(
+                    Checkbox::new(
+                        "range-preserve",
+                        t(
+                            "Preserve cell formatting",
+                            "Conserver la mise en forme des cellules",
+                        ),
+                        self.props.preserve_formatting,
+                    )
+                    .on_change(cx.listener(|this, on: &bool, _, cx| {
+                        this.props.preserve_formatting = *on;
+                        cx.notify();
+                    })),
+                ),
+        )
+        .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }

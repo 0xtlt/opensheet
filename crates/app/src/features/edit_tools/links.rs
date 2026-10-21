@@ -6,13 +6,16 @@
 use super::named;
 use crate::app::ExcelApp;
 use crate::features::names;
-use crate::features::{CellEdit, ChangeCause, Cx, Intent, Painter, PaintLayer, Zone, ZoneEvent, ZoneResponse};
+use crate::features::{
+    CellEdit, ChangeCause, Cx, Intent, PaintLayer, Painter, Zone, ZoneEvent, ZoneResponse,
+};
 use crate::i18n::t;
 use crate::shell::{Alert, Modal};
 use crate::text_input::TextInput;
 use crate::widgets::{self, Button, ListBox, TabStrip, TextField, dialog, label};
 use gpui::{
-    Context, CursorStyle, Entity, Focusable, MouseButton, PathPromptOptions, SharedString, Window, div, prelude::*, px,
+    Context, CursorStyle, Entity, Focusable, MouseButton, PathPromptOptions, SharedString, Window,
+    div, prelude::*, px,
 };
 use opensheet_engine::ast::{Expr, write_sheet_name};
 use opensheet_engine::hyperlink::{Hyperlink, LINK_STYLE, LinkAction, LinkKind, auto_link};
@@ -45,7 +48,9 @@ fn has_link_function(e: &Expr) -> bool {
 /// The range a click on a linked cell stands for: that of its link, or
 /// the cell itself for a `HYPERLINK()` formula.
 fn link_range(app: &ExcelApp, row: u32, col: u32) -> Rect {
-    app.wb.hyperlink_at(app.sheet, row, col).map_or(Rect::cell(row, col), |link| link.range)
+    app.wb
+        .hyperlink_at(app.sheet, row, col)
+        .map_or(Rect::cell(row, col), |link| link.range)
 }
 
 // ------------------------------------------------------------------ painting
@@ -72,7 +77,10 @@ pub(super) fn paint(p: &mut Painter) {
         let Content::Formula(formula) = &cell.content else {
             continue;
         };
-        if visible.contains(*row, *col) && has_link_function(formula) && p.app.wb.hyperlink_at(sheet, *row, *col).is_none() {
+        if visible.contains(*row, *col)
+            && has_link_function(formula)
+            && p.app.wb.hyperlink_at(sheet, *row, *col).is_none()
+        {
             if let Some(tip) = p.app.wb.link_tip_at(sheet, *row, *col) {
                 spots.push((Rect::cell(*row, *col), tip));
             }
@@ -80,13 +88,20 @@ pub(super) fn paint(p: &mut Painter) {
     }
     for (rect, tip) in spots {
         let bounds = p.cell_box(rect);
-        p.zone(bounds, LinkZone).cursor(CursorStyle::PointingHand).tooltip(tip);
+        p.zone(bounds, LinkZone)
+            .cursor(CursorStyle::PointingHand)
+            .tooltip(tip);
     }
 }
 
 // ----------------------------------------------------------------- following
 
-pub(super) fn zone_mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _cx: &mut Cx) -> ZoneResponse {
+pub(super) fn zone_mouse_down(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    _cx: &mut Cx,
+) -> ZoneResponse {
     if zone.payload::<LinkZone>().is_none() {
         return ZoneResponse::Ignored;
     }
@@ -101,7 +116,13 @@ pub(super) fn zone_mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _
     ZoneResponse::Capture
 }
 
-pub(super) fn zone_mouse_up(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+pub(super) fn zone_mouse_up(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if zone.payload::<LinkZone>().is_none() {
         return;
     }
@@ -114,7 +135,14 @@ pub(super) fn zone_mouse_up(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, win
 /// The button came up over `at` after a press on the linked cell `cell`
 /// that lasted `held`: a short click on the link follows it, anything
 /// else selects the cell.
-pub(super) fn released(app: &mut ExcelApp, cell: (u32, u32), at: (u32, u32), held: Duration, window: &mut Window, cx: &mut Cx) {
+pub(super) fn released(
+    app: &mut ExcelApp,
+    cell: (u32, u32),
+    at: (u32, u32),
+    held: Duration,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let on_link = link_range(app, cell.0, cell.1).contains(at.0, at.1);
     if on_link && held < HOLD {
         follow(app, cell.0, cell.1, window, cx);
@@ -126,11 +154,18 @@ pub(super) fn released(app: &mut ExcelApp, cell: (u32, u32), at: (u32, u32), hel
 /// An address as the system opens it: the path of a file becomes a
 /// `file:` URL, beside the workbook when it is relative.
 fn openable(app: &ExcelApp, target: &str) -> String {
-    if target.contains("://") || target.get(..7).is_some_and(|head| head.eq_ignore_ascii_case("mailto:")) {
+    if target.contains("://")
+        || target
+            .get(..7)
+            .is_some_and(|head| head.eq_ignore_ascii_case("mailto:"))
+    {
         return target.to_string();
     }
     let path = std::path::Path::new(target);
-    let full = match (path.is_absolute(), app.path.as_ref().and_then(|file| file.parent())) {
+    let full = match (
+        path.is_absolute(),
+        app.path.as_ref().and_then(|file| file.parent()),
+    ) {
         (false, Some(folder)) => folder.join(path),
         _ => path.to_path_buf(),
     };
@@ -162,13 +197,17 @@ pub(super) fn follow(app: &mut ExcelApp, row: u32, col: u32, window: &mut Window
                 names::select_areas(app, &areas, cx)
             });
             if !shown {
-                app.alert(Alert::new("OpenSheet", names::invalid_reference()).warning(), cx);
+                app.alert(
+                    Alert::new("OpenSheet", names::invalid_reference()).warning(),
+                    cx,
+                );
                 return;
             }
         }
     }
     if app.wb.cell_style_at(sheet, row, col) == LINK_STYLE {
-        app.wb.format_as_link(sheet, app.wb.clamp_to_used(sheet, range), true);
+        app.wb
+            .format_as_link(sheet, app.wb.clamp_to_used(sheet, range), true);
         app.commit(t("Followed Hyperlink", "Lien hypertexte visité"), cx);
     }
 }
@@ -196,7 +235,12 @@ fn may_link(app: &mut ExcelApp, range: Rect, cx: &mut Cx) -> bool {
 /// Put `link` on its range, as OK does in the dialog: `display`, when
 /// given, becomes the text of the first cell (an empty cell takes the
 /// address), and the range takes the look of a link. One undo step.
-pub(super) fn insert(app: &mut ExcelApp, link: Hyperlink, display: Option<String>, cx: &mut Cx) -> bool {
+pub(super) fn insert(
+    app: &mut ExcelApp,
+    link: Hyperlink,
+    display: Option<String>,
+    cx: &mut Cx,
+) -> bool {
     if !may_link(app, link.range, cx) {
         return false;
     }
@@ -204,7 +248,10 @@ pub(super) fn insert(app: &mut ExcelApp, link: Hyperlink, display: Option<String
     let (row, col) = (link.range.r0, link.range.c0);
     let shown = match link.kind() {
         LinkKind::Place => link.location.clone(),
-        LinkKind::Email => link.email_parts().map(|(address, _)| address).unwrap_or_default(),
+        LinkKind::Email => link
+            .email_parts()
+            .map(|(address, _)| address)
+            .unwrap_or_default(),
         _ => link.target(),
     };
     let empty = app.wb.sheets[sheet].is_blank(row, col);
@@ -215,12 +262,20 @@ pub(super) fn insert(app: &mut ExcelApp, link: Hyperlink, display: Option<String
     };
     if let Some(text) = text {
         if app.wb.display_text(sheet, row, col).text != text {
-            app.wb.set_content(sheet, row, col, Content::Value(Value::text(&text)));
+            app.wb
+                .set_content(sheet, row, col, Content::Value(Value::text(&text)));
         }
     }
     let range = link.range;
     app.wb.set_hyperlink(sheet, link);
-    app.wb.format_as_link(sheet, app.wb.clamp_to_used(sheet, range).intersection(&range).unwrap_or(range), false);
+    app.wb.format_as_link(
+        sheet,
+        app.wb
+            .clamp_to_used(sheet, range)
+            .intersection(&range)
+            .unwrap_or(range),
+        false,
+    );
     app.commit(t("Insert Hyperlink", "Insérer un lien hypertexte"), cx);
     true
 }
@@ -253,10 +308,17 @@ pub(super) fn cells_written(app: &mut ExcelApp, edit: &CellEdit) {
     let sheet = edit.sheet;
     let (row, col) = (edit.rect.r0, edit.rect.c0);
     match edit.cause {
-        ChangeCause::Typing if edit.rect.is_single() || app.wb.sheets[sheet].merge_at(row, col) == Some(edit.rect) => {
+        ChangeCause::Typing
+            if edit.rect.is_single()
+                || app.wb.sheets[sheet].merge_at(row, col) == Some(edit.rect) =>
+        {
             let typed = match app.wb.cell(sheet, row, col).map(|cell| &cell.content) {
                 // A preference (AutoCorrect) can leave addresses as text.
-                Some(Content::Value(Value::Text(text))) if crate::features::preferences::links_typed_addresses() => auto_link(text),
+                Some(Content::Value(Value::Text(text)))
+                    if crate::features::preferences::links_typed_addresses() =>
+                {
+                    auto_link(text)
+                }
                 _ => None,
             };
             let free = app.wb.hyperlink_at(sheet, row, col).is_none();
@@ -268,7 +330,8 @@ pub(super) fn cells_written(app: &mut ExcelApp, edit: &CellEdit) {
                 })
                 .is_ok();
             if let (Some(address), true, true) = (typed, free, allowed) {
-                app.wb.set_hyperlink(sheet, Hyperlink::external(edit.rect, &address));
+                app.wb
+                    .set_hyperlink(sheet, Hyperlink::external(edit.rect, &address));
                 app.wb.format_as_link(sheet, edit.rect, false);
             }
         }
@@ -305,7 +368,9 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let sheet = app.sheet;
     let (row, col) = app.active();
     let existing = app.wb.hyperlink_at(sheet, row, col).cloned();
-    let range = existing.as_ref().map_or(app.sel().current(), |link| link.range);
+    let range = existing
+        .as_ref()
+        .map_or(app.sel().current(), |link| link.range);
     if !may_link(app, range, cx) {
         return;
     }
@@ -313,12 +378,23 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     // or a formula stays what it is.
     let (first_row, first_col) = (range.r0, range.c0);
     let editable = matches!(
-        app.wb.cell(sheet, first_row, first_col).map(|cell| &cell.content),
+        app.wb
+            .cell(sheet, first_row, first_col)
+            .map(|cell| &cell.content),
         None | Some(Content::Empty) | Some(Content::Value(Value::Text(_)))
     );
     let shown = app.wb.display_text(sheet, first_row, first_col).text;
-    let mut places: Vec<Place> = app.wb.sheets.iter().map(|sh| Place::Sheet(sh.name.clone())).collect();
-    places.extend(names::visible_names(&app.wb, sheet).into_iter().map(Place::Name));
+    let mut places: Vec<Place> = app
+        .wb
+        .sheets
+        .iter()
+        .map(|sh| Place::Sheet(sh.name.clone()))
+        .collect();
+    places.extend(
+        names::visible_names(&app.wb, sheet)
+            .into_iter()
+            .map(Place::Name),
+    );
     let current = app.wb.sheets[sheet].name.clone();
     app.open_modal(window, cx, move |modal, _, cx| {
         let link = existing.clone().unwrap_or_default();
@@ -331,7 +407,9 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
                 let plain = sheet.trim_matches('\'').replace("''", "'");
                 (Some(Place::Sheet(plain)), cells.to_string())
             }
-            (Some(LinkKind::Place), None) => (Some(Place::Name(link.location.clone())), String::new()),
+            (Some(LinkKind::Place), None) => {
+                (Some(Place::Name(link.location.clone())), String::new())
+            }
             _ => (Some(Place::Sheet(current.clone())), "A1".to_string()),
         };
         let place = place_sheet.and_then(|wanted| places.iter().position(|place| *place == wanted));
@@ -339,7 +417,14 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
             modal,
             range,
             editing: existing.is_some(),
-            display: widgets::input(cx, if editable { shown.clone() } else { String::new() }),
+            display: widgets::input(
+                cx,
+                if editable {
+                    shown.clone()
+                } else {
+                    String::new()
+                },
+            ),
             display_editable: editable,
             tooltip: link.tooltip.clone(),
             tab: match kind {
@@ -347,7 +432,14 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
                 Some(LinkKind::Email) => 2,
                 _ => 0,
             },
-            address: widgets::input(cx, if matches!(kind, Some(LinkKind::Web | LinkKind::File)) { link.target() } else { String::new() }),
+            address: widgets::input(
+                cx,
+                if matches!(kind, Some(LinkKind::Web | LinkKind::File)) {
+                    link.target()
+                } else {
+                    String::new()
+                },
+            ),
             reference: widgets::input(cx, reference),
             places,
             place,
@@ -388,7 +480,11 @@ fn place_text(place: Option<&Place>, reference: &str) -> String {
             let mut out = String::new();
             write_sheet_name(sheet, &mut out);
             out.push('!');
-            out.push_str(if reference.is_empty() { "A1" } else { reference });
+            out.push_str(if reference.is_empty() {
+                "A1"
+            } else {
+                reference
+            });
             out
         }
         None => reference.to_string(),
@@ -406,11 +502,16 @@ impl LinkDialog {
                     return None;
                 }
                 // "www.example.org" is a web address, as AutoFormat has it.
-                let address = auto_link(&address).filter(|_| !address.contains("://")).unwrap_or(address);
+                let address = auto_link(&address)
+                    .filter(|_| !address.contains("://"))
+                    .unwrap_or(address);
                 Hyperlink::external(self.range, &address)
             }
             1 => {
-                let place = place_text(self.place.and_then(|index| self.places.get(index)), &text(&self.reference));
+                let place = place_text(
+                    self.place.and_then(|index| self.places.get(index)),
+                    &text(&self.reference),
+                );
                 if place.is_empty() {
                     return None;
                 }
@@ -432,13 +533,22 @@ impl LinkDialog {
         let Some(link) = self.link(cx) else {
             return;
         };
-        let display = self.display_editable.then(|| self.display.read(cx).text().to_string());
+        let display = self
+            .display_editable
+            .then(|| self.display.read(cx).text().to_string());
         let done = self.modal.update_app(cx, |app, cx| {
             // A place must be one of this workbook.
             if link.kind() == LinkKind::Place {
                 let (row, col) = app.active();
-                if app.wb.reference_areas(app.sheet, row, col, &link.location).is_none() {
-                    app.alert(Alert::new("OpenSheet", names::invalid_reference()).warning(), cx);
+                if app
+                    .wb
+                    .reference_areas(app.sheet, row, col, &link.location)
+                    .is_none()
+                {
+                    app.alert(
+                        Alert::new("OpenSheet", names::invalid_reference()).warning(),
+                        cx,
+                    );
                     return false;
                 }
             }
@@ -479,7 +589,11 @@ impl LinkDialog {
             if let Ok(Ok(Some(paths))) = paths.await {
                 if let Some(path) = paths.first() {
                     let path = path.display().to_string();
-                    this.update(cx, |this, cx| this.address.update(cx, |field, cx| field.set_text(path, cx))).ok();
+                    this.update(cx, |this, cx| {
+                        this.address
+                            .update(cx, |field, cx| field.set_text(path, cx))
+                    })
+                    .ok();
                 }
             }
         })
@@ -504,7 +618,12 @@ impl Render for LinkDialog {
         }
         let ready = self.link(cx).is_some();
         let row = |text: &'static str, control: gpui::AnyElement| {
-            div().flex().items_center().gap(px(8.)).child(label(text).w(px(150.))).child(control)
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(label(text).w(px(150.)))
+                .child(control)
         };
         let display = if self.display_editable {
             TextField::new(&self.display).into_any_element()
@@ -512,7 +631,10 @@ impl Render for LinkDialog {
             div()
                 .flex_1()
                 .text_color(crate::theme::c(crate::theme::TEXT_DISABLED))
-                .child(t("<<Selection in Document>>", "<<Sélection dans le document>>"))
+                .child(t(
+                    "<<Selection in Document>>",
+                    "<<Sélection dans le document>>",
+                ))
                 .into_any_element()
         };
         let page = match self.tab {
@@ -523,7 +645,10 @@ impl Render for LinkDialog {
                     .gap(px(8.))
                     .child(label(t("Address:", "Adresse :")).w(px(150.)))
                     .child(TextField::new(&self.address))
-                    .child(Button::new("select", t("Select...", "Sélectionner...")).on_click(cx.listener(|this, _, _, cx| this.choose_file(cx)))),
+                    .child(
+                        Button::new("select", t("Select...", "Sélectionner..."))
+                            .on_click(cx.listener(|this, _, _, cx| this.choose_file(cx))),
+                    ),
             ),
             1 => {
                 let items: Vec<SharedString> = self
@@ -538,23 +663,39 @@ impl Render for LinkDialog {
                     .flex_col()
                     .gap(px(8.))
                     .child(row(
-                        t("Type in the cell reference:", "Entrer la référence de la cellule :"),
+                        t(
+                            "Type in the cell reference:",
+                            "Entrer la référence de la cellule :",
+                        ),
                         TextField::new(&self.reference).into_any_element(),
                     ))
-                    .child(label(t("Select a place in this document:", "Sélectionnez un emplacement dans ce document :")))
-                    .child(div().flex().child(
-                        ListBox::new("places", items, self.place).height(140.0).on_change(cx.listener(|this, index: &usize, _, cx| {
-                            this.place = Some(*index);
-                            cx.notify();
-                        })),
-                    ))
+                    .child(label(t(
+                        "Select a place in this document:",
+                        "Sélectionnez un emplacement dans ce document :",
+                    )))
+                    .child(
+                        div().flex().child(
+                            ListBox::new("places", items, self.place)
+                                .height(140.0)
+                                .on_change(cx.listener(|this, index: &usize, _, cx| {
+                                    this.place = Some(*index);
+                                    cx.notify();
+                                })),
+                        ),
+                    )
             }
             _ => div()
                 .flex()
                 .flex_col()
                 .gap(px(8.))
-                .child(row(t("Email address:", "Adresse de courrier :"), TextField::new(&self.email).into_any_element()))
-                .child(row(t("Subject:", "Objet :"), TextField::new(&self.subject).into_any_element())),
+                .child(row(
+                    t("Email address:", "Adresse de courrier :"),
+                    TextField::new(&self.email).into_any_element(),
+                ))
+                .child(row(
+                    t("Subject:", "Objet :"),
+                    TextField::new(&self.subject).into_any_element(),
+                )),
         };
         let modal = self.modal.clone();
         let title = if self.editing {
@@ -574,8 +715,9 @@ impl Render for LinkDialog {
                     .child(display)
                     .child(named(
                         "link-screen-tip",
-                        Button::new("screen-tip", t("ScreenTip...", "Info-bulle..."))
-                            .on_click(cx.listener(|this, _, window, cx| this.screen_tip(window, cx))),
+                        Button::new("screen-tip", t("ScreenTip...", "Info-bulle...")).on_click(
+                            cx.listener(|this, _, window, cx| this.screen_tip(window, cx)),
+                        ),
                     )),
             )
             .child(named(
@@ -606,15 +748,22 @@ impl Render for LinkDialog {
                     .when(self.editing, |d| {
                         d.child(named(
                             "link-remove",
-                            Button::new("remove", t("Remove Link", "Supprimer le lien"))
-                                .on_click(cx.listener(|this, _, window, cx| this.remove(window, cx))),
+                            Button::new("remove", t("Remove Link", "Supprimer le lien")).on_click(
+                                cx.listener(|this, _, window, cx| this.remove(window, cx)),
+                            ),
                         ))
                     })
                     .child(div().flex_1())
-                    .child(Button::new("cancel", t("Cancel", "Annuler")).on_click(move |_, window, cx| modal.close(window, cx)))
+                    .child(
+                        Button::new("cancel", t("Cancel", "Annuler"))
+                            .on_click(move |_, window, cx| modal.close(window, cx)),
+                    )
                     .child(named(
                         "link-ok",
-                        Button::new("ok", t("OK", "OK")).primary().disabled(!ready).on_click(cx.listener(Self::ok)),
+                        Button::new("ok", t("OK", "OK"))
+                            .primary()
+                            .disabled(!ready)
+                            .on_click(cx.listener(Self::ok)),
                     )),
             )
     }
@@ -647,11 +796,17 @@ impl Render for ScreenTipDialog {
             let handle = self.text.read(cx).focus_handle(cx);
             window.focus(&handle);
         }
-        dialog(&self.modal, t("Set Hyperlink ScreenTip", "Définir une info-bulle pour le lien hypertexte"))
-            .width(380.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(label(t("ScreenTip text:", "Texte de l'info-bulle :")))
-            .child(div().flex().child(TextField::new(&self.text)))
-            .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
+        dialog(
+            &self.modal,
+            t(
+                "Set Hyperlink ScreenTip",
+                "Définir une info-bulle pour le lien hypertexte",
+            ),
+        )
+        .width(380.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(label(t("ScreenTip text:", "Texte de l'info-bulle :")))
+        .child(div().flex().child(TextField::new(&self.text)))
+        .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }

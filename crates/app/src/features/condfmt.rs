@@ -113,10 +113,16 @@ impl Command for Cmd {
             Cmd::Bottom10Percent => quick::open(app, quick::Kind::BottomPercent, window, cx),
             Cmd::AboveAverage => quick::open(app, quick::Kind::AboveAverage, window, cx),
             Cmd::BelowAverage => quick::open(app, quick::Kind::BelowAverage, window, cx),
-            Cmd::MoreHighlight => rule_dialog::open_new(app, rule_dialog::Start::Contains, window, cx),
-            Cmd::MoreTopBottom => rule_dialog::open_new(app, rule_dialog::Start::Ranked, window, cx),
+            Cmd::MoreHighlight => {
+                rule_dialog::open_new(app, rule_dialog::Start::Contains, window, cx)
+            }
+            Cmd::MoreTopBottom => {
+                rule_dialog::open_new(app, rule_dialog::Start::Ranked, window, cx)
+            }
             Cmd::DataBars => rule_dialog::open_new(app, rule_dialog::Start::DataBar, window, cx),
-            Cmd::ColorScales => rule_dialog::open_new(app, rule_dialog::Start::ColorScale, window, cx),
+            Cmd::ColorScales => {
+                rule_dialog::open_new(app, rule_dialog::Start::ColorScale, window, cx)
+            }
             Cmd::IconSets => rule_dialog::open_new(app, rule_dialog::Start::IconSet, window, cx),
             Cmd::NewRule => rule_dialog::open_new(app, rule_dialog::Start::ColorScale, window, cx),
             Cmd::ClearSelected => {
@@ -126,13 +132,20 @@ impl Command for Cmd {
             Cmd::ClearSheet => clear_rules(app, None, cx),
             Cmd::ClearTable => {
                 let (row, col) = app.active();
-                if let Some(range) = app.wb.table_at(app.sheet, row, col).map(|table| table.range) {
+                if let Some(range) = app
+                    .wb
+                    .table_at(app.sheet, row, col)
+                    .map(|table| table.range)
+                {
                     clear_rules(app, Some(vec![range]), cx);
                 }
             }
             Cmd::ClearPivot => {
                 let (row, col) = app.active();
-                let ranges = app.wb.pivot_at(app.sheet, row, col).map(|pivot| pivot.footprint().collect::<Vec<Rect>>());
+                let ranges = app
+                    .wb
+                    .pivot_at(app.sheet, row, col)
+                    .map(|pivot| pivot.footprint().collect::<Vec<Rect>>());
                 if let Some(ranges) = ranges {
                     clear_rules(app, Some(ranges), cx);
                 }
@@ -152,7 +165,10 @@ fn add_rule(app: &mut ExcelApp, rule: Rule, format: StylePatch, cx: &mut Cx) {
     end_preview(app, cx);
     let sheet = app.sheet;
     let ranges = app.sel().ranges.clone();
-    if app.wb.add_cond_format(sheet, CondFormat::new(ranges, rule).with_format(format)) {
+    if app
+        .wb
+        .add_cond_format(sheet, CondFormat::new(ranges, rule).with_format(format))
+    {
         app.commit(undo_label(), cx);
     }
 }
@@ -191,7 +207,11 @@ struct Ui {
 fn preview(app: &mut ExcelApp, rule: Option<CondFormat>, cx: &mut Cx) {
     let sheet = app.sheet;
     let state = app.ext_mut::<Ui>();
-    if state.preview.as_ref().is_some_and(|(previewed, _)| *previewed != sheet) {
+    if state
+        .preview
+        .as_ref()
+        .is_some_and(|(previewed, _)| *previewed != sheet)
+    {
         end_preview(app, cx);
     }
     let original = match &app.ext_mut::<Ui>().preview {
@@ -246,8 +266,18 @@ fn format_sample(format: &StylePatch, width: f32, height: f32) -> AnyElement {
             .into_any_element();
     }
     let line = |border: Option<Border>| border.filter(|b| !b.is_none());
-    let edges = [format.border_top, format.border_right, format.border_bottom, format.border_left].map(line);
-    let line_color = edges.iter().flatten().next().map(|b| b.color.map(|color| color.value()).unwrap_or(0x000000));
+    let edges = [
+        format.border_top,
+        format.border_right,
+        format.border_bottom,
+        format.border_left,
+    ]
+    .map(line);
+    let line_color = edges
+        .iter()
+        .flatten()
+        .next()
+        .map(|b| b.color.map(|color| color.value()).unwrap_or(0x000000));
     let side = |edge: Option<Border>| px(if edge.is_some() { 1.0 } else { 0.0 });
     frame
         .child(
@@ -259,10 +289,17 @@ fn format_sample(format: &StylePatch, width: f32, height: f32) -> AnyElement {
                 .overflow_hidden()
                 .whitespace_nowrap()
                 .when_some(format.fill.flatten(), |d, fill| d.bg(c(fill.value())))
-                .when_some(format.font_color.flatten(), |d, color| d.text_color(c(color.value())))
-                .when(format.bold == Some(true), |d| d.font_weight(FontWeight::BOLD))
+                .when_some(format.font_color.flatten(), |d, color| {
+                    d.text_color(c(color.value()))
+                })
+                .when(format.bold == Some(true), |d| {
+                    d.font_weight(FontWeight::BOLD)
+                })
                 .when(format.italic == Some(true), |d| d.italic())
-                .when(format.underline.is_some_and(|u| u != Underline::None), |d| d.underline())
+                .when(
+                    format.underline.is_some_and(|u| u != Underline::None),
+                    |d| d.underline(),
+                )
                 .when(format.strike == Some(true), |d| d.line_through())
                 .when_some(line_color, |d, color| {
                     d.border_color(c(color))
@@ -311,7 +348,12 @@ pub struct AdornmentPaint {
 /// the cell's text (16 pixels for 11 points at 100 %) and sits on that
 /// line; it stays at the left of the cell whatever the alignment, unless
 /// the value is hidden: an icon alone follows the horizontal alignment.
-fn icon_place(rect: (f32, f32, f32, f32), style: &Style, zoom: f32, alone: bool) -> (f32, f32, f32) {
+fn icon_place(
+    rect: (f32, f32, f32, f32),
+    style: &Style,
+    zoom: f32,
+    alone: bool,
+) -> (f32, f32, f32) {
     let (x0, y0, x1, y1) = rect;
     let (width, height) = (x1 - x0 - 1.0, y1 - y0 - 1.0);
     let font_px = pt_to_px(style.font.size_pt()) * zoom;
@@ -334,7 +376,9 @@ fn icon_place(rect: (f32, f32, f32, f32), style: &Style, zoom: f32, alone: bool)
         VAlign::Center => y0 + ((y1 - y0 - line) / 2.0).round(),
         VAlign::Bottom => y1 - line - zoom.round().max(1.0),
     };
-    let y = (text_top + ((line - side) / 2.0).round()).min(y1 - 1.0 - side).max(y0);
+    let y = (text_top + ((line - side) / 2.0).round())
+        .min(y1 - 1.0 - side)
+        .max(y0);
     (x, y, side)
 }
 
@@ -350,12 +394,23 @@ pub fn paint_adornment(adornment: &Adornment, cell: &CellBox) -> AdornmentPaint 
     let origin = cell.layout.to_window(x0, y0);
     let (left, top) = (f32::from(origin.x), f32::from(origin.y));
     if let Some(bar) = &adornment.bar {
-        draw::bar(bar, (left, top, left + (x1 - x0), top + (y1 - y0)), zoom, &mut paint.under);
+        draw::bar(
+            bar,
+            (left, top, left + (x1 - x0), top + (y1 - y0)),
+            zoom,
+            &mut paint.under,
+        );
     }
     if let Some(icon) = adornment.icon {
         let (x, y, side) = icon_place(cell.rect, cell.style, zoom, adornment.hide_value);
         if side >= 2.0 {
-            draw::icon(icon.icon(), left + (x - x0), top + (y - y0), side, &mut paint.over);
+            draw::icon(
+                icon.icon(),
+                left + (x - x0),
+                top + (y - y0),
+                side,
+                &mut paint.over,
+            );
             // The text starts after the icon (the grid adds its own padding).
             paint.text_inset.0 = x - x0 + side;
         }
@@ -371,7 +426,13 @@ impl Feature for CondFormats {
     // Nothing is laid over the grid: this hook runs at every frame, which
     // is when a drop-down closed by a press elsewhere is noticed and the
     // rule its gallery was trying on the sheet withdrawn.
-    fn overlay_elements(&self, app: &mut ExcelApp, _: &GridLayout, _: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+    fn overlay_elements(
+        &self,
+        app: &mut ExcelApp,
+        _: &GridLayout,
+        _: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         menu::notice_closed(app, cx);
         Vec::new()
     }

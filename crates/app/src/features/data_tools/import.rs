@@ -31,7 +31,9 @@ fn import_label() -> &'static str {
 /// The text of a file, whatever its encoding; `None` when it cannot be
 /// read.
 fn read_text(path: &Path) -> Option<String> {
-    std::fs::read(path).ok().map(|bytes| opensheet_io::decode_text(&bytes))
+    std::fs::read(path)
+        .ok()
+        .map(|bytes| opensheet_io::decode_text(&bytes))
 }
 
 fn missing_file() -> &'static str {
@@ -57,9 +59,18 @@ pub(super) fn fetch_message(error: FetchError, address: &str) -> String {
             "Unable to open |0. The Internet site reports that the item you requested could not be found. (HTTP/1.0 404)",
             "Impossible d'ouvrir |0. Le site Internet signale que l'élément demandé est introuvable. (HTTP/1.0 404)",
         ),
-        FetchError::Status(_) => t("Unable to open |0. The Internet site reports an error. (HTTP |1)", "Impossible d'ouvrir |0. Le site Internet signale une erreur. (HTTP |1)"),
-        FetchError::Timeout => t("Unable to open |0. The server did not answer in time.", "Impossible d'ouvrir |0. Le serveur n'a pas répondu à temps."),
-        FetchError::TooLarge => t("Unable to open |0. The data is too large.", "Impossible d'ouvrir |0. Les données sont trop volumineuses."),
+        FetchError::Status(_) => t(
+            "Unable to open |0. The Internet site reports an error. (HTTP |1)",
+            "Impossible d'ouvrir |0. Le site Internet signale une erreur. (HTTP |1)",
+        ),
+        FetchError::Timeout => t(
+            "Unable to open |0. The server did not answer in time.",
+            "Impossible d'ouvrir |0. Le serveur n'a pas répondu à temps.",
+        ),
+        FetchError::TooLarge => t(
+            "Unable to open |0. The data is too large.",
+            "Impossible d'ouvrir |0. Les données sont trop volumineuses.",
+        ),
     };
     let code = match error {
         FetchError::Status(code) => code.to_string(),
@@ -90,7 +101,9 @@ pub(super) fn with_fetched(
         return;
     }
     app.set_status(t("Connecting…", "Connexion…"), cx);
-    let fetching = cx.background_executor().spawn(async move { sources::fetch(&address) });
+    let fetching = cx
+        .background_executor()
+        .spawn(async move { sources::fetch(&address) });
     cx.spawn_in(window, async move |this, cx| {
         let fetched = fetching.await;
         this.update_in(cx, |app, window, cx| {
@@ -104,20 +117,32 @@ pub(super) fn with_fetched(
 
 /// Show what an address holds: the Text Import Wizard for text, the
 /// Navigator for tables. `replaces` is the query being edited, if any.
-pub(super) fn open_address(app: &mut ExcelApp, address: String, replaces: Option<QueryRef>, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_address(
+    app: &mut ExcelApp,
+    address: String,
+    replaces: Option<QueryRef>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let shown = address.clone();
-    with_fetched(app, address, window, cx, move |app, fetched, window, cx| match fetched {
-        Err(error) => warn(app, fetch_message(error, &shown), cx),
-        Ok(fetched) => match sources::read_document(&fetched, &shown, app.wb.locale) {
-            Some(Document::Text(text)) if replaces.is_none() => {
-                text_wizard::open_text_import(app, shown, &text, window, cx);
-            }
-            Some(Document::Tables(tables)) => {
-                navigator::open(app, shown, tables, replaces, window, cx);
-            }
-            _ => warn(app, no_data(), cx),
+    with_fetched(
+        app,
+        address,
+        window,
+        cx,
+        move |app, fetched, window, cx| match fetched {
+            Err(error) => warn(app, fetch_message(error, &shown), cx),
+            Ok(fetched) => match sources::read_document(&fetched, &shown, app.wb.locale) {
+                Some(Document::Text(text)) if replaces.is_none() => {
+                    text_wizard::open_text_import(app, shown, &text, window, cx);
+                }
+                Some(Document::Tables(tables)) => {
+                    navigator::open(app, shown, tables, replaces, window, cx);
+                }
+                _ => warn(app, no_data(), cx),
+            },
         },
-    });
+    );
 }
 
 /// Data ▸ Get Data ▸ From Excel Workbook, From JSON, From XML: ask for
@@ -171,12 +196,27 @@ pub(super) fn choose_file(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) 
 }
 
 /// Open the Text Import Wizard on a file.
-pub(super) fn import_file(app: &mut ExcelApp, path: &Path, window: &mut Window, cx: &mut Cx) -> Option<Entity<text_wizard::Wizard>> {
+pub(super) fn import_file(
+    app: &mut ExcelApp,
+    path: &Path,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<Entity<text_wizard::Wizard>> {
     match read_text(path).filter(|text| !text.trim().is_empty()) {
-        Some(text) => Some(text_wizard::open_text_import(app, path.to_string_lossy().into_owned(), &text, window, cx)),
+        Some(text) => Some(text_wizard::open_text_import(
+            app,
+            path.to_string_lossy().into_owned(),
+            &text,
+            window,
+            cx,
+        )),
         None => {
             app.alert(
-                Alert::new(t("Can't open this file", "Impossible d'ouvrir ce fichier"), path.display().to_string()).warning(),
+                Alert::new(
+                    t("Can't open this file", "Impossible d'ouvrir ce fichier"),
+                    path.display().to_string(),
+                )
+                .warning(),
                 cx,
             );
             None
@@ -185,7 +225,13 @@ pub(super) fn import_file(app: &mut ExcelApp, path: &Path, window: &mut Window, 
 }
 
 /// The wizard is finished: "Import Data" asks where the data goes.
-pub(super) fn open_destination(app: &mut ExcelApp, import: TextImport, text: String, window: &mut Window, cx: &mut Cx) -> Entity<ImportDialog> {
+pub(super) fn open_destination(
+    app: &mut ExcelApp,
+    import: TextImport,
+    text: String,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<ImportDialog> {
     open_placement(app, import, Payload::Text(text), window, cx)
 }
 
@@ -198,7 +244,13 @@ pub(super) enum Payload {
 }
 
 /// "Import Data" for either kind of data.
-pub(super) fn open_placement(app: &mut ExcelApp, import: TextImport, payload: Payload, window: &mut Window, cx: &mut Cx) -> Entity<ImportDialog> {
+pub(super) fn open_placement(
+    app: &mut ExcelApp,
+    import: TextImport,
+    payload: Payload,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<ImportDialog> {
     let (row, col) = app.active();
     let style = RefStyle {
         absolute: true,
@@ -217,20 +269,36 @@ pub(super) fn open_placement(app: &mut ExcelApp, import: TextImport, payload: Pa
 
 /// Put the data on the sheet and remember where it came from. False
 /// when it cannot be done; the user has been told why.
-pub(super) fn place(app: &mut ExcelApp, import: &TextImport, payload: &Payload, new_sheet: bool, place: &str, window: &mut Window, cx: &mut Cx) -> bool {
+pub(super) fn place(
+    app: &mut ExcelApp,
+    import: &TextImport,
+    payload: &Payload,
+    new_sheet: bool,
+    place: &str,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> bool {
     let (sheet, dest) = if new_sheet {
         if !app.may(Intent::InsertSheet, cx) {
             return false;
         }
         // After the current sheet, as Insert Sheet does.
         let index = app.wb.add_sheet(app.sheet + 1);
-        app.views.insert(index.min(app.views.len()), SheetView::default());
+        app.views
+            .insert(index.min(app.views.len()), SheetView::default());
         (index, (0, 0))
     } else {
         match typed_range(app, place) {
             Some((sheet, rect)) if sheet == app.sheet => (sheet, (rect.r0, rect.c0)),
             _ => {
-                warn(app, t("Destination reference is not valid.", "Référence de destination non valide."), cx);
+                warn(
+                    app,
+                    t(
+                        "Destination reference is not valid.",
+                        "Référence de destination non valide.",
+                    ),
+                    cx,
+                );
                 return false;
             }
         }
@@ -260,7 +328,9 @@ pub(super) fn place(app: &mut ExcelApp, import: &TextImport, payload: &Payload, 
     }
     let imported = match payload {
         Payload::Text(text) => app.wb.import_text(sheet, dest, text, import.clone()),
-        Payload::Table(table) => app.wb.import_source_table(sheet, dest, table, import.clone()),
+        Payload::Table(table) => app
+            .wb
+            .import_source_table(sheet, dest, table, import.clone()),
     };
     match imported {
         Ok(written) => {
@@ -278,8 +348,14 @@ pub(super) fn place(app: &mut ExcelApp, import: &TextImport, payload: &Payload, 
                 app.views.remove(sheet.min(app.views.len() - 1));
             }
             let message = match error {
-                TextColumnsError::OffSheet => t("Destination reference is not valid.", "Référence de destination non valide."),
-                _ => t("No data was selected to parse.", "Aucune donnée à convertir n'a été sélectionnée."),
+                TextColumnsError::OffSheet => t(
+                    "Destination reference is not valid.",
+                    "Référence de destination non valide.",
+                ),
+                _ => t(
+                    "No data was selected to parse.",
+                    "Aucune donnée à convertir n'a été sélectionnée.",
+                ),
             };
             warn(app, message, cx);
             false
@@ -307,7 +383,10 @@ impl ImportDialog {
         let new_sheet = self.new_sheet;
         let target = self.place.read(cx).text().to_string();
         let (import, payload) = (&self.import, &self.payload);
-        if self.modal.update_app(cx, |app, cx| place(app, import, payload, new_sheet, &target, window, cx)) == Some(true) {
+        if self.modal.update_app(cx, |app, cx| {
+            place(app, import, payload, new_sheet, &target, window, cx)
+        }) == Some(true)
+        {
             self.modal.close(window, cx);
         }
     }
@@ -318,7 +397,10 @@ impl Render for ImportDialog {
         dialog(&self.modal, import_label())
             .width(360.0)
             .on_ok(cx.listener(Self::ok))
-            .child(label(t("Where do you want to put the data?", "Insérer les données dans ")))
+            .child(label(t(
+                "Where do you want to put the data?",
+                "Insérer les données dans ",
+            )))
             .child(
                 div()
                     .pl(px(10.))
@@ -327,15 +409,24 @@ impl Render for ImportDialog {
                     .child(
                         RadioGroup::new(
                             "place",
-                            vec![t("Existing sheet:", "Feuille existante :").into(), t("New sheet", "Nouvelle feuille").into()],
+                            vec![
+                                t("Existing sheet:", "Feuille existante :").into(),
+                                t("New sheet", "Nouvelle feuille").into(),
+                            ],
                             Some(usize::from(self.new_sheet)),
                         )
-                        .on_change(cx.listener(|this, index: &usize, _, cx| {
-                            this.new_sheet = *index == 1;
-                            cx.notify();
-                        })),
+                        .on_change(cx.listener(
+                            |this, index: &usize, _, cx| {
+                                this.new_sheet = *index == 1;
+                                cx.notify();
+                            },
+                        )),
                     )
-                    .child(div().when(self.new_sheet, |d| d.opacity(0.5)).child(RefEdit::new(&self.place, &self.modal).width(150.0))),
+                    .child(
+                        div()
+                            .when(self.new_sheet, |d| d.opacity(0.5))
+                            .child(RefEdit::new(&self.place, &self.modal).width(150.0)),
+                    ),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
@@ -362,8 +453,15 @@ impl QueryRef {
 
     /// Where the query is now: its sheet and its place there.
     pub(super) fn find(&self, app: &ExcelApp) -> Option<(usize, usize)> {
-        let sheet = app.wb.sheets.iter().position(|sheet| sheet.name == self.sheet)?;
-        let index = app.wb.sheets[sheet].text_imports.iter().position(|import| import.name == self.name)?;
+        let sheet = app
+            .wb
+            .sheets
+            .iter()
+            .position(|sheet| sheet.name == self.sheet)?;
+        let index = app.wb.sheets[sheet]
+            .text_imports
+            .iter()
+            .position(|import| import.name == self.name)?;
         Some((sheet, index))
     }
 }
@@ -371,7 +469,9 @@ impl QueryRef {
 /// Every query of the workbook, sheet by sheet.
 pub(super) fn all_queries(app: &ExcelApp) -> Vec<(usize, usize)> {
     let sheets = app.wb.sheets.iter().enumerate();
-    sheets.flat_map(|(sheet, on)| (0..on.text_imports.len()).map(move |index| (sheet, index))).collect()
+    sheets
+        .flat_map(|(sheet, on)| (0..on.text_imports.len()).map(move |index| (sheet, index)))
+        .collect()
 }
 
 /// Give the columns of freshly written data the width they need
@@ -395,10 +495,23 @@ enum Failed {
 }
 
 /// Write what the source of a query holds now. The caller commits.
-fn apply(app: &mut ExcelApp, sheet: usize, index: usize, fetched: &Fetched, window: &mut Window) -> Result<Rect, Failed> {
+fn apply(
+    app: &mut ExcelApp,
+    sheet: usize,
+    index: usize,
+    fetched: &Fetched,
+    window: &mut Window,
+) -> Result<Rect, Failed> {
     let import = app.wb.sheets[sheet].text_imports[index].clone();
     let ranges = [import.range];
-    if app.wb.permits(&Action::EditCells { sheet, ranges: &ranges }).is_err() {
+    if app
+        .wb
+        .permits(&Action::EditCells {
+            sheet,
+            ranges: &ranges,
+        })
+        .is_err()
+    {
         return Err(Failed::Protected);
     }
     let written = match &import.web {
@@ -407,7 +520,9 @@ fn apply(app: &mut ExcelApp, sheet: usize, index: usize, fetched: &Fetched, wind
             app.wb.refresh_text_import(sheet, index, &text)
         }
         Some(web) => {
-            let Some(Document::Tables(tables)) = sources::read_document(fetched, &import.path, app.wb.locale) else {
+            let Some(Document::Tables(tables)) =
+                sources::read_document(fetched, &import.path, app.wb.locale)
+            else {
                 return Err(Failed::NoData);
             };
             let table = pick(&tables, web).ok_or(Failed::NoData)?;
@@ -424,15 +539,21 @@ fn apply(app: &mut ExcelApp, sheet: usize, index: usize, fetched: &Fetched, wind
 /// Tell the user which queries could not be refreshed. One message, for
 /// the first that failed, as Excel stops at the first.
 fn report(app: &mut ExcelApp, failures: Vec<(TextImport, String, Failed)>, cx: &mut Cx) {
-    let Some((import, sheet, failed)) = failures.into_iter().find(|(_, _, failed)| !matches!(failed, Failed::Protected)) else {
+    let Some((import, sheet, failed)) = failures
+        .into_iter()
+        .find(|(_, _, failed)| !matches!(failed, Failed::Protected))
+    else {
         return;
     };
     let message = match failed {
         Failed::Fetch(FetchError::Missing) if import.web.is_none() => missing_file().to_string(),
         Failed::Fetch(error) => fetch_message(error, &import.path),
-        _ => t("The external data range |0 on |1 could not be refreshed.", "La plage de données externes |0 sur |1 ne peut être actualisée.")
-            .replace("|0", &import.name)
-            .replace("|1", &sheet),
+        _ => t(
+            "The external data range |0 on |1 could not be refreshed.",
+            "La plage de données externes |0 sur |1 ne peut être actualisée.",
+        )
+        .replace("|0", &import.name)
+        .replace("|1", &sheet),
     };
     warn(app, message, cx);
 }
@@ -441,7 +562,13 @@ fn report(app: &mut ExcelApp, failures: Vec<(TextImport, String, Failed)>, cx: &
 /// this machine at once, those on the web when their data has arrived,
 /// in a step of their own. Returns the task that waits for the web, for
 /// the callers that keep it.
-pub(super) fn refresh_queries(app: &mut ExcelApp, queries: Vec<(usize, usize)>, label: &'static str, window: &mut Window, cx: &mut Cx) -> Option<Task<()>> {
+pub(super) fn refresh_queries(
+    app: &mut ExcelApp,
+    queries: Vec<(usize, usize)>,
+    label: &'static str,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<Task<()>> {
     let mut written = Vec::new();
     let mut failures = Vec::new();
     let mut remote = Vec::new();
@@ -451,7 +578,9 @@ pub(super) fn refresh_queries(app: &mut ExcelApp, queries: Vec<(usize, usize)>, 
             remote.extend(QueryRef::of(app, sheet, index).map(|query| (query, import.path)));
             continue;
         }
-        let outcome = sources::fetch(&import.path).map_err(Failed::Fetch).and_then(|fetched| apply(app, sheet, index, &fetched, window));
+        let outcome = sources::fetch(&import.path)
+            .map_err(Failed::Fetch)
+            .and_then(|fetched| apply(app, sheet, index, &fetched, window));
         match outcome {
             Ok(rect) if sheet == app.sheet => written.push(rect),
             Ok(_) => {}
@@ -482,7 +611,9 @@ pub(super) fn refresh_queries(app: &mut ExcelApp, queries: Vec<(usize, usize)>, 
             let mut failures = Vec::new();
             for (query, address) in remote {
                 // A query deleted or renamed meanwhile is not refreshed.
-                let Some((sheet, index)) = query.find(app) else { continue };
+                let Some((sheet, index)) = query.find(app) else {
+                    continue;
+                };
                 let import = app.wb.sheets[sheet].text_imports[index].clone();
                 let outcome = match fetched.iter().find(|(known, _)| *known == address) {
                     Some((_, Ok(fetched))) => apply(app, sheet, index, fetched, window),
@@ -532,7 +663,13 @@ pub(super) fn refresh_here(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
         if !app.may(Intent::EditCells(range), cx) {
             return;
         }
-        if let Some(task) = refresh_queries(app, vec![(sheet, index)], t("Refresh", "Actualiser"), window, cx) {
+        if let Some(task) = refresh_queries(
+            app,
+            vec![(sheet, index)],
+            t("Refresh", "Actualiser"),
+            window,
+            cx,
+        ) {
             task.detach();
         }
     } else if app.wb.pivot_at(sheet, row, col).is_some() {
@@ -543,7 +680,8 @@ pub(super) fn refresh_here(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx)
 /// Whether Refresh has something to refresh at the active cell.
 pub(super) fn can_refresh_here(app: &ExcelApp) -> bool {
     let (row, col) = app.active();
-    app.wb.text_import_at(app.sheet, row, col).is_some() || app.wb.pivot_at(app.sheet, row, col).is_some()
+    app.wb.text_import_at(app.sheet, row, col).is_some()
+        || app.wb.pivot_at(app.sheet, row, col).is_some()
 }
 
 /// A query on a document at `address` taking `item`, still to be placed.
@@ -553,7 +691,9 @@ pub(super) fn web_query(address: String, web: WebQuery) -> TextImport {
         path: address,
         range: Rect::cell(0, 0),
         first_row: 1,
-        spec: opensheet_engine::text_columns::Spec::new(opensheet_engine::text_columns::Layout::Delimited(Default::default())),
+        spec: opensheet_engine::text_columns::Spec::new(
+            opensheet_engine::text_columns::Layout::Delimited(Default::default()),
+        ),
         web: Some(web),
         props: Default::default(),
     }
@@ -578,18 +718,35 @@ pub(super) struct Watch {
 /// when opening a file, Excel's question comes first.
 pub(super) fn watch(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let first = app.ext::<Watch>().is_none_or(|watch| !watch.opened);
-    let timed = app.wb.sheets.iter().any(|sheet| sheet.text_imports.iter().any(|import| import.props.refresh_minutes > 0));
-    if !first && (!timed || app.ext::<Watch>().is_some_and(|watch| watch.clock.is_some())) {
+    let timed = app.wb.sheets.iter().any(|sheet| {
+        sheet
+            .text_imports
+            .iter()
+            .any(|import| import.props.refresh_minutes > 0)
+    });
+    if !first
+        && (!timed
+            || app
+                .ext::<Watch>()
+                .is_some_and(|watch| watch.clock.is_some()))
+    {
         return;
     }
     app.ext_mut::<Watch>().opened = true;
     if first {
-        let on_open: Vec<(usize, usize)> =
-            all_queries(app).into_iter().filter(|(sheet, index)| app.wb.sheets[*sheet].text_imports[*index].props.refresh_on_open).collect();
+        let on_open: Vec<(usize, usize)> = all_queries(app)
+            .into_iter()
+            .filter(|(sheet, index)| {
+                app.wb.sheets[*sheet].text_imports[*index]
+                    .props
+                    .refresh_on_open
+            })
+            .collect();
         if !on_open.is_empty() {
             // Not while the window is being drawn.
             cx.spawn_in(window, async move |this, cx| {
-                this.update_in(cx, |app, _, cx| ask_to_refresh(app, cx)).ok();
+                this.update_in(cx, |app, _, cx| ask_to_refresh(app, cx))
+                    .ok();
             })
             .detach();
         }
@@ -597,7 +754,9 @@ pub(super) fn watch(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     if timed {
         let clock = cx.spawn_in(window, async move |this, cx| {
             loop {
-                cx.background_executor().timer(std::time::Duration::from_secs(60)).await;
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(60))
+                    .await;
                 if this.update_in(cx, minute_passed).is_err() {
                     break;
                 }
@@ -612,7 +771,10 @@ pub(super) fn watch(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 fn ask_to_refresh(app: &mut ExcelApp, cx: &mut Cx) {
     let message = format!(
         "{}\n\n{}",
-        t("The operation connects to an external data source.", "L’opération se connecte à une source de données externe."),
+        t(
+            "The operation connects to an external data source.",
+            "L’opération se connecte à une source de données externe."
+        ),
         t(
             "External data sources are used to import data into Excel, but connections to external data sources can be used by queries to access confidential information available to other users, or to perform other harmful actions. If you trust the source of this file, click OK.",
             "Les sources de données externes servent à importer des données dans Excel, mais les connexions à des sources de données externes peuvent être utilisées par des requêtes pour accéder à des informations confidentielles disponibles pour d’autres utilisateurs ou pour effectuer d’autres opérations dangereuses. Si vous faites confiance à la source de ce fichier, cliquez sur OK.",
@@ -621,8 +783,17 @@ fn ask_to_refresh(app: &mut ExcelApp, cx: &mut Cx) {
     let alert = Alert::new("OpenSheet", message)
         .warning()
         .button(t("OK", "OK"), |app, window, cx| {
-            let queries = all_queries(app).into_iter().filter(|(sheet, index)| app.wb.sheets[*sheet].text_imports[*index].props.refresh_on_open).collect();
-            if let Some(task) = refresh_queries(app, queries, t("Refresh", "Actualiser"), window, cx) {
+            let queries = all_queries(app)
+                .into_iter()
+                .filter(|(sheet, index)| {
+                    app.wb.sheets[*sheet].text_imports[*index]
+                        .props
+                        .refresh_on_open
+                })
+                .collect();
+            if let Some(task) =
+                refresh_queries(app, queries, t("Refresh", "Actualiser"), window, cx)
+            {
                 task.detach();
             }
         })
@@ -635,9 +806,16 @@ pub(super) fn minute_passed(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx
     let mut due = Vec::new();
     let mut waited = Vec::new();
     for (sheet, index) in all_queries(app) {
-        let every = app.wb.sheets[sheet].text_imports[index].props.refresh_minutes;
-        let Some(query) = QueryRef::of(app, sheet, index).filter(|_| every > 0) else { continue };
-        let before = app.ext::<Watch>().and_then(|watch| watch.waited.iter().find(|(known, _)| *known == query)).map_or(0, |(_, minutes)| *minutes);
+        let every = app.wb.sheets[sheet].text_imports[index]
+            .props
+            .refresh_minutes;
+        let Some(query) = QueryRef::of(app, sheet, index).filter(|_| every > 0) else {
+            continue;
+        };
+        let before = app
+            .ext::<Watch>()
+            .and_then(|watch| watch.waited.iter().find(|(known, _)| *known == query))
+            .map_or(0, |(_, minutes)| *minutes);
         if before + 1 >= every {
             due.push((sheet, index));
             waited.push((query, 0));

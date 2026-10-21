@@ -11,10 +11,11 @@
 
 use crate::text_input as line;
 use gpui::{
-    App, AvailableSpace, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element, ElementId,
-    ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, FontWeight, GlobalElementId,
-    Hsla, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point,
-    SharedString, Style, TextAlign, TextRun, TextStyle, UTF16Selection, UnderlineStyle, Window, WrappedLine, actions,
+    App, AvailableSpace, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element,
+    ElementId, ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle,
+    Focusable, FontWeight, GlobalElementId, Hsla, KeyBinding, LayoutId, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, SharedString, Style,
+    TextAlign, TextRun, TextStyle, UTF16Selection, UnderlineStyle, Window, WrappedLine, actions,
     div, fill, point, prelude::*, px, relative, rgb, rgba, size,
 };
 use std::ops::Range;
@@ -22,7 +23,15 @@ use unicode_segmentation::UnicodeSegmentation;
 
 actions!(
     text_area,
-    [SelectUp, SelectDown, TextStart, TextEnd, SelectTextStart, SelectTextEnd, Submit]
+    [
+        SelectUp,
+        SelectDown,
+        TextStart,
+        TextEnd,
+        SelectTextStart,
+        SelectTextEnd,
+        Submit
+    ]
 );
 
 /// Key context of the keys a text box adds to those of `TextInput`.
@@ -245,7 +254,12 @@ struct Shaped {
 }
 
 impl Shaped {
-    fn new(mut lines: Vec<WrappedLine>, line_height: Pixels, width: Pixels, align: TextAlign) -> Shaped {
+    fn new(
+        mut lines: Vec<WrappedLine>,
+        line_height: Pixels,
+        width: Pixels,
+        align: TextAlign,
+    ) -> Shaped {
         // Whatever happens there is a row for the caret.
         if lines.is_empty() {
             lines.push(WrappedLine::default());
@@ -258,7 +272,11 @@ impl Shaped {
             let mut start = 0;
             for boundary in line.wrap_boundaries() {
                 let end = line.runs()[boundary.run_ix].glyphs[boundary.glyph_ix].index;
-                rows.push(Row { paragraph, start, end });
+                rows.push(Row {
+                    paragraph,
+                    start,
+                    end,
+                });
                 start = end;
             }
             rows.push(Row {
@@ -284,7 +302,11 @@ impl Shaped {
     /// included.
     fn row_left(&self, row: &Row) -> Pixels {
         let layout = &self.lines[row.paragraph].unwrapped_layout;
-        let end = if row.end >= layout.len { layout.width } else { layout.x_for_index(row.end) };
+        let end = if row.end >= layout.len {
+            layout.width
+        } else {
+            layout.x_for_index(row.end)
+        };
         let row_width = end - layout.x_for_index(row.start);
         match self.align {
             TextAlign::Left => px(0.),
@@ -313,19 +335,25 @@ impl Shaped {
 
     fn x_in_row(&self, row: &Row, index: usize) -> Pixels {
         let layout = &self.lines[row.paragraph].unwrapped_layout;
-        let local = index.saturating_sub(self.starts[row.paragraph]).clamp(row.start, row.end);
+        let local = index
+            .saturating_sub(self.starts[row.paragraph])
+            .clamp(row.start, row.end);
         self.row_left(row) + layout.x_for_index(local) - layout.x_for_index(row.start)
     }
 
     /// Top-left corner of the caret at `index`, from the corner of the text.
     fn position(&self, index: usize) -> Point<Pixels> {
         let row = self.row_of(index);
-        point(self.x_in_row(&self.rows[row], index), self.line_height * row as f32)
+        point(
+            self.x_in_row(&self.rows[row], index),
+            self.line_height * row as f32,
+        )
     }
 
     /// The offset closest to a point given from the corner of the text.
     fn index_at(&self, at: Point<Pixels>) -> usize {
-        let row = ((at.y / self.line_height).floor() as isize).clamp(0, self.rows.len() as isize - 1) as usize;
+        let row = ((at.y / self.line_height).floor() as isize)
+            .clamp(0, self.rows.len() as isize - 1) as usize;
         self.index_in_row(row, at.x)
     }
 
@@ -333,7 +361,9 @@ impl Shaped {
         let row = &self.rows[row];
         let layout = &self.lines[row.paragraph].unwrapped_layout;
         let local = layout
-            .closest_index_for_x((x - self.row_left(row)).max(px(0.)) + layout.x_for_index(row.start))
+            .closest_index_for_x(
+                (x - self.row_left(row)).max(px(0.)) + layout.x_for_index(row.start),
+            )
             .clamp(row.start, row.end);
         self.starts[row.paragraph] + local
     }
@@ -480,7 +510,13 @@ impl TextArea {
         let caret = self.buffer.caret();
         self.tokens
             .iter()
-            .find(|token| if before { token.end == caret } else { token.start == caret })
+            .find(|token| {
+                if before {
+                    token.end == caret
+                } else {
+                    token.start == caret
+                }
+            })
             .cloned()
     }
 
@@ -517,9 +553,10 @@ impl TextArea {
 
     fn index_for_point(&self, position: Point<Pixels>) -> usize {
         match (&self.shaped, &self.bounds) {
-            (Some(shaped), Some(bounds)) if !self.buffer.text.is_empty() => {
-                shaped.index_at(point(position.x - bounds.left(), position.y - bounds.top() + self.scroll_y))
-            }
+            (Some(shaped), Some(bounds)) if !self.buffer.text.is_empty() => shaped.index_at(point(
+                position.x - bounds.left(),
+                position.y - bounds.top() + self.scroll_y,
+            )),
             _ => 0,
         }
     }
@@ -534,8 +571,18 @@ impl TextArea {
             .filter(|prefix| !prefix.is_empty() && text.starts_with(prefix.as_str()))
             .map_or(0, |prefix| prefix.len());
         let marked = self.marked.clone().unwrap_or(0..0);
-        let mut cuts = vec![0, bold, marked.start.min(text.len()), marked.end.min(text.len()), text.len()];
-        cuts.extend(self.tokens.iter().flat_map(|token| [token.start, token.end]));
+        let mut cuts = vec![
+            0,
+            bold,
+            marked.start.min(text.len()),
+            marked.end.min(text.len()),
+            text.len(),
+        ];
+        cuts.extend(
+            self.tokens
+                .iter()
+                .flat_map(|token| [token.start, token.end]),
+        );
         cuts.sort_unstable();
         cuts.dedup();
         let mut runs = Vec::new();
@@ -545,26 +592,35 @@ impl TextArea {
             if end <= bold {
                 font.weight = FontWeight::BOLD;
             }
-            let token = self.tokens.iter().any(|token| token.start <= start && end <= token.end);
+            let token = self
+                .tokens
+                .iter()
+                .any(|token| token.start <= start && end <= token.end);
             runs.push(TextRun {
                 len: end - start,
                 font,
                 color: self.token_color.filter(|_| token).unwrap_or(style.color),
                 background_color: None,
-                underline: (start >= marked.start && end <= marked.end && !marked.is_empty()).then_some(
-                    UnderlineStyle {
+                underline: (start >= marked.start && end <= marked.end && !marked.is_empty())
+                    .then_some(UnderlineStyle {
                         color: Some(style.color),
                         thickness: px(1.),
                         wavy: false,
-                    },
-                ),
+                    }),
                 strikethrough: None,
             });
         }
         runs
     }
 
-    fn shape(&self, width: Pixels, style: &TextStyle, font_size: Pixels, line_height: Pixels, window: &Window) -> Shaped {
+    fn shape(
+        &self,
+        width: Pixels,
+        style: &TextStyle,
+        font_size: Pixels,
+        line_height: Pixels,
+        window: &Window,
+    ) -> Shaped {
         let (text, runs): (SharedString, Vec<TextRun>) = if self.buffer.text.is_empty() {
             let run = TextRun {
                 len: self.placeholder.len(),
@@ -618,7 +674,9 @@ impl TextArea {
             return caret;
         };
         let row = shaped.row_of(caret);
-        let x = self.goal_x.unwrap_or_else(|| shaped.x_in_row(&shaped.rows[row], caret));
+        let x = self
+            .goal_x
+            .unwrap_or_else(|| shaped.x_in_row(&shaped.rows[row], caret));
         self.goal_x = Some(x);
         match (down, row) {
             (false, 0) => 0,
@@ -750,17 +808,33 @@ impl TextArea {
         self.move_to(self.buffer.next_word(self.buffer.caret()), cx);
     }
 
-    fn select_word_left(&mut self, _: &line::SelectWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_word_left(
+        &mut self,
+        _: &line::SelectWordLeft,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.select_to(self.buffer.previous_word(self.buffer.caret()), cx);
     }
 
-    fn select_word_right(&mut self, _: &line::SelectWordRight, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_word_right(
+        &mut self,
+        _: &line::SelectWordRight,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.select_to(self.buffer.next_word(self.buffer.caret()), cx);
     }
 
-    fn delete_word_left(&mut self, _: &line::DeleteWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+    fn delete_word_left(
+        &mut self,
+        _: &line::DeleteWordLeft,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.buffer.selected.is_empty() {
-            self.buffer.select_to(self.buffer.previous_word(self.buffer.caret()));
+            self.buffer
+                .select_to(self.buffer.previous_word(self.buffer.caret()));
         }
         self.insert("", cx);
     }
@@ -769,7 +843,9 @@ impl TextArea {
         if self.buffer.selected.is_empty() {
             match self.token_beside_caret(true) {
                 Some(token) => self.buffer.selected = token,
-                None => self.buffer.select_to(self.buffer.previous_boundary(self.buffer.caret())),
+                None => self
+                    .buffer
+                    .select_to(self.buffer.previous_boundary(self.buffer.caret())),
             }
         }
         self.insert("", cx);
@@ -779,7 +855,9 @@ impl TextArea {
         if self.buffer.selected.is_empty() {
             match self.token_beside_caret(false) {
                 Some(token) => self.buffer.selected = token,
-                None => self.buffer.select_to(self.buffer.next_boundary(self.buffer.caret())),
+                None => self
+                    .buffer
+                    .select_to(self.buffer.next_boundary(self.buffer.caret())),
             }
         }
         self.insert("", cx);
@@ -838,7 +916,12 @@ impl TextArea {
         }
     }
 
-    fn show_character_palette(&mut self, _: &line::ShowCharacterPalette, window: &mut Window, _: &mut Context<Self>) {
+    fn show_character_palette(
+        &mut self,
+        _: &line::ShowCharacterPalette,
+        window: &mut Window,
+        _: &mut Context<Self>,
+    ) {
         window.show_character_palette();
     }
 
@@ -910,7 +993,12 @@ impl EntityInputHandler for TextArea {
         Some(self.buffer.text[range].to_string())
     }
 
-    fn selected_text_range(&mut self, _: bool, _: &mut Window, _: &mut Context<Self>) -> Option<UTF16Selection> {
+    fn selected_text_range(
+        &mut self,
+        _: bool,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<UTF16Selection> {
         Some(UTF16Selection {
             range: self.buffer.range_to_utf16(&self.buffer.selected),
             reversed: self.buffer.reversed,
@@ -918,14 +1006,22 @@ impl EntityInputHandler for TextArea {
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.marked.as_ref().map(|range| self.buffer.range_to_utf16(range))
+        self.marked
+            .as_ref()
+            .map(|range| self.buffer.range_to_utf16(range))
     }
 
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
         self.marked = None;
     }
 
-    fn replace_text_in_range(&mut self, range_utf16: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
+    fn replace_text_in_range(
+        &mut self,
+        range_utf16: Option<Range<usize>>,
+        text: &str,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let range = range_utf16
             .as_ref()
             .map(|range| self.buffer.range_from_utf16(range))
@@ -977,7 +1073,12 @@ impl EntityInputHandler for TextArea {
         Some(Bounds::new(origin, size(px(1.), shaped.line_height)))
     }
 
-    fn character_index_for_point(&mut self, at: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
+    fn character_index_for_point(
+        &mut self,
+        at: Point<Pixels>,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<usize> {
         Some(self.buffer.offset_to_utf16(self.index_for_point(at)))
     }
 }
@@ -1056,7 +1157,13 @@ impl Element for AreaElement {
         let text_style = window.text_style();
         let font_size = text_style.font_size.to_pixels(window.rem_size());
         let line_height = window.line_height();
-        let shaped = area.shape(bounds.size.width, &text_style, font_size, line_height, window);
+        let shaped = area.shape(
+            bounds.size.width,
+            &text_style,
+            font_size,
+            line_height,
+            window,
+        );
         let empty = area.buffer.text.is_empty();
         // In an empty box the caret stands where the first character will.
         let caret_at = if empty {
@@ -1078,7 +1185,9 @@ impl Element for AreaElement {
         if caret_at.y + line_height > scroll_y + bounds.size.height {
             scroll_y = caret_at.y + line_height - bounds.size.height;
         }
-        scroll_y = scroll_y.min(shaped.height() - bounds.size.height).max(px(0.));
+        scroll_y = scroll_y
+            .min(shaped.height() - bounds.size.height)
+            .max(px(0.));
 
         let origin = point(bounds.left(), bounds.top() - scroll_y);
         let selected = area.buffer.selected.clone();
@@ -1094,7 +1203,10 @@ impl Element for AreaElement {
                 let range = shaped.row_range(row);
                 // A line break taken in the selection shows as a little
                 // more than the text of its row.
-                let breaks = shaped.rows.get(index + 1).is_none_or(|next| next.paragraph != row.paragraph);
+                let breaks = shaped
+                    .rows
+                    .get(index + 1)
+                    .is_none_or(|next| next.paragraph != row.paragraph);
                 let touches = selected.start < range.end || (breaks && selected.start == range.end);
                 if !(touches && selected.end > range.start) {
                     continue;
@@ -1106,7 +1218,10 @@ impl Element for AreaElement {
                 }
                 let y = line_height * index as f32;
                 selection.push(fill(
-                    Bounds::from_corners(origin + point(x0, y), origin + point(x1, y + line_height)),
+                    Bounds::from_corners(
+                        origin + point(x0, y),
+                        origin + point(x1, y + line_height),
+                    ),
                     rgba(0x0a64d240),
                 ));
             }
@@ -1133,7 +1248,11 @@ impl Element for AreaElement {
             return;
         };
         let focus_handle = self.area.read(cx).focus_handle.clone();
-        window.handle_input(&focus_handle, ElementInputHandler::new(bounds, self.area.clone()), cx);
+        window.handle_input(
+            &focus_handle,
+            ElementInputHandler::new(bounds, self.area.clone()),
+            cx,
+        );
         let focused = focus_handle.is_focused(window);
         let line_height = prepared.shaped.line_height;
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
@@ -1145,7 +1264,14 @@ impl Element for AreaElement {
             let mut y = bounds.top() - prepared.scroll_y;
             let align = prepared.shaped.align;
             for line in &prepared.shaped.lines {
-                let _ = line.paint(point(bounds.left(), y), line_height, align, None, window, cx);
+                let _ = line.paint(
+                    point(bounds.left(), y),
+                    line_height,
+                    align,
+                    None,
+                    window,
+                    cx,
+                );
                 y += line_height * (line.wrap_boundaries().len() + 1) as f32;
             }
             if let Some(caret) = prepared.caret.filter(|_| focused) {
@@ -1164,7 +1290,11 @@ impl Element for AreaElement {
             }
             if focused != area.was_focused {
                 area.was_focused = focused;
-                cx.emit(if focused { AreaEvent::Focused } else { AreaEvent::Blurred });
+                cx.emit(if focused {
+                    AreaEvent::Focused
+                } else {
+                    AreaEvent::Blurred
+                });
             }
         });
     }
@@ -1247,7 +1377,10 @@ mod tests {
         b.select_to(2);
         assert_eq!((b.selected.clone(), b.reversed, b.caret()), (2..5, true, 2));
         b.select_to(8);
-        assert_eq!((b.selected.clone(), b.reversed, b.caret()), (5..8, false, 8));
+        assert_eq!(
+            (b.selected.clone(), b.reversed, b.caret()),
+            (5..8, false, 8)
+        );
         b.replace(b.selected.clone(), "Lo");
         assert_eq!((b.text.as_str(), b.selected.clone()), ("Ada:\nLock", 7..7));
         // Out-of-range offsets are brought back inside the text.

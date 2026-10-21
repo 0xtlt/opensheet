@@ -11,8 +11,8 @@
 use super::formula::{self, Position};
 use super::manage::disjoint;
 use super::model::{
-    BarAxis, BarDirection, CellOp, Cfvo, ColorScale, CondFormat, DataBar, Icon, IconRule, IconSet, Rule, TextOp,
-    TimePeriod,
+    BarAxis, BarDirection, CellOp, Cfvo, ColorScale, CondFormat, DataBar, Icon, IconRule, IconSet,
+    Rule, TextOp, TimePeriod,
 };
 use crate::ast::Expr;
 use crate::datetime;
@@ -112,7 +112,9 @@ pub fn result_at(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Option<Cond
     let rules = (sh.cond_formats.as_ptr() as usize, sh.cond_formats.len());
     // The clock is only read for sheets whose rules can depend on it.
     let today = match &state.sheets[sheet] {
-        Some(sc) if !sc.uses_clock && sc.key.same_rules(wb.generation, epoch, rules) => sc.key.today,
+        Some(sc) if !sc.uses_clock && sc.key.same_rules(wb.generation, epoch, rules) => {
+            sc.key.today
+        }
         _ => state.clock.today(),
     };
     let key = Key {
@@ -125,14 +127,21 @@ pub fn result_at(wb: &Workbook, sheet: usize, row: u32, col: u32) -> Option<Cond
         Some(sc) if sc.key == key => sc,
         slot => slot.insert(SheetCache::new(key, &sh.cond_formats)),
     };
-    let cx = Cx { wb, sheet, sh, today };
+    let cx = Cx {
+        wb,
+        sheet,
+        sh,
+        today,
+    };
     // The rules the cell belongs to, in priority order (the list is kept
     // from call to call to spare an allocation).
     let mut applying = std::mem::take(&mut sc.applying);
     applying.clear();
     match &sc.index {
         Some(index) => index.rules_at(row, col, &mut applying),
-        None => applying.extend((0..rules.1 as u32).filter(|i| sh.cond_formats[*i as usize].applies_to(row, col))),
+        None => applying.extend(
+            (0..rules.1 as u32).filter(|i| sh.cond_formats[*i as usize].applies_to(row, col)),
+        ),
     }
     let mut acc = Acc::default();
     if !applying.is_empty() {
@@ -374,7 +383,13 @@ struct Bits {
 impl Bits {
     /// The answer for a cell. `fill` gives the answers for the cells of the
     /// rule in a block the first time one of them is asked for.
-    fn get(&mut self, row: u32, col: u32, ranges: &[Rect], fill: &mut dyn FnMut(&[(u32, u32)]) -> Vec<bool>) -> bool {
+    fn get(
+        &mut self,
+        row: u32,
+        col: u32,
+        ranges: &[Rect],
+        fill: &mut dyn FnMut(&[(u32, u32)]) -> Vec<bool>,
+    ) -> bool {
         let bit = |r: u32, c: u32| ((r % BLOCK_ROWS) * BLOCK_COLS + c % BLOCK_COLS) as usize;
         let block = (row / BLOCK_ROWS, col / BLOCK_COLS);
         let words = self.blocks.entry(block).or_insert_with(|| {
@@ -387,7 +402,9 @@ impl Bits {
             );
             let mut cells = Vec::new();
             for part in ranges.iter().filter_map(|r| r.intersection(&area)) {
-                cells.extend((part.r0..=part.r1).flat_map(|r| (part.c0..=part.c1).map(move |c| (r, c))));
+                cells.extend(
+                    (part.r0..=part.r1).flat_map(|r| (part.c0..=part.c1).map(move |c| (r, c))),
+                );
             }
             cells.sort_unstable();
             cells.dedup();
@@ -433,7 +450,8 @@ fn prepare(cx: &Cx, cf: &CondFormat) -> RuleData {
         Rule::Formula(e) => {
             let position = formula::position(cx.wb, e);
             RuleData::Formula {
-                fixed: (position == Position::Fixed).then(|| is_true(&formula::eval_at(cx.wb, cx.sheet, anchor, e))),
+                fixed: (position == Position::Fixed)
+                    .then(|| is_true(&formula::eval_at(cx.wb, cx.sheet, anchor, e))),
                 opaque: position == Position::Opaque,
                 cells: Bits::default(),
             }
@@ -442,18 +460,29 @@ fn prepare(cx: &Cx, cf: &CondFormat) -> RuleData {
             text: operand(text),
             cells: Bits::default(),
         },
-        Rule::TopBottom { rank, percent, bottom } => {
-            RuleData::Rank(rank_threshold(numbers(cx.sh, &cf.ranges), *rank, *percent, *bottom))
-        }
-        Rule::Average { above, std_dev, .. } => {
-            RuleData::Average(average_threshold(&numbers(cx.sh, &cf.ranges), *above, *std_dev))
-        }
+        Rule::TopBottom {
+            rank,
+            percent,
+            bottom,
+        } => RuleData::Rank(rank_threshold(
+            numbers(cx.sh, &cf.ranges),
+            *rank,
+            *percent,
+            *bottom,
+        )),
+        Rule::Average { above, std_dev, .. } => RuleData::Average(average_threshold(
+            &numbers(cx.sh, &cf.ranges),
+            *above,
+            *std_dev,
+        )),
         Rule::DuplicateValues => RuleData::Cells(repeated(cx, &cf.ranges, true)),
         Rule::UniqueValues => RuleData::Cells(repeated(cx, &cf.ranges, false)),
         Rule::ColorScale(scale) => RuleData::Scale(scale_stops(cx, cf, scale)),
         Rule::DataBar(bar) => RuleData::Bar(bar_ends(cx, cf, bar)),
         Rule::IconSet(icons) => RuleData::Icons(icon_floors(cx, cf, icons)),
-        Rule::Blanks | Rule::NoBlanks | Rule::Errors | Rule::NoErrors | Rule::DateOccurring(_) => RuleData::Direct,
+        Rule::Blanks | Rule::NoBlanks | Rule::Errors | Rule::NoErrors | Rule::DateOccurring(_) => {
+            RuleData::Direct
+        }
     }
 }
 
@@ -497,7 +526,12 @@ fn for_each_value(sh: &Sheet, ranges: &[Rect], f: &mut dyn FnMut(u32, u32, &Valu
                     // The first element is the value of the formula's cell,
                     // seen above.
                     if (row, col) != (sp.row, sp.col) {
-                        f(row, col, sp.array.get((row - sp.row) as usize, (col - sp.col) as usize));
+                        f(
+                            row,
+                            col,
+                            sp.array
+                                .get((row - sp.row) as usize, (col - sp.col) as usize),
+                        );
                     }
                 }
             }
@@ -532,7 +566,13 @@ fn rank_threshold(mut numbers: Vec<f64>, rank: u32, percent: bool, bottom: bool)
         rank as u64
     };
     let last = wanted.min(count) as usize - 1;
-    let (_, nth, _) = numbers.select_nth_unstable_by(last, |a, b| if bottom { a.total_cmp(b) } else { b.total_cmp(a) });
+    let (_, nth, _) = numbers.select_nth_unstable_by(last, |a, b| {
+        if bottom {
+            a.total_cmp(b)
+        } else {
+            b.total_cmp(a)
+        }
+    });
     Some(*nth)
 }
 
@@ -640,7 +680,13 @@ impl Stats {
 /// The number a threshold stands for; `None` when its formula does not
 /// give a number. `low_end` is true for the threshold at the low end of a
 /// scale or a bar.
-fn threshold(cx: &Cx, anchor: (u32, u32), cfvo: &Cfvo, stats: &mut Stats, low_end: bool) -> Option<f64> {
+fn threshold(
+    cx: &Cx,
+    anchor: (u32, u32),
+    cfvo: &Cfvo,
+    stats: &mut Stats,
+    low_end: bool,
+) -> Option<f64> {
     let number = |e: &Expr| match formula::eval_at(cx.wb, cx.sheet, anchor, e) {
         Value::Number(n) => Some(n),
         Value::Bool(b) => Some(b as u8 as f64),
@@ -666,7 +712,12 @@ fn scale_stops(cx: &Cx, cf: &CondFormat, scale: &ColorScale) -> Option<Vec<(f64,
         .stops
         .iter()
         .enumerate()
-        .map(|(i, stop)| Some((threshold(cx, cf.anchor(), &stop.at, &mut stats, i < last)?, stop.color)))
+        .map(|(i, stop)| {
+            Some((
+                threshold(cx, cf.anchor(), &stop.at, &mut stats, i < last)?,
+                stop.color,
+            ))
+        })
         .collect()
 }
 
@@ -725,11 +776,12 @@ impl Acc {
     }
 
     fn finish(self) -> Option<CondResult> {
-        let adornment = (self.bar.is_some() || self.icon.is_some() || self.hide_value).then_some(Adornment {
-            bar: self.bar,
-            icon: self.icon,
-            hide_value: self.hide_value,
-        });
+        let adornment =
+            (self.bar.is_some() || self.icon.is_some() || self.hide_value).then_some(Adornment {
+                bar: self.bar,
+                icon: self.icon,
+                hide_value: self.hide_value,
+            });
         (!self.patch.is_empty() || adornment.is_some()).then_some(CondResult {
             patch: self.patch,
             adornment,
@@ -739,7 +791,15 @@ impl Acc {
 
 /// Apply one rule to a cell holding `v`. True when the rule takes effect
 /// there (which is what "Stop If True" looks at).
-fn apply(cx: &Cx, cf: &CondFormat, data: &mut RuleData, row: u32, col: u32, v: &Value, acc: &mut Acc) -> bool {
+fn apply(
+    cx: &Cx,
+    cf: &CondFormat,
+    data: &mut RuleData,
+    row: u32,
+    col: u32,
+    v: &Value,
+    acc: &mut Acc,
+) -> bool {
     let locale = cx.wb.locale;
     let number = match v {
         Value::Number(n) => Some(*n),
@@ -814,7 +874,9 @@ fn apply(cx: &Cx, cf: &CondFormat, data: &mut RuleData, row: u32, col: u32, v: &
                         opaque |= o;
                     }
                 }
-                let mut values = formula::eval_cells(cx.wb, cx.sheet, cf.anchor(), &exprs, opaque, block).into_iter();
+                let mut values =
+                    formula::eval_cells(cx.wb, cx.sheet, cf.anchor(), &exprs, opaque, block)
+                        .into_iter();
                 let mut value_of = |operand: &Operand| match operand {
                     Operand::Fixed(value) => value.clone(),
                     Operand::PerCell { .. } => values.next().unwrap_or_default(),
@@ -832,15 +894,18 @@ fn apply(cx: &Cx, cf: &CondFormat, data: &mut RuleData, row: u32, col: u32, v: &
         (
             Rule::Formula(_),
             RuleData::Formula {
-                fixed: Some(answer), ..
+                fixed: Some(answer),
+                ..
             },
         ) => *answer,
-        (Rule::Formula(e), RuleData::Formula { opaque, cells, .. }) => cells.get(row, col, &cf.ranges, &mut |block| {
-            formula::eval_cells(cx.wb, cx.sheet, cf.anchor(), &[e], *opaque, block)
-                .iter()
-                .map(is_true)
-                .collect()
-        }),
+        (Rule::Formula(e), RuleData::Formula { opaque, cells, .. }) => {
+            cells.get(row, col, &cf.ranges, &mut |block| {
+                formula::eval_cells(cx.wb, cx.sheet, cf.anchor(), &[e], *opaque, block)
+                    .iter()
+                    .map(is_true)
+                    .collect()
+            })
+        }
         (Rule::Text { op, text: e }, RuleData::Text { text, cells }) => {
             cells.get(row, col, &cf.ranges, &mut |block| match text {
                 Operand::Fixed(text) => block
@@ -848,7 +913,8 @@ fn apply(cx: &Cx, cf: &CondFormat, data: &mut RuleData, row: u32, col: u32, v: &
                     .map(|&(r, c)| text_is(*op, &cx.sh.value_at(r, c), text, locale))
                     .collect(),
                 Operand::PerCell { opaque } => {
-                    let texts = formula::eval_cells(cx.wb, cx.sheet, cf.anchor(), &[e], *opaque, block);
+                    let texts =
+                        formula::eval_cells(cx.wb, cx.sheet, cf.anchor(), &[e], *opaque, block);
                     block
                         .iter()
                         .zip(&texts)
@@ -860,14 +926,21 @@ fn apply(cx: &Cx, cf: &CondFormat, data: &mut RuleData, row: u32, col: u32, v: &
         (Rule::TopBottom { bottom, .. }, RuleData::Rank(threshold)) => number
             .zip(*threshold)
             .is_some_and(|(n, t)| if *bottom { n <= t } else { n >= t }),
-        (Rule::Average { above, or_equal, .. }, RuleData::Average(threshold)) => {
-            number.zip(*threshold).is_some_and(|(n, t)| match n.total_cmp(&t) {
+        (
+            Rule::Average {
+                above, or_equal, ..
+            },
+            RuleData::Average(threshold),
+        ) => number
+            .zip(*threshold)
+            .is_some_and(|(n, t)| match n.total_cmp(&t) {
                 Ordering::Greater => *above,
                 Ordering::Less => !*above,
                 Ordering::Equal => *or_equal,
-            })
+            }),
+        (Rule::DuplicateValues | Rule::UniqueValues, RuleData::Cells(cells)) => {
+            cells.contains(&(row, col))
         }
-        (Rule::DuplicateValues | Rule::UniqueValues, RuleData::Cells(cells)) => cells.contains(&(row, col)),
         (Rule::Blanks, _) => is_blank(v) == Some(true),
         (Rule::NoBlanks, _) => is_blank(v) == Some(false),
         (Rule::Errors, _) => v.is_error(),
@@ -917,7 +990,8 @@ fn cell_is(op: CellOp, v: &Value, a: &Value, b: Option<&Value>) -> bool {
             } else {
                 (a, b)
             };
-            let inside = compare_values(v, low) != Ordering::Less && compare_values(v, high) != Ordering::Greater;
+            let inside = compare_values(v, low) != Ordering::Less
+                && compare_values(v, high) != Ordering::Greater;
             inside == (op == CellOp::Between)
         }
     }
@@ -943,13 +1017,18 @@ fn text_of<'a>(v: &'a Value, locale: &Locale) -> Option<Cow<'a, str>> {
 fn text_is(op: TextOp, v: &Value, text: &Value, locale: &Locale) -> bool {
     match op {
         TextOp::Contains | TextOp::NotContains => {
-            let found = text_of(text, locale)
-                .zip(text_of(v, locale))
-                .is_some_and(|(needle, hay)| {
-                    // A `~` left dangling at the end stands for itself.
-                    let dangling = needle.chars().rev().take_while(|c| *c == '~').count() % 2 == 1;
-                    wildcard_match(&format!("*{needle}{}*", if dangling { "~" } else { "" }), &hay)
-                });
+            let found =
+                text_of(text, locale)
+                    .zip(text_of(v, locale))
+                    .is_some_and(|(needle, hay)| {
+                        // A `~` left dangling at the end stands for itself.
+                        let dangling =
+                            needle.chars().rev().take_while(|c| *c == '~').count() % 2 == 1;
+                        wildcard_match(
+                            &format!("*{needle}{}*", if dangling { "~" } else { "" }),
+                            &hay,
+                        )
+                    });
             found == (op == TextOp::Contains)
         }
         TextOp::BeginsWith | TextOp::EndsWith => {
@@ -971,7 +1050,10 @@ fn text_is(op: TextOp, v: &Value, text: &Value, locale: &Locale) -> bool {
                 }
                 _ => {
                     let skipped = hay.chars().count().saturating_sub(wanted);
-                    let start = hay.char_indices().nth(skipped).map_or(hay.len(), |(i, _)| i);
+                    let start = hay
+                        .char_indices()
+                        .nth(skipped)
+                        .map_or(hay.len(), |(i, _)| i);
                     &hay[start..]
                 }
             };
@@ -1072,7 +1154,13 @@ fn bar_at(bar: &DataBar, (low, high): (f64, f64), n: f64) -> Bar {
     let shortest = bar.min_length.min(100) as f64 / 100.0;
     let longest = bar.max_length.min(100) as f64 / 100.0;
     // All bars from the cell's edge, as long as `n` is far from `low`.
-    let from_edge = || (0.0, shortest + share(n, low, high) * (longest - shortest), None);
+    let from_edge = || {
+        (
+            0.0,
+            shortest + share(n, low, high) * (longest - shortest),
+            None,
+        )
+    };
     let (mut start, mut end, mut axis) = match bar.axis {
         BarAxis::None => from_edge(),
         BarAxis::Automatic if low >= 0.0 => from_edge(),

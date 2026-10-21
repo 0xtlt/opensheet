@@ -10,8 +10,10 @@ use crate::theme::{self, c};
 use crate::view::tooltip;
 use crate::widgets::{ColorGrid, preview};
 use gpui::{Context, Render, SharedString, WeakEntity, Window, div, prelude::*, px};
-use opensheet_engine::sparkline::{STYLE_COUNT, SparkShape, SparklineColors, SparklineGroup, SparklineType, shapes, style};
 use opensheet_engine::Color;
+use opensheet_engine::sparkline::{
+    STYLE_COUNT, SparkShape, SparklineColors, SparklineGroup, SparklineType, shapes, style,
+};
 
 /// One of the colours of a group.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -27,7 +29,14 @@ pub(super) enum Slot {
 
 impl Slot {
     /// The entries of the Marker Color menu, in Excel's order.
-    pub(super) const POINTS: [Slot; 6] = [Slot::Negative, Slot::Markers, Slot::High, Slot::Low, Slot::First, Slot::Last];
+    pub(super) const POINTS: [Slot; 6] = [
+        Slot::Negative,
+        Slot::Markers,
+        Slot::High,
+        Slot::Low,
+        Slot::First,
+        Slot::Last,
+    ];
 
     pub(super) fn label(self) -> &'static str {
         match self {
@@ -58,10 +67,22 @@ impl Slot {
 pub(super) fn style_name(index: usize) -> String {
     let n = (index % 6 + 1).to_string();
     let pattern = match index / 6 {
-        0 => t("Sparkline Style Accent |, Darker 50%", "Style Sparkline accentué |, plus foncé 50 %"),
-        1 => t("Sparkline Style Accent |, Darker 25%", "Style Sparkline accentué |, plus foncé 25 %"),
-        2 => t("Sparkline Style Accent |, (no dark or light)", "Style Sparkline accentué |, (ni foncé ni clair)"),
-        3 => t("Sparkline Style Accent |, Lighter 40%", "Style Sparkline accentué |, plus clair 40 %"),
+        0 => t(
+            "Sparkline Style Accent |, Darker 50%",
+            "Style Sparkline accentué |, plus foncé 50 %",
+        ),
+        1 => t(
+            "Sparkline Style Accent |, Darker 25%",
+            "Style Sparkline accentué |, plus foncé 25 %",
+        ),
+        2 => t(
+            "Sparkline Style Accent |, (no dark or light)",
+            "Style Sparkline accentué |, (ni foncé ni clair)",
+        ),
+        3 => t(
+            "Sparkline Style Accent |, Lighter 40%",
+            "Style Sparkline accentué |, plus clair 40 %",
+        ),
         4 => t("Sparkline Style Dark #|", "Style Sparkline foncé #|"),
         _ => t("Sparkline Style Colorful #|", "Style Sparkline coloré # |"),
     };
@@ -76,7 +97,9 @@ pub(super) fn apply_style(app: &mut ExcelApp, index: usize, cx: &mut Cx) {
 
 /// Give one colour to the selected groups.
 pub(super) fn apply_color(app: &mut ExcelApp, slot: Slot, color: Color, cx: &mut Cx) {
-    change(app, labels::color(), cx, |group| *slot.of(&mut group.colors) = color);
+    change(app, labels::color(), cx, |group| {
+        *slot.of(&mut group.colors) = color
+    });
 }
 
 pub(super) fn apply_weight(app: &mut ExcelApp, weight: f64, cx: &mut Cx) {
@@ -87,7 +110,16 @@ pub(super) fn apply_weight(app: &mut ExcelApp, weight: f64, cx: &mut Cx) {
 
 /// The numbers the thumbnails plot: ups and downs with a low point, a
 /// high point and negative values, so that every colour shows.
-const SAMPLE: [Option<f64>; 8] = [Some(2.0), Some(4.0), Some(-2.0), Some(1.0), Some(5.0), Some(-1.0), Some(3.0), Some(2.5)];
+const SAMPLE: [Option<f64>; 8] = [
+    Some(2.0),
+    Some(4.0),
+    Some(-2.0),
+    Some(1.0),
+    Some(5.0),
+    Some(-1.0),
+    Some(3.0),
+    Some(2.5),
+];
 
 struct StyleGallery {
     app: WeakEntity<ExcelApp>,
@@ -121,7 +153,12 @@ impl Render for StyleGallery {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         const THUMB: (f32, f32) = (64.0, 26.0);
         let current = self.model.colors;
-        let mut grid = div().w(px(6.0 * (THUMB.0 + 12.0) + 16.0)).p(px(8.)).flex().flex_wrap().bg(c(theme::PANEL_BG));
+        let mut grid = div()
+            .w(px(6.0 * (THUMB.0 + 12.0) + 16.0))
+            .p(px(8.))
+            .flex()
+            .flex_wrap()
+            .bg(c(theme::PANEL_BG));
         for index in 0..STYLE_COUNT {
             let group = SparklineGroup {
                 colors: style(index),
@@ -131,8 +168,18 @@ impl Render for StyleGallery {
             let picture = preview(THUMB.0, THUMB.1, move |s| {
                 for shape in shapes(&group, &SAMPLE, Default::default(), THUMB.0, THUMB.1, 1.0) {
                     match shape {
-                        SparkShape::Rect { x0, y0, x1, y1, color } => s.rect(x0, y0, x1, y1, theme::engine_color(color)),
-                        SparkShape::Line { points, color, width } => {
+                        SparkShape::Rect {
+                            x0,
+                            y0,
+                            x1,
+                            y1,
+                            color,
+                        } => s.rect(x0, y0, x1, y1, theme::engine_color(color)),
+                        SparkShape::Line {
+                            points,
+                            color,
+                            width,
+                        } => {
                             for pair in points.windows(2) {
                                 s.line(pair[0], pair[1], width, theme::engine_color(color));
                             }
@@ -146,7 +193,11 @@ impl Render for StyleGallery {
                     .p(px(5.))
                     .border_1()
                     .rounded(px(3.))
-                    .border_color(if chosen { c(theme::ACCENT) } else { gpui::transparent_black() })
+                    .border_color(if chosen {
+                        c(theme::ACCENT)
+                    } else {
+                        gpui::transparent_black()
+                    })
                     .hover(|s| s.bg(c(theme::HOVER)).border_color(c(theme::BORDER_STRONG)))
                     .child(picture)
                     .tooltip(tooltip(SharedString::from(style_name(index))))
@@ -167,8 +218,17 @@ impl Render for StyleGallery {
 // ------------------------------------------------------------------ colours
 
 /// The weights of the Weight list, in points.
-const WEIGHTS: [(f64, &str); 9] =
-    [(0.25, "¼ pt"), (0.5, "½ pt"), (0.75, "¾ pt"), (1.0, "1 pt"), (1.5, "1½ pt"), (2.25, "2¼ pt"), (3.0, "3 pt"), (4.5, "4½ pt"), (6.0, "6 pt")];
+const WEIGHTS: [(f64, &str); 9] = [
+    (0.25, "¼ pt"),
+    (0.5, "½ pt"),
+    (0.75, "¾ pt"),
+    (1.0, "1 pt"),
+    (1.5, "1½ pt"),
+    (2.25, "2¼ pt"),
+    (3.0, "3 pt"),
+    (4.5, "4½ pt"),
+    (6.0, "6 pt"),
+];
 
 struct ColorPicker {
     app: WeakEntity<ExcelApp>,
@@ -184,7 +244,8 @@ pub(super) fn open_color(app: &mut ExcelApp, slot: Slot, window: &mut Window, cx
     };
     let mut colors = group.colors;
     let current = *slot.of(&mut colors);
-    let weight = (slot == Slot::Series && group.kind == SparklineType::Line).then_some(group.line_weight);
+    let weight =
+        (slot == Slot::Series && group.kind == SparklineType::Line).then_some(group.line_weight);
     let position = drop_position(app, window);
     let weak = cx.weak_entity();
     let view = cx.new(|_| ColorPicker {
@@ -197,7 +258,12 @@ pub(super) fn open_color(app: &mut ExcelApp, slot: Slot, window: &mut Window, cx
 }
 
 impl ColorPicker {
-    fn run(&self, window: &mut Window, cx: &mut Context<Self>, action: impl FnOnce(&mut ExcelApp, &mut Window, &mut Cx)) {
+    fn run(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        action: impl FnOnce(&mut ExcelApp, &mut Window, &mut Cx),
+    ) {
         self.app
             .update(cx, |app, cx| {
                 app.close_popup(window, cx);
@@ -210,19 +276,31 @@ impl ColorPicker {
 impl Render for ColorPicker {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let slot = self.slot;
-        let mut body = div().p(px(8.)).flex().flex_col().gap(px(4.)).bg(c(theme::PANEL_BG)).text_size(px(12.)).child(
-            ColorGrid::new("sparkline-colors", Some(Some(self.current)))
-                .more(&self.app)
-                .on_pick(cx.listener(move |this, color: &Option<Color>, window, cx| {
-                    if let Some(color) = *color {
-                        this.run(window, cx, |app, _, cx| apply_color(app, slot, color, cx));
-                    }
-                })),
-        );
-        if let Some(weight) = self.weight {
-            body = body.child(div().h(px(1.)).my(px(2.)).bg(c(theme::BORDER))).child(
-                div().px(px(4.)).text_color(c(theme::TEXT_MUTED)).child(t("Weight", "Épaisseur")),
+        let mut body = div()
+            .p(px(8.))
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .bg(c(theme::PANEL_BG))
+            .text_size(px(12.))
+            .child(
+                ColorGrid::new("sparkline-colors", Some(Some(self.current)))
+                    .more(&self.app)
+                    .on_pick(cx.listener(move |this, color: &Option<Color>, window, cx| {
+                        if let Some(color) = *color {
+                            this.run(window, cx, |app, _, cx| apply_color(app, slot, color, cx));
+                        }
+                    })),
             );
+        if let Some(weight) = self.weight {
+            body = body
+                .child(div().h(px(1.)).my(px(2.)).bg(c(theme::BORDER)))
+                .child(
+                    div()
+                        .px(px(4.))
+                        .text_color(c(theme::TEXT_MUTED))
+                        .child(t("Weight", "Épaisseur")),
+                );
             for (index, (points, text)) in WEIGHTS.into_iter().enumerate() {
                 let chosen = (weight - points).abs() < 1e-6;
                 body = body.child(
@@ -237,8 +315,15 @@ impl Render for ColorPicker {
                         .when(chosen, |d| d.bg(c(theme::TOGGLED)))
                         .hover(|s| s.bg(c(theme::HOVER)))
                         .child(div().w(px(44.)).child(text))
-                        .child(div().flex_1().h(px((points as f32 * 96.0 / 72.0).max(1.0))).bg(c(0x000000)))
-                        .on_click(cx.listener(move |this, _, window, cx| this.run(window, cx, |app, _, cx| apply_weight(app, points, cx)))),
+                        .child(
+                            div()
+                                .flex_1()
+                                .h(px((points as f32 * 96.0 / 72.0).max(1.0)))
+                                .bg(c(0x000000)),
+                        )
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.run(window, cx, |app, _, cx| apply_weight(app, points, cx))
+                        })),
                 );
             }
             body = body.child(

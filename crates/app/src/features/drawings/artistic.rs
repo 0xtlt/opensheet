@@ -14,9 +14,13 @@ use crate::features::{Command, Cx};
 use crate::i18n::{lang, t, t_ctx};
 use crate::theme::{self, c};
 use crate::view::tooltip;
-use gpui::{App, Bounds, Context, Pixels, RenderImage, WeakEntity, Window, canvas, div, prelude::*, px};
+use gpui::{
+    App, Bounds, Context, Pixels, RenderImage, WeakEntity, Window, canvas, div, prelude::*, px,
+};
 use opensheet_engine::Workbook;
-use opensheet_engine::drawing::{Drawing, DrawingKind, ImageFormat, NEUTRAL_TEMPERATURE, Picture, PictureAdjust};
+use opensheet_engine::drawing::{
+    Drawing, DrawingKind, ImageFormat, NEUTRAL_TEMPERATURE, Picture, PictureAdjust,
+};
 use opensheet_engine::picture_style::{Artistic, ArtisticKind, Baked};
 use std::collections::HashSet;
 use std::sync::Arc;
@@ -51,10 +55,18 @@ impl Recipe {
     }
 
     fn key(&self) -> Key {
-        let artistic = self.artistic.map_or([u32::MAX, 0, 0], |a| [a.kind as u32, a.transparency.to_bits(), a.amount.to_bits()]);
+        let artistic = self.artistic.map_or([u32::MAX, 0, 0], |a| {
+            [a.kind as u32, a.transparency.to_bits(), a.amount.to_bits()]
+        });
         (
             Arc::as_ptr(&self.data) as *const u8 as usize,
-            [self.saturation.to_bits(), self.temperature.to_bits(), artistic[0], artistic[1], artistic[2]],
+            [
+                self.saturation.to_bits(),
+                self.temperature.to_bits(),
+                artistic[0],
+                artistic[1],
+                artistic[2],
+            ],
         )
     }
 
@@ -112,17 +124,27 @@ const REMEMBERED: usize = 12;
 
 /// Do something to every picture of a workbook that waits for its second
 /// image.
-fn each_waiting(wb: &mut Workbook, sheets: std::ops::Range<usize>, change: &mut dyn FnMut(&mut Picture)) {
+fn each_waiting(
+    wb: &mut Workbook,
+    sheets: std::ops::Range<usize>,
+    change: &mut dyn FnMut(&mut Picture),
+) {
     fn visit(drawing: &mut Drawing, change: &mut dyn FnMut(&mut Picture)) {
         match &mut drawing.kind {
             DrawingKind::Picture(picture) if picture.needs_baking() => change(picture),
-            DrawingKind::Group(group) => group.members.iter_mut().for_each(|member| visit(member, change)),
+            DrawingKind::Group(group) => group
+                .members
+                .iter_mut()
+                .for_each(|member| visit(member, change)),
             _ => {}
         }
     }
     for sheet in sheets {
         if let Some(sheet) = wb.sheets.get_mut(sheet) {
-            sheet.drawings.iter_mut().for_each(|drawing| visit(drawing, change));
+            sheet
+                .drawings
+                .iter_mut()
+                .for_each(|drawing| visit(drawing, change));
         }
     }
 }
@@ -134,7 +156,9 @@ fn each_waiting(wb: &mut Workbook, sheets: std::ops::Range<usize>, change: &mut 
 pub(super) fn follow(app: &mut ExcelApp, cx: &mut Cx) {
     let mut wanted: Vec<Recipe> = Vec::new();
     let sheet = app.sheet;
-    each_waiting(&mut app.wb, sheet..sheet + 1, &mut |picture| wanted.push(Recipe::of(picture)));
+    each_waiting(&mut app.wb, sheet..sheet + 1, &mut |picture| {
+        wanted.push(Recipe::of(picture))
+    });
     if wanted.is_empty() {
         return;
     }
@@ -213,7 +237,9 @@ pub(crate) fn bake_all(wb: &mut Workbook) {
 
 /// Give the selected pictures an artistic effect, or take it away.
 pub(super) fn set_artistic(app: &mut ExcelApp, artistic: Option<Artistic>, cx: &mut Cx) {
-    edit_picture(app, Cmd::ArtisticEffects.label(), cx, |picture| picture.artistic = artistic);
+    edit_picture(app, Cmd::ArtisticEffects.label(), cx, |picture| {
+        picture.artistic = artistic
+    });
 }
 
 /// A small copy of a picture with an effect of the gallery, or as it is.
@@ -250,40 +276,51 @@ struct EffectGallery {
 
 impl Render for EffectGallery {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let current = self
-            .app
-            .upgrade()
-            .and_then(|app| selected(app.read(cx)).and_then(Drawing::as_picture).map(|picture| picture.artistic.map(|artistic| artistic.kind)));
-        let locale = lang().locale();
-        let tiles = self.thumbs.iter().enumerate().map(|(index, (kind, image))| {
-            let (kind, image, app) = (*kind, image.clone(), self.app.clone());
-            let name = kind.map_or(t_ctx("artistic", "None", "Aucun"), |kind| kind.name(locale));
-            let shown = canvas(
-                |_, _, _| {},
-                move |bounds: Bounds<Pixels>, _, window, _| {
-                    let _ = window.paint_image(bounds, Default::default(), image.clone(), 0, false);
-                },
-            )
-            .w(px(THUMB.0))
-            .h(px(THUMB.1));
-            div()
-                .id(("pf-artistic", index))
-                .p(px(3.))
-                .rounded(px(3.))
-                .border_1()
-                .border_color(c(if current == Some(kind) { theme::ACCENT } else { 0xFFFFFF }))
-                .hover(|s| s.bg(c(theme::HOVER)))
-                .child(shown)
-                .tooltip(tooltip(name))
-                .on_click(move |_, _, cx| {
-                    app.update(cx, |app, cx| {
-                        app.popup = None;
-                        set_artistic(app, kind.map(Artistic::preset), cx);
-                        cx.notify();
-                    })
-                    .ok();
-                })
+        let current = self.app.upgrade().and_then(|app| {
+            selected(app.read(cx))
+                .and_then(Drawing::as_picture)
+                .map(|picture| picture.artistic.map(|artistic| artistic.kind))
         });
+        let locale = lang().locale();
+        let tiles = self
+            .thumbs
+            .iter()
+            .enumerate()
+            .map(|(index, (kind, image))| {
+                let (kind, image, app) = (*kind, image.clone(), self.app.clone());
+                let name =
+                    kind.map_or(t_ctx("artistic", "None", "Aucun"), |kind| kind.name(locale));
+                let shown = canvas(
+                    |_, _, _| {},
+                    move |bounds: Bounds<Pixels>, _, window, _| {
+                        let _ =
+                            window.paint_image(bounds, Default::default(), image.clone(), 0, false);
+                    },
+                )
+                .w(px(THUMB.0))
+                .h(px(THUMB.1));
+                div()
+                    .id(("pf-artistic", index))
+                    .p(px(3.))
+                    .rounded(px(3.))
+                    .border_1()
+                    .border_color(c(if current == Some(kind) {
+                        theme::ACCENT
+                    } else {
+                        0xFFFFFF
+                    }))
+                    .hover(|s| s.bg(c(theme::HOVER)))
+                    .child(shown)
+                    .tooltip(tooltip(name))
+                    .on_click(move |_, _, cx| {
+                        app.update(cx, |app, cx| {
+                            app.popup = None;
+                            set_artistic(app, kind.map(Artistic::preset), cx);
+                            cx.notify();
+                        })
+                        .ok();
+                    })
+            });
         let app = self.app.clone();
         div()
             .w(px(PER_ROW as f32 * (THUMB.0 + 8.0) + 12.0))
@@ -302,7 +339,10 @@ impl Render for EffectGallery {
                     .items_center()
                     .rounded(px(3.))
                     .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(t("Artistic Effects Options…", "Options d'effets artistiques…"))
+                    .child(t(
+                        "Artistic Effects Options…",
+                        "Options d'effets artistiques…",
+                    ))
                     .on_click(move |_, window, cx| {
                         app.update(cx, |app, cx| {
                             app.popup = None;

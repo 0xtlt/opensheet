@@ -16,9 +16,9 @@ mod import;
 mod navigator;
 mod sources;
 mod text_wizard;
-mod whatif;
 #[cfg(test)]
 mod ui_tests;
+mod whatif;
 
 use super::{CellEdit, Command, Cx, Feature, Intent};
 use crate::app::{ExcelApp, MenuEntry};
@@ -126,7 +126,9 @@ impl Command for Cmd {
                 }
                 navigator::open_web(app, "", None, window, cx);
             }
-            Cmd::FromWorkbook | Cmd::FromJson | Cmd::FromXml => import::choose_document(app, window, cx),
+            Cmd::FromWorkbook | Cmd::FromJson | Cmd::FromXml => {
+                import::choose_document(app, window, cx)
+            }
             // Databases are reached through an ODBC driver manager, which
             // this program does not have: Excel's own words for that.
             Cmd::FromSqlServer | Cmd::FromDatabase => warn(
@@ -145,7 +147,10 @@ impl Command for Cmd {
             }
             Cmd::FromText => import::choose_file(app, window, cx),
             Cmd::RefreshMenu => {
-                let entries = vec![MenuEntry::command(Cmd::RefreshAll, app), MenuEntry::command(Cmd::Refresh, app)];
+                let entries = vec![
+                    MenuEntry::command(Cmd::RefreshAll, app),
+                    MenuEntry::command(Cmd::Refresh, app),
+                ];
                 app.open_command_menu(entries, 220.0, window, cx);
             }
             Cmd::RefreshAll => import::refresh_all(app, window, cx),
@@ -169,7 +174,13 @@ impl Feature for DataTools {
 
     // The queries that refresh by themselves are watched from here: the
     // one hook that sees the window each time it is drawn.
-    fn overlay_elements(&self, app: &mut ExcelApp, _: &crate::grid::GridLayout, window: &mut Window, cx: &mut Cx) -> Vec<gpui::AnyElement> {
+    fn overlay_elements(
+        &self,
+        app: &mut ExcelApp,
+        _: &crate::grid::GridLayout,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<gpui::AnyElement> {
         import::watch(app, window, cx);
         Vec::new()
     }
@@ -192,7 +203,9 @@ pub fn bind_keys(cx: &mut App) {
 
 /// Make the window answer the shortcuts of `bind_keys`.
 pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Stateful<gpui::Div> {
-    root.on_action(cx.listener(|app, _: &FlashFill, window, cx| app.run_command(Cmd::FlashFill, window, cx)))
+    root.on_action(
+        cx.listener(|app, _: &FlashFill, window, cx| app.run_command(Cmd::FlashFill, window, cx)),
+    )
 }
 
 /// Tell the user why what was asked cannot be done.

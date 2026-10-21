@@ -93,10 +93,20 @@ impl SheetLinks {
             threads: id(threaded),
             tables: sheet.tables.iter().filter_map(|_| id(true)).collect(),
             pivots: sheet.pivots.iter().filter_map(|_| id(true)).collect(),
-            hyperlinks: sheet.hyperlinks.iter().filter_map(|link| id(!link.address.is_empty())).collect(),
+            hyperlinks: sheet
+                .hyperlinks
+                .iter()
+                .filter_map(|link| id(!link.address.is_empty()))
+                .collect(),
             queries: sheet.text_imports.iter().filter_map(|_| id(true)).collect(),
-            slicers: id(sheet.slicers.iter().any(|s| matches!(s.source, SlicerSource::Pivot { .. }))),
-            table_slicers: id(sheet.slicers.iter().any(|s| matches!(s.source, SlicerSource::Table { .. }))),
+            slicers: id(sheet
+                .slicers
+                .iter()
+                .any(|s| matches!(s.source, SlicerSource::Pivot { .. }))),
+            table_slicers: id(sheet
+                .slicers
+                .iter()
+                .any(|s| matches!(s.source, SlicerSource::Table { .. }))),
             timelines: id(!sheet.timelines.is_empty()),
             background: id(sheet.background.is_some()),
             controls: sheet.controls.iter().filter_map(|_| id(true)).collect(),
@@ -257,7 +267,10 @@ impl Extras {
     /// gives it.
     pub fn relate_sheet_outside(&mut self, sheet: usize, id: usize, kind: &str, target: &str) {
         if let Some(rels) = self.sheet_rels.get_mut(sheet) {
-            w!(rels, "<Relationship Id=\"rId{id}\" Type=\"{kind}\" Target=\"");
+            w!(
+                rels,
+                "<Relationship Id=\"rId{id}\" Type=\"{kind}\" Target=\""
+            );
             push_attr(rels, target);
             rels.push_str("\" TargetMode=\"External\"/>");
         }
@@ -313,9 +326,17 @@ impl Extras {
         // extLst: the caches of the slicers of PivotTables, then those of
         // the slicers of tables, then those of the timelines.
         let mut lists = String::new();
-        for list in [CacheList::PivotSlicers, CacheList::TableSlicers, CacheList::Timelines] {
-            let ids: Vec<usize> =
-                self.listed_caches.iter().filter(|(l, _)| *l == list).map(|(_, rel)| first + rel).collect();
+        for list in [
+            CacheList::PivotSlicers,
+            CacheList::TableSlicers,
+            CacheList::Timelines,
+        ] {
+            let ids: Vec<usize> = self
+                .listed_caches
+                .iter()
+                .filter(|(l, _)| *l == list)
+                .map(|(_, rel)| first + rel)
+                .collect();
             if !ids.is_empty() {
                 super::slicer::push_workbook_ext(&mut lists, list, &ids);
             }

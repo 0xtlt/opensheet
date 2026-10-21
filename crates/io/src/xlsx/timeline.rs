@@ -17,7 +17,9 @@ use super::filter::push_text_attr;
 use super::parts::{CacheList, Extras, SheetLinks};
 use super::pivot::{date_from_iso, iso_date};
 use super::read::{Package, Rel, relationships};
-use super::slicer::{NS_X15, pivot_cache_number, push_pivot_tables, read_frames, read_pivot_tables, sheets_by_id};
+use super::slicer::{
+    NS_X15, pivot_cache_number, push_pivot_tables, read_frames, read_pivot_tables, sheets_by_id,
+};
 use super::write::NS_MAIN;
 use super::xml::{Event, Reader, XML_DECL, decode_cell_text};
 use opensheet_engine::Workbook;
@@ -28,7 +30,8 @@ use std::io::{Read, Seek};
 const CT_TIMELINE: &str = "application/vnd.ms-excel.timeline+xml";
 const CT_TIMELINE_CACHE: &str = "application/vnd.ms-excel.timelineCache+xml";
 const REL_TIMELINE: &str = "http://schemas.microsoft.com/office/2011/relationships/timeline";
-const REL_TIMELINE_CACHE: &str = "http://schemas.microsoft.com/office/2011/relationships/timelineCache";
+const REL_TIMELINE_CACHE: &str =
+    "http://schemas.microsoft.com/office/2011/relationships/timelineCache";
 
 const DEFAULT_STYLE: &str = "TimeSlicerStyleLight1";
 
@@ -41,7 +44,10 @@ fn cache_xml(wb: &Workbook, id: u32, timeline: &Timeline) -> Option<String> {
     let (_, p) = timeline.pivots.iter().find_map(|id| wb.pivot(*id))?;
     let cache = pivot_cache_number(wb, &p.cache)?;
     let mut x = String::from(XML_DECL);
-    w!(x, "<timelineCacheDefinition xmlns=\"{NS_X15}\" xmlns:x=\"{NS_MAIN}\"");
+    w!(
+        x,
+        "<timelineCacheDefinition xmlns=\"{NS_X15}\" xmlns:x=\"{NS_MAIN}\""
+    );
     push_text_attr(&mut x, "name", &timeline.cache_name);
     push_text_attr(&mut x, "sourceName", &timeline.field);
     x.push('>');
@@ -50,15 +56,29 @@ fn cache_xml(wb: &Workbook, id: u32, timeline: &Timeline) -> Option<String> {
     w!(
         x,
         "<state minimalRefreshVersion=\"6\" lastRefreshVersion=\"6\" pivotCacheId=\"{cache}\" filterType=\"{}\">",
-        if selection.is_some() { "dateBetween" } else { "unknown" }
+        if selection.is_some() {
+            "dateBetween"
+        } else {
+            "unknown"
+        }
     );
     // Days are said from their first instant to the first instant of the
     // last one.
     if let Some((start, end)) = selection {
-        w!(x, "<selection startDate=\"{}\" endDate=\"{}\"/>", iso_date(start), iso_date(end));
+        w!(
+            x,
+            "<selection startDate=\"{}\" endDate=\"{}\"/>",
+            iso_date(start),
+            iso_date(end)
+        );
     }
     if let Some((start, end)) = wb.timeline_bounds(id) {
-        w!(x, "<bounds startDate=\"{}\" endDate=\"{}\"/>", iso_date(start), iso_date(end + 1.0));
+        w!(
+            x,
+            "<bounds startDate=\"{}\" endDate=\"{}\"/>",
+            iso_date(start),
+            iso_date(end + 1.0)
+        );
     }
     x.push_str("</state></timelineCacheDefinition>");
     Some(x)
@@ -85,7 +105,10 @@ fn timelines_xml(wb: &Workbook, timelines: &[Timeline]) -> String {
         }
         let level = level_number(t.level);
         w!(x, " level=\"{level}\" selectionLevel=\"{level}\"");
-        let scroll = t.scroll.or_else(|| wb.timeline_selection(t.id).map(|(start, _)| start)).or_else(|| wb.timeline_bounds(t.id).map(|(start, _)| start));
+        let scroll = t
+            .scroll
+            .or_else(|| wb.timeline_selection(t.id).map(|(start, _)| start))
+            .or_else(|| wb.timeline_bounds(t.id).map(|(start, _)| start));
         if let Some(day) = scroll {
             w!(x, " scrollPosition=\"{}\"", iso_date(day));
         }
@@ -110,15 +133,32 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
         };
         caches.push(&timeline.cache_name);
         let n = caches.len();
-        extras.add_part(format!("xl/timelineCaches/timelineCache{n}.xml"), Some(CT_TIMELINE_CACHE), xml);
-        extras.add_listed_cache(CacheList::Timelines, REL_TIMELINE_CACHE, &format!("timelineCaches/timelineCache{n}.xml"));
+        extras.add_part(
+            format!("xl/timelineCaches/timelineCache{n}.xml"),
+            Some(CT_TIMELINE_CACHE),
+            xml,
+        );
+        extras.add_listed_cache(
+            CacheList::Timelines,
+            REL_TIMELINE_CACHE,
+            &format!("timelineCaches/timelineCache{n}.xml"),
+        );
     }
     let mut parts = 0;
     for (index, sheet) in wb.sheets.iter().enumerate() {
         if let Some(id) = SheetLinks::of(sheet).timelines {
             parts += 1;
-            extras.add_part(format!("xl/timelines/timeline{parts}.xml"), Some(CT_TIMELINE), timelines_xml(wb, &sheet.timelines));
-            extras.relate_sheet(index, id, REL_TIMELINE, &format!("../timelines/timeline{parts}.xml"));
+            extras.add_part(
+                format!("xl/timelines/timeline{parts}.xml"),
+                Some(CT_TIMELINE),
+                timelines_xml(wb, &sheet.timelines),
+            );
+            extras.relate_sheet(
+                index,
+                id,
+                REL_TIMELINE,
+                &format!("../timelines/timeline{parts}.xml"),
+            );
         }
     }
 }
@@ -131,7 +171,11 @@ struct ReadCache {
     selection: Option<(f64, f64)>,
 }
 
-fn parse_cache(xml: &str, wb: &Workbook, sheets: &std::collections::HashMap<u32, usize>) -> Option<ReadCache> {
+fn parse_cache(
+    xml: &str,
+    wb: &Workbook,
+    sheets: &std::collections::HashMap<u32, usize>,
+) -> Option<ReadCache> {
     let mut r = Reader::new(xml);
     let mut cache: Option<ReadCache> = None;
     let mut filtered = false;
@@ -147,10 +191,15 @@ fn parse_cache(xml: &str, wb: &Workbook, sheets: &std::collections::HashMap<u32,
                         selection: None,
                     });
                 }
-                ("pivotTables", Some(cache)) => cache.pivots = read_pivot_tables(&mut r, &t, wb, sheets),
-                ("state", Some(_)) => filtered = t.attr("filterType").as_deref() == Some("dateBetween"),
+                ("pivotTables", Some(cache)) => {
+                    cache.pivots = read_pivot_tables(&mut r, &t, wb, sheets)
+                }
+                ("state", Some(_)) => {
+                    filtered = t.attr("filterType").as_deref() == Some("dateBetween")
+                }
                 ("selection", Some(cache)) => {
-                    let day = |name: &str| t.attr(name).and_then(|v| date_from_iso(&v)).map(f64::floor);
+                    let day =
+                        |name: &str| t.attr(name).and_then(|v| date_from_iso(&v)).map(f64::floor);
                     cache.selection = day("startDate").zip(day("endDate")).filter(|_| filtered);
                     r.skip(&t);
                 }
@@ -172,7 +221,10 @@ pub(crate) fn read_all<R: Read + Seek>(
     workbook_rels: &[Rel],
     sheet_parts: &[String],
 ) {
-    let cache_parts: Vec<&Rel> = workbook_rels.iter().filter(|rel| rel.kind == "timelineCache").collect();
+    let cache_parts: Vec<&Rel> = workbook_rels
+        .iter()
+        .filter(|rel| rel.kind == "timelineCache")
+        .collect();
     if cache_parts.is_empty() {
         return;
     }
@@ -186,7 +238,10 @@ pub(crate) fn read_all<R: Read + Seek>(
     let mut next_id = 1;
     for (index, part) in sheet_parts.iter().enumerate() {
         let frames = read_frames(pkg, part, &wb.sheets[index]);
-        for rel in relationships(pkg, part).into_iter().filter(|rel| rel.kind == "timeline") {
+        for rel in relationships(pkg, part)
+            .into_iter()
+            .filter(|rel| rel.kind == "timeline")
+        {
             let Ok(Some(xml)) = pkg.read(&rel.target) else {
                 continue;
             };
@@ -206,11 +261,19 @@ pub(crate) fn read_all<R: Read + Seek>(
                 let (Some(frame), Some(cache)) = (frame, cache) else {
                     continue;
                 };
-                let taken = wb.timelines().any(|(_, known)| known.name.to_lowercase() == name.to_lowercase());
+                let taken = wb
+                    .timelines()
+                    .any(|(_, known)| known.name.to_lowercase() == name.to_lowercase());
                 // The field must be one of dates in a PivotTable that is there.
-                let dated = cache.pivots.iter().filter_map(|id| wb.pivot(*id)).any(|(_, p)| {
-                    p.cache.field_index(&cache.field).is_some_and(|f| p.cache.is_date(f))
-                });
+                let dated = cache
+                    .pivots
+                    .iter()
+                    .filter_map(|id| wb.pivot(*id))
+                    .any(|(_, p)| {
+                        p.cache
+                            .field_index(&cache.field)
+                            .is_some_and(|f| p.cache.is_date(f))
+                    });
                 if taken || !dated {
                     continue;
                 }
@@ -234,7 +297,9 @@ pub(crate) fn read_all<R: Read + Seek>(
                         .and_then(|level| TimeLevel::ALL.get(level as usize).copied())
                         .unwrap_or(TimeLevel::Months),
                     style: text("style").unwrap_or_else(|| DEFAULT_STYLE.to_string()),
-                    scroll: text("scrollPosition").and_then(|v| date_from_iso(&v)).map(f64::floor),
+                    scroll: text("scrollPosition")
+                        .and_then(|v| date_from_iso(&v))
+                        .map(f64::floor),
                 });
                 next_id += 1;
             }
@@ -252,7 +317,9 @@ pub(crate) fn read_all<R: Read + Seek>(
             .copied()
             .filter(|id| {
                 wb.pivot(*id).is_some_and(|(_, p)| {
-                    p.cache.field_index(&cache.field).is_some_and(|f| p.date_filter(f).is_none())
+                    p.cache
+                        .field_index(&cache.field)
+                        .is_some_and(|f| p.date_filter(f).is_none())
                 })
             })
             .collect();

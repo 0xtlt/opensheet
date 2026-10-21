@@ -10,7 +10,8 @@ use crate::shell::Alert;
 pub(super) fn flash_fill(app: &mut ExcelApp, cx: &mut Cx) {
     let (row, col) = app.active();
     let fill = app.wb.flash_fill_plan(app.sheet, row, col).ok();
-    let Some((fill, extent)) = fill.and_then(|fill| fill.extent().map(|extent| (fill, extent))) else {
+    let Some((fill, extent)) = fill.and_then(|fill| fill.extent().map(|extent| (fill, extent)))
+    else {
         app.alert(
             Alert::new(
                 "OpenSheet",
@@ -28,8 +29,16 @@ pub(super) fn flash_fill(app: &mut ExcelApp, cx: &mut Cx) {
     }
     let sheet = app.sheet;
     app.wb.flash_fill_apply(sheet, &fill);
-    app.commit_cells(t("Flash Fill", "Remplissage instantané"), &[extent], ChangeCause::Fill, cx);
+    app.commit_cells(
+        t("Flash Fill", "Remplissage instantané"),
+        &[extent],
+        ChangeCause::Fill,
+        cx,
+    );
     // What Excel says on the status bar once the column is filled.
-    let done = t("Flash Fill Changed Cells", "Compléter les cellules modifiées à l’aide du remplissage instantané");
+    let done = t(
+        "Flash Fill Changed Cells",
+        "Compléter les cellules modifiées à l’aide du remplissage instantané",
+    );
     app.set_status(format!("{done}: {}", fill.cells.len()), cx);
 }

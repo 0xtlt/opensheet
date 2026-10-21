@@ -44,7 +44,10 @@ fn num(v: f64) -> String {
 }
 
 fn deflate(data: &[u8]) -> Vec<u8> {
-    let mut z = ZlibEncoder::new(Vec::with_capacity(data.len() / 2 + 16), Compression::default());
+    let mut z = ZlibEncoder::new(
+        Vec::with_capacity(data.len() / 2 + 16),
+        Compression::default(),
+    );
     // Writing to a `Vec` cannot fail.
     let _ = z.write_all(data);
     z.finish().unwrap_or_default()
@@ -144,10 +147,13 @@ impl Resources {
     }
 
     fn image(&mut self, image: &Arc<Image>) -> usize {
-        *self.image_index.entry(Arc::as_ptr(image)).or_insert_with(|| {
-            self.images.push(image.clone());
-            self.images.len() - 1
-        })
+        *self
+            .image_index
+            .entry(Arc::as_ptr(image))
+            .or_insert_with(|| {
+                self.images.push(image.clone());
+                self.images.len() - 1
+            })
     }
 
     fn opacity(&mut self, opacity: f32) -> usize {
@@ -212,7 +218,14 @@ fn content(scene: &Scene, res: &mut Resources) -> String {
             Op::Save => out.push_str("q\n"),
             Op::Restore => out.push_str("Q\n"),
             Op::Clip(r) => {
-                let _ = writeln!(out, "{} {} {} {} re W n", num(r.x), num(r.y), num(r.w), num(r.h));
+                let _ = writeln!(
+                    out,
+                    "{} {} {} {} re W n",
+                    num(r.x),
+                    num(r.y),
+                    num(r.w),
+                    num(r.h)
+                );
             }
             Op::Transform(m) => {
                 let _ = writeln!(
@@ -349,7 +362,11 @@ fn to_unicode(glyphs: &BTreeMap<u16, char>) -> String {
         let _ = writeln!(out, "{} beginbfchar", chunk.len());
         for (glyph, ch) in chunk {
             let mut units = [0u16; 2];
-            let text: String = ch.encode_utf16(&mut units).iter().map(|u| format!("{u:04X}")).collect();
+            let text: String = ch
+                .encode_utf16(&mut units)
+                .iter()
+                .map(|u| format!("{u:04X}"))
+                .collect();
             let _ = writeln!(out, "<{glyph:04X}> <{text}>");
         }
         out.push_str("endbfchar\n");
@@ -366,18 +383,29 @@ fn write_font(objects: &mut Objects, index: usize, font: &FontUse) -> usize {
         let base = face.standard().map_or("Helvetica", |s| s.base_font());
         objects.write(
             id,
-            &format!("<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>"),
+            &format!(
+                "<< /Type /Font /Subtype /Type1 /BaseFont /{base} /Encoding /WinAnsiEncoding >>"
+            ),
         );
         return id;
     };
-    let (descendant, descriptor, file, unicode) = (objects.alloc(), objects.alloc(), objects.alloc(), objects.alloc());
+    let (descendant, descriptor, file, unicode) = (
+        objects.alloc(),
+        objects.alloc(),
+        objects.alloc(),
+        objects.alloc(),
+    );
     let name: String = ttf
         .names
         .postscript
         .chars()
         .filter(|c| c.is_ascii_alphanumeric() || *c == '-')
         .collect();
-    let name = if name.is_empty() { format!("Font{index}") } else { name };
+    let name = if name.is_empty() {
+        format!("Font{index}")
+    } else {
+        name
+    };
     let base = format!("{}+{name}", subset_tag(index));
     let scale = 1000.0 / ttf.units_per_em as f64;
 
@@ -417,7 +445,11 @@ fn write_font(objects: &mut Objects, index: usize, font: &FontUse) -> usize {
     // Symbolic (the glyphs are addressed by number), plus fixed pitch and
     // italic where they apply.
     let flags = 4 | if ttf.fixed_pitch { 1 } else { 0 } | if ttf.style.italic { 64 } else { 0 };
-    let bbox: Vec<String> = ttf.bbox.iter().map(|v| num((*v as f64 * scale).round())).collect();
+    let bbox: Vec<String> = ttf
+        .bbox
+        .iter()
+        .map(|v| num((*v as f64 * scale).round()))
+        .collect();
     objects.write(
         descriptor,
         &format!(
@@ -475,7 +507,10 @@ fn write_image(objects: &mut Objects, image: &Image) -> usize {
         Pixels::Rgba(data) => {
             // Colour and transparency are separate images in PDF.
             let mask = objects.alloc();
-            let colour: Vec<u8> = data.chunks_exact(4).flat_map(|p| [p[0], p[1], p[2]]).collect();
+            let colour: Vec<u8> = data
+                .chunks_exact(4)
+                .flat_map(|p| [p[0], p[1], p[2]])
+                .collect();
             let alpha: Vec<u8> = data.chunks_exact(4).map(|p| p[3]).collect();
             objects.stream(
                 id,
@@ -520,7 +555,12 @@ fn pdf_date(serial: f64, offset_minutes: Option<i32>) -> String {
     let mut out = format!("D:{y:04}{m:02}{d:02}{h:02}{min:02}{s:02}");
     if let Some(offset) = offset_minutes {
         let sign = if offset < 0 { '-' } else { '+' };
-        let _ = write!(out, "{sign}{:02}'{:02}'", offset.abs() / 60, offset.abs() % 60);
+        let _ = write!(
+            out,
+            "{sign}{:02}'{:02}'",
+            offset.abs() / 60,
+            offset.abs() % 60
+        );
     }
     out
 }
@@ -532,7 +572,11 @@ fn local_offset_minutes(serial: f64) -> Option<i32> {
     let (y, m, d) = datetime::serial_to_ymd(serial);
     let (h, min, s) = datetime::serial_to_hms(serial);
     let local = NaiveDate::from_ymd_opt(y as i32, m, d)?.and_hms_opt(h, min, s)?;
-    let offset = Local.from_local_datetime(&local).single()?.offset().local_minus_utc();
+    let offset = Local
+        .from_local_datetime(&local)
+        .single()?
+        .offset()
+        .local_minus_utc();
     Some(offset / 60)
 }
 
@@ -576,7 +620,11 @@ pub fn write_pdf(scenes: &[Scene], order: &[usize], info: &DocInfo) -> Vec<u8> {
     }
     objects.write(
         pages,
-        &format!("<< /Type /Pages /Count {} /Kids [{}] >>", kids.len(), kids.join(" ")),
+        &format!(
+            "<< /Type /Pages /Count {} /Kids [{}] >>",
+            kids.len(),
+            kids.join(" ")
+        ),
     );
     objects.write(catalog, &format!("<< /Type /Catalog /Pages {pages} 0 R >>"));
 
@@ -630,7 +678,10 @@ pub fn write_pdf(scenes: &[Scene], order: &[usize], info: &DocInfo) -> Vec<u8> {
     for b in &objects.out {
         hash = (hash ^ *b as u64).wrapping_mul(0x0000_0100_0000_01b3);
     }
-    let file_id = format!("{hash:016X}{:016X}", hash.rotate_left(32) ^ objects.out.len() as u64);
+    let file_id = format!(
+        "{hash:016X}{:016X}",
+        hash.rotate_left(32) ^ objects.out.len() as u64
+    );
 
     let xref = objects.out.len();
     let count = objects.offsets.len() + 1;
@@ -685,7 +736,14 @@ mod tests {
         assert!(pdf[start..].starts_with(b"xref\n"));
         let table = String::from_utf8_lossy(&pdf[start..]);
         let mut lines = table.lines().skip(1);
-        let count: usize = lines.next().unwrap().split(' ').nth(1).unwrap().parse().unwrap();
+        let count: usize = lines
+            .next()
+            .unwrap()
+            .split(' ')
+            .nth(1)
+            .unwrap()
+            .parse()
+            .unwrap();
         for (id, line) in lines.take(count).enumerate().skip(1) {
             assert_eq!(line.len(), 19, "{line:?}");
             let offset: usize = line[..10].parse().unwrap();
@@ -760,7 +818,9 @@ mod tests {
         assert!(stream.contains("1 0.8 0 rg\n10 10 m\n110 10 l\n110 60 l\n10 60 l\nh\nf\n"));
         assert!(stream.contains("0 0 0 RG 0.75 w [3 1.5] 0 d 0 J 0 j\n10 70 m\n110 70 l\nS\n"));
         // "Café (1)" in Windows Latin 1, wrapped for its opacity.
-        assert!(stream.contains("q /GS0 gs\nBT /F0 12 Tf 0 0 1 rg 1 0 0 -1 10 100 Tm <436166E920283129> Tj ET\nQ\n"));
+        assert!(stream.contains(
+            "q /GS0 gs\nBT /F0 12 Tf 0 0 1 rg 1 0 0 -1 10 100 Tm <436166E920283129> Tj ET\nQ\n"
+        ));
         assert!(stream.contains("q 20 0 0 -20 10 140 cm /Im0 Do Q\n"));
         assert!(stream.contains("q 20 0 0 -20 40 140 cm /Im0 Do Q\n"));
     }
@@ -769,6 +829,10 @@ mod tests {
     fn unicode_maps() {
         let glyphs = BTreeMap::from([(3u16, 'A'), (40, 'é'), (500, '😀')]);
         let map = to_unicode(&glyphs);
-        assert!(map.contains("3 beginbfchar\n<0003> <0041>\n<0028> <00E9>\n<01F4> <D83DDE00>\nendbfchar"));
+        assert!(
+            map.contains(
+                "3 beginbfchar\n<0003> <0041>\n<0028> <00E9>\n<01F4> <D83DDE00>\nendbfchar"
+            )
+        );
     }
 }

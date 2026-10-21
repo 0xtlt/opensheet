@@ -15,8 +15,18 @@ use opensheet_engine::ink::PenKind;
 /// The ribbon controls of the pens: a drop-down hangs from a control by
 /// its name, and names are fixed. The gallery holds that many pens.
 const PEN_IDS: [&str; 12] = [
-    "ink-pen-0", "ink-pen-1", "ink-pen-2", "ink-pen-3", "ink-pen-4", "ink-pen-5", "ink-pen-6", "ink-pen-7", "ink-pen-8",
-    "ink-pen-9", "ink-pen-10", "ink-pen-11",
+    "ink-pen-0",
+    "ink-pen-1",
+    "ink-pen-2",
+    "ink-pen-3",
+    "ink-pen-4",
+    "ink-pen-5",
+    "ink-pen-6",
+    "ink-pen-7",
+    "ink-pen-8",
+    "ink-pen-9",
+    "ink-pen-10",
+    "ink-pen-11",
 ];
 
 /// How many pens the gallery can hold.
@@ -70,8 +80,17 @@ fn pen_picture(pen: Pen) -> impl IntoElement {
         }
         // The line it draws, never thicker than the room under the pen.
         let width = (pen.width() * 0.8).clamp(1.0, 7.0);
-        let alpha = if pen.kind == PenKind::Highlighter { 0.6 } else { 1.0 };
-        s.line((3.0, 40.0), (s.width - 3.0, 40.0), width, ca(pen.color, alpha));
+        let alpha = if pen.kind == PenKind::Highlighter {
+            0.6
+        } else {
+            1.0
+        };
+        s.line(
+            (3.0, 40.0),
+            (s.width - 3.0, 40.0),
+            width,
+            ca(pen.color, alpha),
+        );
     })
 }
 
@@ -79,7 +98,9 @@ fn pen_picture(pen: Pen) -> impl IntoElement {
 /// in hand opens its menu.
 fn pen_button(app: &ExcelApp, index: usize, pen: Pen, cx: &mut Cx) -> AnyElement {
     let id = PEN_IDS[index];
-    let in_hand = app.ext::<InkUi>().is_some_and(|ui| ui.tool == Tool::Draw(index));
+    let in_hand = app
+        .ext::<InkUi>()
+        .is_some_and(|ui| ui.tool == Tool::Draw(index));
     div()
         .id(id)
         .relative()
@@ -95,7 +116,15 @@ fn pen_button(app: &ExcelApp, index: usize, pen: Pen, cx: &mut Cx) -> AnyElement
         .hover(|s| s.bg(c(theme::HOVER)))
         .active(|s| s.bg(c(theme::PRESSED)))
         .child(pen_picture(pen))
-        .child(icon("chevron-down", 8.0, if in_hand { theme::TEXT_MUTED } else { theme::PANEL_BG }))
+        .child(icon(
+            "chevron-down",
+            8.0,
+            if in_hand {
+                theme::TEXT_MUTED
+            } else {
+                theme::PANEL_BG
+            },
+        ))
         .child(app.anchor(id))
         .tooltip(tooltip(pen_tip(&pen)))
         .on_click(cx.listener(move |app, _, window, cx| pen_clicked(app, index, window, cx)))
@@ -103,7 +132,9 @@ fn pen_button(app: &ExcelApp, index: usize, pen: Pen, cx: &mut Cx) -> AnyElement
 }
 
 pub(super) fn pen_clicked(app: &mut ExcelApp, index: usize, window: &mut Window, cx: &mut Cx) {
-    let in_hand = app.ext::<InkUi>().is_some_and(|ui| ui.tool == Tool::Draw(index));
+    let in_hand = app
+        .ext::<InkUi>()
+        .is_some_and(|ui| ui.tool == Tool::Draw(index));
     if in_hand {
         open_pen_menu(app, index, window, cx);
     } else {
@@ -136,10 +167,22 @@ pub fn draw_tab(app: &ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
         )
         .into_any_element(),
         group(t("Pens", "Stylets"), row(gallery)).into_any_element(),
-        group(t("Convert", "Convertir"), row(vec![app.cmd_large("ink-to-shape", Cmd::InkToShape, false, cx)])).into_any_element(),
-        group(t("Replay", "Relire"), row(vec![app.cmd_large("ink-replay", Cmd::Replay, false, cx)]))
-            .border_r_0()
-            .into_any_element(),
+        group(
+            t("Convert", "Convertir"),
+            row(vec![app.cmd_large(
+                "ink-to-shape",
+                Cmd::InkToShape,
+                false,
+                cx,
+            )]),
+        )
+        .into_any_element(),
+        group(
+            t("Replay", "Relire"),
+            row(vec![app.cmd_large("ink-replay", Cmd::Replay, false, cx)]),
+        )
+        .border_r_0()
+        .into_any_element(),
     ]
 }
 
@@ -185,7 +228,10 @@ fn open_pen_menu(app: &mut ExcelApp, index: usize, window: &mut Window, cx: &mut
     let anchor = PEN_IDS[index];
     // A click on the pen while its menu is open (or just closed by the
     // press of this click) closes it.
-    let open = app.popup.as_ref().is_some_and(|popup| popup.anchor == Some(anchor));
+    let open = app
+        .popup
+        .as_ref()
+        .is_some_and(|popup| popup.anchor == Some(anchor));
     let just_closed = app.popup_dismissed.take() == Some(anchor);
     if open || just_closed {
         app.popup = None;
@@ -196,11 +242,20 @@ fn open_pen_menu(app: &mut ExcelApp, index: usize, window: &mut Window, cx: &mut
         .anchors
         .borrow()
         .get(anchor)
-        .map(|bounds| point(bounds.origin.x, bounds.origin.y + bounds.size.height + px(2.)))
+        .map(|bounds| {
+            point(
+                bounds.origin.x,
+                bounds.origin.y + bounds.size.height + px(2.),
+            )
+        })
         .unwrap_or_else(|| window.mouse_position());
     let weak = cx.weak_entity();
     let view: AnyView = cx.new(|_| PenMenu { app: weak, index }).into();
-    app.popup = Some(Popup::new(PopupKind::View(view), position, 0.0).anchored(anchor).max_height(600.0));
+    app.popup = Some(
+        Popup::new(PopupKind::View(view), position, 0.0)
+            .anchored(anchor)
+            .max_height(600.0),
+    );
     cx.notify();
 }
 
@@ -226,31 +281,44 @@ impl Render for PenMenu {
                 .pt(px(2.))
                 .child(text)
         };
-        let thicknesses = Pen::thicknesses(pen.kind).into_iter().enumerate().map(|(k, mm)| {
-            // A dot as wide as the line, within the button.
-            let shown = (mm * 96.0 / 25.4).clamp(1.5, 22.0);
-            div()
-                .id(("ink-thickness", k))
-                .size(px(30.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(4.))
-                .when((pen.mm - mm).abs() < 0.001, |d| d.bg(c(theme::TOGGLED)))
-                .hover(|s| s.bg(c(theme::HOVER)))
-                .child(div().size(px(shown)).rounded(px(shown / 2.0)).bg(c(pen.color)).when(pen.color == 0xFFFFFF, |d| {
-                    d.border_1().border_color(c(theme::BORDER_STRONG))
-                }))
-                .tooltip(tooltip(format!(
-                    "{} mm",
-                    widgets::number_text(mm as f64, crate::i18n::lang().locale().decimal_sep)
-                )))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    change_pen(index, |pen| pen.mm = mm);
-                    this.refresh(cx);
-                }))
-        });
-        let palette: &[u32] = if pen.kind == PenKind::Highlighter { &HIGHLIGHTER_COLORS } else { &PEN_COLORS };
+        let thicknesses = Pen::thicknesses(pen.kind)
+            .into_iter()
+            .enumerate()
+            .map(|(k, mm)| {
+                // A dot as wide as the line, within the button.
+                let shown = (mm * 96.0 / 25.4).clamp(1.5, 22.0);
+                div()
+                    .id(("ink-thickness", k))
+                    .size(px(30.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded(px(4.))
+                    .when((pen.mm - mm).abs() < 0.001, |d| d.bg(c(theme::TOGGLED)))
+                    .hover(|s| s.bg(c(theme::HOVER)))
+                    .child(
+                        div()
+                            .size(px(shown))
+                            .rounded(px(shown / 2.0))
+                            .bg(c(pen.color))
+                            .when(pen.color == 0xFFFFFF, |d| {
+                                d.border_1().border_color(c(theme::BORDER_STRONG))
+                            }),
+                    )
+                    .tooltip(tooltip(format!(
+                        "{} mm",
+                        widgets::number_text(mm as f64, crate::i18n::lang().locale().decimal_sep)
+                    )))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        change_pen(index, |pen| pen.mm = mm);
+                        this.refresh(cx);
+                    }))
+            });
+        let palette: &[u32] = if pen.kind == PenKind::Highlighter {
+            &HIGHLIGHTER_COLORS
+        } else {
+            &PEN_COLORS
+        };
         let swatches = palette.iter().copied().enumerate().map(|(k, color)| {
             div()
                 .id(("ink-color", k))
@@ -259,9 +327,18 @@ impl Render for PenMenu {
                 .items_center()
                 .justify_center()
                 .rounded(px(12.))
-                .when(pen.color == color, |d| d.border_2().border_color(c(theme::ACCENT)))
+                .when(pen.color == color, |d| {
+                    d.border_2().border_color(c(theme::ACCENT))
+                })
                 .hover(|s| s.bg(c(theme::HOVER)))
-                .child(div().size(px(16.)).rounded(px(8.)).bg(c(color)).border_1().border_color(c(theme::BORDER_STRONG)))
+                .child(
+                    div()
+                        .size(px(16.))
+                        .rounded(px(8.))
+                        .bg(c(color))
+                        .border_1()
+                        .border_color(c(theme::BORDER_STRONG)),
+                )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     change_pen(index, |pen| pen.color = color);
                     this.refresh(cx);
@@ -277,7 +354,13 @@ impl Render for PenMenu {
             .gap(px(4.))
             .text_size(px(12.5))
             .child(heading(t("Thickness", "Épaisseur")))
-            .child(div().flex().items_center().gap(px(4.)).children(thicknesses))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(4.))
+                    .children(thicknesses),
+            )
             .child(heading(t("Color", "Couleur")))
             .child(div().flex().flex_wrap().gap(px(1.)).children(swatches))
             .child(div().h(px(1.)).my(px(3.)).bg(c(theme::BORDER)))

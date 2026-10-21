@@ -61,8 +61,12 @@ impl Command for Cmd {
 /// The menu of the Share button: Excel's three ways to share.
 fn menu(app: &ExcelApp) -> Vec<MenuEntry> {
     let copies = vec![
-        MenuEntry::new(t("Workbook", "Classeur"), |app, window, cx| Cmd::SendWorkbook.run(app, window, cx)),
-        MenuEntry::new(t("PDF", "PDF"), |app, window, cx| Cmd::SendPdf.run(app, window, cx)),
+        MenuEntry::new(t("Workbook", "Classeur"), |app, window, cx| {
+            Cmd::SendWorkbook.run(app, window, cx)
+        }),
+        MenuEntry::new(t("PDF", "PDF"), |app, window, cx| {
+            Cmd::SendPdf.run(app, window, cx)
+        }),
     ];
     vec![
         MenuEntry::command(Cmd::InvitePeople, app),
@@ -114,9 +118,22 @@ pub(crate) enum Format {
 /// A name that can be a file name: the title of the workbook without what
 /// a path cannot hold.
 pub(crate) fn file_stem(title: &str) -> String {
-    let clean: String = title.chars().map(|ch| if matches!(ch, '/' | ':' | '\\' | '\0') { '-' } else { ch }).collect();
+    let clean: String = title
+        .chars()
+        .map(|ch| {
+            if matches!(ch, '/' | ':' | '\\' | '\0') {
+                '-'
+            } else {
+                ch
+            }
+        })
+        .collect();
     let clean = clean.trim().trim_start_matches('.').to_string();
-    if clean.is_empty() { "OpenSheet".to_string() } else { clean }
+    if clean.is_empty() {
+        "OpenSheet".to_string()
+    } else {
+        clean
+    }
 }
 
 /// Whether the file of the workbook can be sent as it is: it was saved as
@@ -160,7 +177,9 @@ fn prepare(app: &mut ExcelApp, format: Format, cx: &mut Cx) -> Result<PathBuf, S
             let path = dir.join(format!("{name}.xlsx"));
             std::fs::create_dir_all(&dir)
                 .map_err(|err| err.to_string())
-                .and_then(|_| opensheet_io::save_xlsx(&app.wb, &path).map_err(|err| err.to_string()))
+                .and_then(|_| {
+                    opensheet_io::save_xlsx(&app.wb, &path).map_err(|err| err.to_string())
+                })
                 .map_err(|err| failed(format!("{}\n{err}", path.display())))?;
             Ok(path)
         }
@@ -210,7 +229,10 @@ fn send(app: &mut ExcelApp, format: Format, window: &mut Window, cx: &mut Cx) {
         })
     });
     if let Err(message) = shared {
-        app.alert(Alert::new(t("Sharing Error", "Erreur de partage"), message).warning(), cx);
+        app.alert(
+            Alert::new(t("Sharing Error", "Erreur de partage"), message).warning(),
+            cx,
+        );
     }
 }
 
@@ -220,10 +242,18 @@ actions!(share, [InvitePeople, CopyLink, SendWorkbook, SendPdf]);
 
 /// Make the window answer the entries of File ▸ Share in the menu bar.
 pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Stateful<gpui::Div> {
-    root.on_action(cx.listener(|app, _: &InvitePeople, window, cx| app.run_command(Cmd::InvitePeople, window, cx)))
-        .on_action(cx.listener(|app, _: &CopyLink, window, cx| app.run_command(Cmd::CopyLink, window, cx)))
-        .on_action(cx.listener(|app, _: &SendWorkbook, window, cx| app.run_command(Cmd::SendWorkbook, window, cx)))
-        .on_action(cx.listener(|app, _: &SendPdf, window, cx| app.run_command(Cmd::SendPdf, window, cx)))
+    root.on_action(cx.listener(|app, _: &InvitePeople, window, cx| {
+        app.run_command(Cmd::InvitePeople, window, cx)
+    }))
+    .on_action(
+        cx.listener(|app, _: &CopyLink, window, cx| app.run_command(Cmd::CopyLink, window, cx)),
+    )
+    .on_action(cx.listener(|app, _: &SendWorkbook, window, cx| {
+        app.run_command(Cmd::SendWorkbook, window, cx)
+    }))
+    .on_action(
+        cx.listener(|app, _: &SendPdf, window, cx| app.run_command(Cmd::SendPdf, window, cx)),
+    )
 }
 
 /// File ▸ Share of the menu bar.

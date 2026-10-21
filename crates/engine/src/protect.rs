@@ -128,14 +128,14 @@ const SHA384_INIT: [u64; 8] = [
 ];
 
 const SHA256_K: [u32; 64] = [
-    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98,
-    0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786,
-    0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8,
-    0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-    0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819,
-    0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a,
-    0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
-    0xc67178f2,
+    0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+    0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+    0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+    0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+    0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+    0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+    0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+    0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
 ];
 
 const SHA256_INIT: [u32; 8] = [
@@ -166,7 +166,10 @@ fn sha512_core(data: &[u8], mut state: [u64; 8]) -> [u64; 8] {
         for i in 16..80 {
             let s0 = w[i - 15].rotate_right(1) ^ w[i - 15].rotate_right(8) ^ (w[i - 15] >> 7);
             let s1 = w[i - 2].rotate_right(19) ^ w[i - 2].rotate_right(61) ^ (w[i - 2] >> 6);
-            w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
         }
         let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
         for i in 0..80 {
@@ -213,7 +216,10 @@ fn sha256(data: &[u8]) -> Vec<u8> {
         for i in 16..64 {
             let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
             let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
-            w[i] = w[i - 16].wrapping_add(s0).wrapping_add(w[i - 7]).wrapping_add(s1);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
         }
         let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = state;
         for i in 0..64 {
@@ -305,7 +311,10 @@ fn base64_encode(data: &[u8]) -> String {
 fn base64_decode(text: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(text.len() / 4 * 3);
     let (mut bits, mut count) = (0u32, 0);
-    for byte in text.bytes().filter(|b| !b.is_ascii_whitespace() && *b != b'=') {
+    for byte in text
+        .bytes()
+        .filter(|b| !b.is_ascii_whitespace() && *b != b'=')
+    {
         bits = (bits << 6) | BASE64.iter().position(|c| *c == byte)? as u32;
         count += 1;
         if count == 4 {
@@ -327,12 +336,16 @@ fn base64_decode(text: &str) -> Option<Vec<u8>> {
 /// bytes.
 fn ansi_byte(c: char) -> u8 {
     const HIGH: [char; 32] = [
-        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8d}', 'Ž', '\u{8f}', '\u{90}', '‘',
-        '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9d}', 'ž', 'Ÿ',
+        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8d}', 'Ž',
+        '\u{8f}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9d}',
+        'ž', 'Ÿ',
     ];
     match c as u32 {
         code @ (0..=0x7f | 0xa0..=0xff) => code as u8,
-        _ => HIGH.iter().position(|h| *h == c).map_or(b'?', |i| 0x80 + i as u8),
+        _ => HIGH
+            .iter()
+            .position(|h| *h == c)
+            .map_or(b'?', |i| 0x80 + i as u8),
     }
 }
 
@@ -340,7 +353,10 @@ fn ansi_byte(c: char) -> u8 {
 fn legacy_hash(password: &str) -> u16 {
     let bytes: Vec<u8> = password.chars().map(ansi_byte).collect();
     let rotate = |hash: u16| ((hash >> 14) & 1) | ((hash << 1) & 0x7fff);
-    let hash = bytes.iter().rev().fold(0u16, |hash, byte| rotate(hash) ^ *byte as u16);
+    let hash = bytes
+        .iter()
+        .rev()
+        .fold(0u16, |hash, byte| rotate(hash) ^ *byte as u16);
     rotate(hash) ^ bytes.len() as u16 ^ 0xce4b
 }
 
@@ -426,7 +442,8 @@ impl PasswordHash {
                 spin_count,
             } => {
                 let expected = base64_decode(hash);
-                let found = base64_decode(salt).and_then(|salt| spun_hash(algorithm, password, &salt, *spin_count));
+                let found = base64_decode(salt)
+                    .and_then(|salt| spun_hash(algorithm, password, &salt, *spin_count));
                 expected.is_some() && expected == found
             }
         }
@@ -633,7 +650,10 @@ pub struct SheetProtection {
 /// nothing else.
 impl Default for SheetProtection {
     fn default() -> SheetProtection {
-        SheetProtection::allowing(&[Permission::SelectLockedCells, Permission::SelectUnlockedCells])
+        SheetProtection::allowing(&[
+            Permission::SelectLockedCells,
+            Permission::SelectUnlockedCells,
+        ])
     }
 }
 
@@ -652,8 +672,8 @@ impl SheetProtection {
     pub fn from_attributes(mut forbids: impl FnMut(&str) -> Option<bool>) -> SheetProtection {
         let mut protection = SheetProtection::allowing(&[]);
         for permission in Permission::ALL {
-            let allowed =
-                forbids(permission.ooxml_name()).map_or(permission.allowed_when_absent(), |forbidden| !forbidden);
+            let allowed = forbids(permission.ooxml_name())
+                .map_or(permission.allowed_when_absent(), |forbidden| !forbidden);
             protection.set(permission, allowed);
         }
         protection
@@ -815,9 +835,16 @@ impl Workbook {
             return true;
         }
         let mut rest = vec![rect];
-        for range in sheet.protected_ranges.iter().filter(|range| self.range_open(range)) {
+        for range in sheet
+            .protected_ranges
+            .iter()
+            .filter(|range| self.range_open(range))
+        {
             for open in &range.ranges {
-                rest = rest.into_iter().flat_map(|piece| subtract(piece, *open)).collect();
+                rest = rest
+                    .into_iter()
+                    .flat_map(|piece| subtract(piece, *open))
+                    .collect();
             }
         }
         rest.len() < 64 && rest.iter().all(|piece| self.all_unlocked(sheet, *piece))
@@ -832,16 +859,33 @@ impl Workbook {
         if rects.iter().all(|rect| self.editable(sh, *rect)) {
             return None;
         }
-        sh.protected_ranges
-            .iter()
-            .position(|range| !self.range_open(range) && range.ranges.iter().any(|open| rects.iter().any(|rect| open.intersects(rect))))
+        sh.protected_ranges.iter().position(|range| {
+            !self.range_open(range)
+                && range
+                    .ranges
+                    .iter()
+                    .any(|open| rects.iter().any(|rect| open.intersects(rect)))
+        })
     }
 
     /// Give the password of a range: it stays open until the workbook is
     /// closed. Not an undo step.
-    pub fn unlock_range(&mut self, sheet: usize, index: usize, password: &str) -> Result<(), PasswordError> {
-        let range = self.sheets.get(sheet).and_then(|sh| sh.protected_ranges.get(index)).ok_or(PasswordError::Wrong)?;
-        if range.password.as_ref().is_some_and(|hash| !hash.verify(password)) {
+    pub fn unlock_range(
+        &mut self,
+        sheet: usize,
+        index: usize,
+        password: &str,
+    ) -> Result<(), PasswordError> {
+        let range = self
+            .sheets
+            .get(sheet)
+            .and_then(|sh| sh.protected_ranges.get(index))
+            .ok_or(PasswordError::Wrong)?;
+        if range
+            .password
+            .as_ref()
+            .is_some_and(|hash| !hash.verify(password))
+        {
             return Err(PasswordError::Wrong);
         }
         if !self.unlocked_ranges.contains(&range.id) {
@@ -852,14 +896,36 @@ impl Workbook {
 
     /// A title no range of `sheet` has yet: "Range1", "Range2"…
     pub fn protected_range_title(&self, sheet: usize, base: &str) -> String {
-        let taken = |title: &str| self.sheets.get(sheet).is_some_and(|sh| sh.protected_ranges.iter().any(|range| range.name.eq_ignore_ascii_case(title)));
-        (1..).map(|n| format!("{base}{n}")).find(|title| !taken(title)).unwrap_or_default()
+        let taken = |title: &str| {
+            self.sheets.get(sheet).is_some_and(|sh| {
+                sh.protected_ranges
+                    .iter()
+                    .any(|range| range.name.eq_ignore_ascii_case(title))
+            })
+        };
+        (1..)
+            .map(|n| format!("{base}{n}"))
+            .find(|title| !taken(title))
+            .unwrap_or_default()
     }
 
-    fn check_protected_range(&self, sheet: usize, range: &ProtectedRange, except: Option<usize>) -> Result<(), RangeError> {
+    fn check_protected_range(
+        &self,
+        sheet: usize,
+        range: &ProtectedRange,
+        except: Option<usize>,
+    ) -> Result<(), RangeError> {
         // What Excel accepts as a title: letters, digits and underscores,
         // not starting with a digit.
-        let valid = range.name.chars().next().is_some_and(|ch| ch.is_alphabetic() || ch == '_') && range.name.chars().all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '.');
+        let valid = range
+            .name
+            .chars()
+            .next()
+            .is_some_and(|ch| ch.is_alphabetic() || ch == '_')
+            && range
+                .name
+                .chars()
+                .all(|ch| ch.is_alphanumeric() || ch == '_' || ch == '.');
         if !valid {
             return Err(RangeError::BadTitle);
         }
@@ -867,13 +933,27 @@ impl Workbook {
             return Err(RangeError::NoCells);
         }
         let key = range.name.to_lowercase();
-        let taken = self.sheets.get(sheet).is_some_and(|sh| sh.protected_ranges.iter().enumerate().any(|(index, other)| Some(index) != except && other.name.to_lowercase() == key));
-        if taken { Err(RangeError::TitleTaken) } else { Ok(()) }
+        let taken = self.sheets.get(sheet).is_some_and(|sh| {
+            sh.protected_ranges
+                .iter()
+                .enumerate()
+                .any(|(index, other)| Some(index) != except && other.name.to_lowercase() == key)
+        });
+        if taken {
+            Err(RangeError::TitleTaken)
+        } else {
+            Ok(())
+        }
     }
 
     /// Whether `range` could be added to `sheet`, or replace the one at
     /// `except`.
-    pub fn protected_range_valid(&self, sheet: usize, range: &ProtectedRange, except: Option<usize>) -> Result<(), RangeError> {
+    pub fn protected_range_valid(
+        &self,
+        sheet: usize,
+        range: &ProtectedRange,
+        except: Option<usize>,
+    ) -> Result<(), RangeError> {
         self.check_protected_range(sheet, range, except)
     }
 
@@ -1019,7 +1099,13 @@ impl Denied {
                 let what = if rows {
                     ["a row", "une ligne", "una fila", "eine Zeile", "una riga"]
                 } else {
-                    ["a column", "une colonne", "una columna", "eine Spalte", "una colonna"]
+                    [
+                        "a column",
+                        "une colonne",
+                        "una columna",
+                        "eine Spalte",
+                        "una colonna",
+                    ]
                 };
                 text([
                     "You are trying to delete | that contains a locked cell. Locked cells cannot be deleted while the worksheet is protected.\n\nTo delete a locked cell, first remove protection using the Unprotect Sheet command (Review tab, Protect group). You may be prompted for a password.",
@@ -1091,7 +1177,10 @@ impl Workbook {
         let default_fits = fits(StyleId::default());
         plain_rows == 0
             || (rect.c0..=rect.c1).all(|col| {
-                sheet.col_styles.get(&col).map_or(default_fits, |id| fits(*id))
+                sheet
+                    .col_styles
+                    .get(&col)
+                    .map_or(default_fits, |id| fits(*id))
                     || plain.get(&col).copied().unwrap_or(0) == plain_rows
             })
     }
@@ -1151,9 +1240,13 @@ impl Workbook {
         match *action {
             Action::EditCells { ranges, .. } => when(unlocked(ranges), Denied::Sheet),
             Action::FormatCells { .. } => when(protection.allows(P::FormatCells), Denied::Sheet),
-            Action::FormatColumns { .. } => when(protection.allows(P::FormatColumns), Denied::Sheet),
+            Action::FormatColumns { .. } => {
+                when(protection.allows(P::FormatColumns), Denied::Sheet)
+            }
             Action::FormatRows { .. } => when(protection.allows(P::FormatRows), Denied::Sheet),
-            Action::InsertColumns { .. } => when(protection.allows(P::InsertColumns), Denied::Sheet),
+            Action::InsertColumns { .. } => {
+                when(protection.allows(P::InsertColumns), Denied::Sheet)
+            }
             Action::InsertRows { .. } => when(protection.allows(P::InsertRows), Denied::Sheet),
             // Hyperlinks go into cells: the cells must be unlocked too.
             Action::InsertHyperlink { ranges, .. } => when(
@@ -1172,13 +1265,20 @@ impl Workbook {
                 let rows = Rect::new(first, 0, last, MAX_COLS - 1);
                 when(unlocked(&[rows]), Denied::LockedCells { rows: true })
             }
-            Action::Sort { range, .. } => when(protection.allows(P::Sort) && unlocked(&[range]), Denied::Sheet),
+            Action::Sort { range, .. } => when(
+                protection.allows(P::Sort) && unlocked(&[range]),
+                Denied::Sheet,
+            ),
             Action::UseAutoFilter { .. } => when(protection.allows(P::AutoFilter), Denied::Filter),
             Action::ToggleAutoFilter { .. } => Err(Denied::Filter),
             Action::UsePivotTable { .. } => when(protection.allows(P::PivotTables), Denied::Sheet),
-            Action::EditObject { locked, .. } => when(protection.allows(P::EditObjects) || !locked, Denied::Sheet),
+            Action::EditObject { locked, .. } => {
+                when(protection.allows(P::EditObjects) || !locked, Denied::Sheet)
+            }
             Action::EditComment { .. } => when(protection.allows(P::EditObjects), Denied::Comment),
-            Action::EditScenarios { .. } => when(protection.allows(P::EditScenarios), Denied::Sheet),
+            Action::EditScenarios { .. } => {
+                when(protection.allows(P::EditScenarios), Denied::Sheet)
+            }
             Action::ChangeTable { .. } => Err(Denied::Table),
             _ => Err(Denied::Sheet),
         }
@@ -1227,10 +1327,16 @@ impl Workbook {
             sheet.cells.range((row, 0)..=(row, from))
         };
         let pick = |mut cols: Box<dyn DoubleEndedIterator<Item = u32> + '_>| {
-            if forward { cols.next() } else { cols.next_back() }
+            if forward {
+                cols.next()
+            } else {
+                cols.next_back()
+            }
         };
         let typed_open = pick(Box::new(
-            typed.filter(|(_, cell)| open(cell.style)).map(|((_, col), _)| *col),
+            typed
+                .filter(|(_, cell)| open(cell.style))
+                .map(|((_, col), _)| *col),
         ));
         match sheet.row_styles.get(&row) {
             // An unlocked row: the first cell that is not locked by itself.
@@ -1265,7 +1371,12 @@ impl Workbook {
     /// The unlocked cell that follows `from` in reading order (or comes
     /// before it), going round the sheet: where Tab and Shift+Tab lead on
     /// a protected sheet. `None` when no other cell is unlocked.
-    pub fn next_unlocked_cell(&self, sheet: usize, from: (u32, u32), forward: bool) -> Option<(u32, u32)> {
+    pub fn next_unlocked_cell(
+        &self,
+        sheet: usize,
+        from: (u32, u32),
+        forward: bool,
+    ) -> Option<(u32, u32)> {
         let sh = self.sheets.get(sheet)?;
         let (row, col) = from;
         let rest = if forward {
@@ -1278,7 +1389,10 @@ impl Workbook {
         }
         // With an unlocked column every row may hold an unlocked cell;
         // otherwise only rows with cells or a format of their own do.
-        let any_column = sh.col_styles.values().any(|id| !self.styles.get(*id).locked);
+        let any_column = sh
+            .col_styles
+            .values()
+            .any(|id| !self.styles.get(*id).locked);
         let following = |after: Option<u32>| -> Option<u32> {
             if forward {
                 let start = after.map_or(0, |row| row + 1);
@@ -1288,7 +1402,11 @@ impl Workbook {
                 if any_column {
                     return Some(start);
                 }
-                let typed = sh.cells.range((start, 0)..).next().map(|((row, _), _)| *row);
+                let typed = sh
+                    .cells
+                    .range((start, 0)..)
+                    .next()
+                    .map(|((row, _), _)| *row);
                 let styled = sh.row_styles.range(start..).next().map(|(row, _)| *row);
                 typed.into_iter().chain(styled).min()
             } else {
@@ -1300,7 +1418,11 @@ impl Workbook {
                 if any_column {
                     return Some(end);
                 }
-                let typed = sh.cells.range(..=(end, u32::MAX)).next_back().map(|((row, _), _)| *row);
+                let typed = sh
+                    .cells
+                    .range(..=(end, u32::MAX))
+                    .next_back()
+                    .map(|((row, _), _)| *row);
                 let styled = sh.row_styles.range(..=end).next_back().map(|(row, _)| *row);
                 typed.into_iter().chain(styled).max()
             }
@@ -1349,7 +1471,9 @@ impl Workbook {
     }
 
     pub fn is_sheet_protected(&self, sheet: usize) -> bool {
-        self.sheets.get(sheet).is_some_and(|sh| sh.protection.is_some())
+        self.sheets
+            .get(sheet)
+            .is_some_and(|sh| sh.protection.is_some())
     }
 
     /// Whether unprotecting the sheet takes a password.
@@ -1363,7 +1487,12 @@ impl Workbook {
     /// Protect a sheet with the given permissions; an empty password
     /// means none (the one in `protection` is replaced either way).
     /// Like Excel, this cannot be undone and empties the undo history.
-    pub fn protect_sheet(&mut self, sheet: usize, mut protection: SheetProtection, password: &str) -> bool {
+    pub fn protect_sheet(
+        &mut self,
+        sheet: usize,
+        mut protection: SheetProtection,
+        password: &str,
+    ) -> bool {
         if sheet >= self.sheets.len() {
             return false;
         }
@@ -1378,7 +1507,11 @@ impl Workbook {
         let Some(protection) = self.sheets.get(sheet).and_then(|sh| sh.protection.as_ref()) else {
             return Ok(());
         };
-        if protection.password.as_ref().is_some_and(|hash| !hash.verify(password)) {
+        if protection
+            .password
+            .as_ref()
+            .is_some_and(|hash| !hash.verify(password))
+        {
             return Err(PasswordError::Wrong);
         }
         self.sheets[sheet].protection = None;
@@ -1393,7 +1526,11 @@ impl Workbook {
     /// `protect_sheet` and `unprotect_sheet` forget it at once. The
     /// password of `protection` is kept as it is given, and no password
     /// is asked to remove one: the caller has checked it.
-    pub fn set_sheet_protection(&mut self, sheet: usize, protection: Option<SheetProtection>) -> bool {
+    pub fn set_sheet_protection(
+        &mut self,
+        sheet: usize,
+        protection: Option<SheetProtection>,
+    ) -> bool {
         if sheet >= self.sheets.len() {
             return false;
         }
@@ -1500,8 +1637,14 @@ mod tests {
     fn digests() {
         let long = vec![b'a'; 200];
         assert_eq!(hex(&sha1(b"")), "da39a3ee5e6b4b0d3255bfef95601890afd80709");
-        assert_eq!(hex(&sha1(b"abc")), "a9993e364706816aba3e25717850c26c9cd0d89d");
-        assert_eq!(hex(&sha1(&long)), "e61cfffe0d9195a525fc6cf06ca2d77119c24a40");
+        assert_eq!(
+            hex(&sha1(b"abc")),
+            "a9993e364706816aba3e25717850c26c9cd0d89d"
+        );
+        assert_eq!(
+            hex(&sha1(&long)),
+            "e61cfffe0d9195a525fc6cf06ca2d77119c24a40"
+        );
         assert_eq!(
             hex(&sha256(b"")),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -1597,7 +1740,9 @@ mod tests {
             )
             .verify("Sésame 1")
         );
-        assert!(stored("SHA-256", "xns+C6nFWjrxFfu9RjvjRa32OWN8xwcNAW8jmqlel1A=").verify("Sésame 1"));
+        assert!(
+            stored("SHA-256", "xns+C6nFWjrxFfu9RjvjRa32OWN8xwcNAW8jmqlel1A=").verify("Sésame 1")
+        );
         assert!(stored("SHA-1", "tMk2uy8ay0kixpP6kGG3Og2BVx4=").verify("Sésame 1"));
         assert!(!stored("MD5", "tMk2uy8ay0kixpP6kGG3Og2BVx4=").verify("Sésame 1"));
         assert!(!stored("SHA-512", "not base64 !").verify("Sésame 1"));
@@ -1613,14 +1758,22 @@ mod tests {
         let (a, b) = (PasswordHash::new("abc"), PasswordHash::new("abc"));
         assert_ne!(a, b);
         assert!(a.verify("abc") && b.verify("abc") && !a.verify("abd"));
-        assert!(matches!(a, PasswordHash::Salted { ref algorithm, spin_count: 100_000, .. } if algorithm == "SHA-512"));
+        assert!(
+            matches!(a, PasswordHash::Salted { ref algorithm, spin_count: 100_000, .. } if algorithm == "SHA-512")
+        );
     }
 
     #[test]
     fn permissions() {
         let mut p = SheetProtection::default();
-        assert!(p.allows(Permission::SelectLockedCells) && p.allows(Permission::SelectUnlockedCells));
-        assert!(Permission::ALL[2..].iter().all(|permission| !p.allows(*permission)));
+        assert!(
+            p.allows(Permission::SelectLockedCells) && p.allows(Permission::SelectUnlockedCells)
+        );
+        assert!(
+            Permission::ALL[2..]
+                .iter()
+                .all(|permission| !p.allows(*permission))
+        );
         p.set(Permission::Sort, true);
         p.set(Permission::SelectLockedCells, false);
         assert!(p.allows(Permission::Sort) && !p.allows(Permission::SelectLockedCells));
@@ -1631,7 +1784,13 @@ mod tests {
         let names: Vec<&str> = Permission::ALL.iter().map(|p| p.ooxml_name()).collect();
         assert_eq!(names[0], "selectLockedCells");
         assert_eq!(names[13..], ["objects", "scenarios"]);
-        assert_eq!(Permission::ALL.iter().filter(|p| p.allowed_when_absent()).count(), 4);
+        assert_eq!(
+            Permission::ALL
+                .iter()
+                .filter(|p| p.allowed_when_absent())
+                .count(),
+            4
+        );
         assert_eq!(
             Permission::AutoFilter.label(Locale::fr()),
             "Utiliser le filtre automatique"
@@ -1646,14 +1805,25 @@ mod tests {
             read,
             SheetProtection::allowing(&[Permission::SelectUnlockedCells, Permission::FormatCells])
         );
-        let written: Vec<(&str, bool)> = read.attributes().filter(|(_, forbidden)| !forbidden).collect();
-        assert_eq!(written, [("selectUnlockedCells", false), ("formatCells", false)]);
+        let written: Vec<(&str, bool)> = read
+            .attributes()
+            .filter(|(_, forbidden)| !forbidden)
+            .collect();
         assert_eq!(
-            SheetProtection::from_attributes(|name| read.attributes().find(|a| a.0 == name).map(|a| a.1)),
+            written,
+            [("selectUnlockedCells", false), ("formatCells", false)]
+        );
+        assert_eq!(
+            SheetProtection::from_attributes(|name| read
+                .attributes()
+                .find(|a| a.0 == name)
+                .map(|a| a.1)),
             read
         );
         // What Excel's dialog proposes is what a file says by naming nothing but objects and scenarios.
-        let excel = SheetProtection::from_attributes(|name| matches!(name, "objects" | "scenarios").then_some(true));
+        let excel = SheetProtection::from_attributes(|name| {
+            matches!(name, "objects" | "scenarios").then_some(true)
+        });
         assert_eq!(excel, SheetProtection::default());
     }
 
@@ -1758,12 +1928,20 @@ mod tests {
         w.protect_sheet(0, SheetProtection::default(), "");
         assert!(w.can_select_range(0, rect("A1:Z9")) && w.can_select_range(0, rect("A:XFD")));
         // Unlocked cells only.
-        w.protect_sheet(0, SheetProtection::allowing(&[Permission::SelectUnlockedCells]), "");
+        w.protect_sheet(
+            0,
+            SheetProtection::allowing(&[Permission::SelectUnlockedCells]),
+            "",
+        );
         assert!(w.can_select_range(0, rect("B2:C3")) && w.can_select_range(0, rect("E:E")));
         assert!(!w.can_select_range(0, rect("B2:C4")) && !w.can_select_range(0, rect("A1")));
         assert!(!w.can_select_range(0, rect("D:E")) && !w.can_select_range(0, rect("2:2")));
         // Locked cells only, as a file may ask.
-        w.protect_sheet(0, SheetProtection::allowing(&[Permission::SelectLockedCells]), "");
+        w.protect_sheet(
+            0,
+            SheetProtection::allowing(&[Permission::SelectLockedCells]),
+            "",
+        );
         assert!(w.can_select_range(0, rect("A1:A9")) && w.can_select_range(0, rect("F:XFD")));
         assert!(!w.can_select_range(0, rect("A1:B2")) && !w.can_select_range(0, rect("E7")));
         assert!(!w.can_select_range(0, rect("1:1")));
@@ -1859,23 +2037,44 @@ mod tests {
         };
         let by_permission = [
             (Permission::FormatCells, Action::FormatCells { sheet: 0 }),
-            (Permission::FormatColumns, Action::FormatColumns { sheet: 0 }),
+            (
+                Permission::FormatColumns,
+                Action::FormatColumns { sheet: 0 },
+            ),
             (Permission::FormatRows, Action::FormatRows { sheet: 0 }),
-            (Permission::InsertColumns, Action::InsertColumns { sheet: 0 }),
+            (
+                Permission::InsertColumns,
+                Action::InsertColumns { sheet: 0 },
+            ),
             (Permission::InsertRows, Action::InsertRows { sheet: 0 }),
             (Permission::InsertHyperlinks, link_open),
             (Permission::DeleteColumns, columns),
             (Permission::Sort, sort_open),
             (Permission::PivotTables, Action::UsePivotTable { sheet: 0 }),
-            (Permission::EditObjects, Action::EditObject { sheet: 0, locked: true }),
-            (Permission::EditScenarios, Action::EditScenarios { sheet: 0 }),
+            (
+                Permission::EditObjects,
+                Action::EditObject {
+                    sheet: 0,
+                    locked: true,
+                },
+            ),
+            (
+                Permission::EditScenarios,
+                Action::EditScenarios { sheet: 0 },
+            ),
         ];
         w.protect_sheet(0, SheetProtection::default(), "");
         for (_, action) in &by_permission {
             assert_eq!(w.permits(action), Err(Denied::Sheet), "{action:?}");
         }
-        assert_eq!(w.permits(&Action::UseAutoFilter { sheet: 0 }), Err(Denied::Filter));
-        assert_eq!(w.permits(&Action::EditComment { sheet: 0 }), Err(Denied::Comment));
+        assert_eq!(
+            w.permits(&Action::UseAutoFilter { sheet: 0 }),
+            Err(Denied::Filter)
+        );
+        assert_eq!(
+            w.permits(&Action::EditComment { sheet: 0 }),
+            Err(Denied::Comment)
+        );
         assert_eq!(w.permits(&rows), Err(Denied::Sheet));
         // An object that was unlocked beforehand stays editable.
         assert_eq!(
@@ -1913,9 +2112,18 @@ mod tests {
         assert_eq!(w.permits(&Action::UseAutoFilter { sheet: 0 }), Ok(()));
         assert_eq!(w.permits(&Action::EditComment { sheet: 0 }), Ok(()));
         // Never allowed on a protected sheet.
-        assert_eq!(w.permits(&Action::ToggleAutoFilter { sheet: 0 }), Err(Denied::Filter));
-        assert_eq!(w.permits(&Action::ChangeTable { sheet: 0 }), Err(Denied::Table));
-        assert_eq!(w.permits(&Action::ChangeSheet { sheet: 0 }), Err(Denied::Sheet));
+        assert_eq!(
+            w.permits(&Action::ToggleAutoFilter { sheet: 0 }),
+            Err(Denied::Filter)
+        );
+        assert_eq!(
+            w.permits(&Action::ChangeTable { sheet: 0 }),
+            Err(Denied::Table)
+        );
+        assert_eq!(
+            w.permits(&Action::ChangeSheet { sheet: 0 }),
+            Err(Denied::Sheet)
+        );
         // The sheet itself is the workbook's business.
         assert_eq!(w.permits(&Action::DeleteSheet), Ok(()));
         assert_eq!(w.permits(&Action::RenameSheet), Ok(()));
@@ -1927,8 +2135,16 @@ mod tests {
         assert!(w.can_select_cell(0, 0, 0));
         w.protect_sheet(0, SheetProtection::default(), "");
         assert!(w.can_select_cell(0, 0, 0) && w.can_select_cell(0, 1, 1));
-        w.protect_sheet(0, SheetProtection::allowing(&[Permission::SelectUnlockedCells]), "");
-        assert!(!w.can_select_cell(0, 0, 0) && w.can_select_cell(0, 1, 1) && w.can_select_cell(0, 50, 4));
+        w.protect_sheet(
+            0,
+            SheetProtection::allowing(&[Permission::SelectUnlockedCells]),
+            "",
+        );
+        assert!(
+            !w.can_select_cell(0, 0, 0)
+                && w.can_select_cell(0, 1, 1)
+                && w.can_select_cell(0, 50, 4)
+        );
         w.protect_sheet(0, SheetProtection::allowing(&[]), "");
         assert!(!w.can_select_cell(0, 0, 0) && !w.can_select_cell(0, 1, 1));
     }
@@ -2087,7 +2303,9 @@ mod tests {
         w.commit("typed");
         assert!(w.undo() && w.sheets[0].protection.is_some() && !w.can_undo());
         // Setting what is already there is no change.
-        assert!(w.set_sheet_protection(0, Some(SheetProtection::default())) && !w.commit("nothing"));
+        assert!(
+            w.set_sheet_protection(0, Some(SheetProtection::default())) && !w.commit("nothing")
+        );
         assert!(w.can_redo() && !w.set_sheet_protection(9, None));
         // A copy that was unprotected tells the workbook that takes it over.
         let mut copy = w.fork();
@@ -2103,18 +2321,50 @@ mod tests {
     fn ranges_that_may_be_edited() {
         let mut w = wb(&[("A1", "1"), ("B2", "2"), ("D4", "4")]);
         let free = ProtectedRange::new("Free", vec![rect("A1:B2")], None);
-        let secret = ProtectedRange::new("Secret", vec![rect("D4:E5"), rect("G1")], Some(PasswordHash::salted("pw", b"0123456789abcdef", 1000)));
+        let secret = ProtectedRange::new(
+            "Secret",
+            vec![rect("D4:E5"), rect("G1")],
+            Some(PasswordHash::salted("pw", b"0123456789abcdef", 1000)),
+        );
         assert_eq!(w.protected_range_valid(0, &free, None), Ok(()));
         w.set_protected_ranges(0, vec![free.clone(), secret.clone()]);
         w.commit("Allow Edit Ranges");
-        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("free", vec![rect("A1")], None), None), Err(RangeError::TitleTaken));
-        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("free", vec![rect("A1")], None), Some(0)), Ok(()));
-        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("1st", vec![rect("A1")], None), None), Err(RangeError::BadTitle));
-        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("", vec![rect("A1")], None), None), Err(RangeError::BadTitle));
-        assert_eq!(w.protected_range_valid(0, &ProtectedRange::new("Empty", Vec::new(), None), None), Err(RangeError::NoCells));
+        assert_eq!(
+            w.protected_range_valid(
+                0,
+                &ProtectedRange::new("free", vec![rect("A1")], None),
+                None
+            ),
+            Err(RangeError::TitleTaken)
+        );
+        assert_eq!(
+            w.protected_range_valid(
+                0,
+                &ProtectedRange::new("free", vec![rect("A1")], None),
+                Some(0)
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            w.protected_range_valid(0, &ProtectedRange::new("1st", vec![rect("A1")], None), None),
+            Err(RangeError::BadTitle)
+        );
+        assert_eq!(
+            w.protected_range_valid(0, &ProtectedRange::new("", vec![rect("A1")], None), None),
+            Err(RangeError::BadTitle)
+        );
+        assert_eq!(
+            w.protected_range_valid(0, &ProtectedRange::new("Empty", Vec::new(), None), None),
+            Err(RangeError::NoCells)
+        );
         assert_eq!(w.protected_range_title(0, "Range"), "Range1");
 
-        let edit = |w: &Workbook, range: &str| w.permits(&Action::EditCells { sheet: 0, ranges: &[rect(range)] });
+        let edit = |w: &Workbook, range: &str| {
+            w.permits(&Action::EditCells {
+                sheet: 0,
+                ranges: &[rect(range)],
+            })
+        };
         // Nothing changes while the sheet is not protected.
         assert_eq!(edit(&w, "C3"), Ok(()));
         assert_eq!(w.range_awaiting_password(0, &[rect("D4")]), None);
@@ -2151,19 +2401,35 @@ mod tests {
     #[test]
     fn ranges_follow_rows_and_columns() {
         let mut w = wb(&[("A1", "1")]);
-        w.set_protected_ranges(0, vec![ProtectedRange::new("Mid", vec![rect("B2:C3")], None), ProtectedRange::new("Top", vec![rect("A1:B1"), rect("E5")], None)]);
+        w.set_protected_ranges(
+            0,
+            vec![
+                ProtectedRange::new("Mid", vec![rect("B2:C3")], None),
+                ProtectedRange::new("Top", vec![rect("A1:B1"), rect("E5")], None),
+            ],
+        );
         w.commit("Allow Edit Ranges");
         // A row inserted inside a range makes it taller.
         w.insert_rows(0, 2, 1);
         w.commit("Insert");
         assert_eq!(w.sheets[0].protected_ranges[0].ranges, [rect("B2:C4")]);
-        assert_eq!(w.sheets[0].protected_ranges[1].ranges, [rect("A1:B1"), rect("E6")]);
+        assert_eq!(
+            w.sheets[0].protected_ranges[1].ranges,
+            [rect("A1:B1"), rect("E6")]
+        );
         // Deleting all the cells of a range forgets it; a range keeps the
         // cells it has left.
         w.delete_rows(0, 0, 1);
         w.commit("Delete");
-        let left: Vec<(&str, &[Rect])> = w.sheets[0].protected_ranges.iter().map(|range| (range.name.as_str(), range.ranges.as_slice())).collect();
-        assert_eq!(left, [("Mid", &[rect("B1:C3")][..]), ("Top", &[rect("E5")][..])]);
+        let left: Vec<(&str, &[Rect])> = w.sheets[0]
+            .protected_ranges
+            .iter()
+            .map(|range| (range.name.as_str(), range.ranges.as_slice()))
+            .collect();
+        assert_eq!(
+            left,
+            [("Mid", &[rect("B1:C3")][..]), ("Top", &[rect("E5")][..])]
+        );
         w.delete_cols(0, 1, 2);
         w.commit("Delete");
         assert_eq!(w.sheets[0].protected_ranges.len(), 1);

@@ -19,7 +19,7 @@
 
 use super::geometry::{Placed, Polyline};
 use super::paint::{self, Brush};
-use super::{Cmd, DrawingUi, Drawings, EQUATION_TAB, begin_text_edit, selected, tabs, TextStart};
+use super::{Cmd, DrawingUi, Drawings, EQUATION_TAB, TextStart, begin_text_edit, selected, tabs};
 use crate::app::ExcelApp;
 use crate::features::{Command, Cx, Intent, object_id};
 use crate::grid::{Draw, FontResolver, Layer, pt_to_px};
@@ -28,8 +28,8 @@ use crate::ribbon::{group, row, rows};
 use crate::theme::{self, c, engine_color};
 use crate::view::tooltip;
 use gpui::{
-    AnyElement, Bounds, Context, EntityInputHandler, Font, FontStyle, FontWeight, Hsla, Pixels, SharedString, TextRun, TextSystem,
-    WeakEntity, Window, canvas, div, point, prelude::*, px,
+    AnyElement, Bounds, Context, EntityInputHandler, Font, FontStyle, FontWeight, Hsla, Pixels,
+    SharedString, TextRun, TextSystem, WeakEntity, Window, canvas, div, point, prelude::*, px,
 };
 use opensheet_engine::drawing::{Drawing, Shape, ShapeTool, TEXT_MARGIN, TextAlign, TextAnchor};
 use opensheet_engine::math::{APPLY, BUILT_IN, Equation, Math, Row, SYMBOLS, Structure, tokens};
@@ -40,9 +40,20 @@ use opensheet_engine::math::{APPLY, BUILT_IN, Equation, Math, Row, SYMBOLS, Stru
 /// baseline of the box, y growing downwards.
 #[derive(Clone, Debug, PartialEq)]
 pub(super) enum Ink {
-    Glyphs { text: String, size: f32, italic: bool, x: f32, y: f32 },
+    Glyphs {
+        text: String,
+        size: f32,
+        italic: bool,
+        x: f32,
+        y: f32,
+    },
     /// A filled bar: its top-left corner, its width and its thickness.
-    Rule { x: f32, y: f32, width: f32, height: f32 },
+    Rule {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+    },
     /// A line through points.
     Stroke { points: Vec<(f32, f32)>, width: f32 },
 }
@@ -127,7 +138,11 @@ impl Fonts<'_> {
             features: Default::default(),
             fallbacks: None,
             weight: FontWeight::NORMAL,
-            style: if italic { FontStyle::Italic } else { FontStyle::Normal },
+            style: if italic {
+                FontStyle::Italic
+            } else {
+                FontStyle::Normal
+            },
         }
     }
 }
@@ -140,7 +155,9 @@ fn math_italic(family: &str, text: &str) -> Option<String> {
         return None;
     }
     let mapped = |ch: char| -> char {
-        let at = |base: u32, first: char| char::from_u32(base + (ch as u32 - first as u32)).unwrap_or(ch);
+        let at = |base: u32, first: char| {
+            char::from_u32(base + (ch as u32 - first as u32)).unwrap_or(ch)
+        };
         match ch {
             // The italic h is Planck's constant, older than the block.
             'h' => 'ℎ',
@@ -158,30 +175,46 @@ fn math_italic(family: &str, text: &str) -> Option<String> {
 
 impl Measure for Fonts<'_> {
     fn width(&self, text: &str, size: f32, italic: bool) -> f32 {
-        let slanted = if italic { math_italic(&self.family, text) } else { None };
+        let slanted = if italic {
+            math_italic(&self.family, text)
+        } else {
+            None
+        };
         let (text, italic) = match &slanted {
             Some(slanted) => (slanted.as_str(), false),
             None => (text, italic),
         };
         let id = self.ts.resolve_font(&self.font(italic));
         text.chars()
-            .map(|ch| self.ts.advance(id, px(size), ch).map_or(size * 0.5, |advance| f32::from(advance.width)))
+            .map(|ch| {
+                self.ts
+                    .advance(id, px(size), ch)
+                    .map_or(size * 0.5, |advance| f32::from(advance.width))
+            })
             .sum()
     }
 
     fn extent(&self, size: f32) -> (f32, f32) {
         let id = self.ts.resolve_font(&self.font(false));
-        (f32::from(self.ts.ascent(id, px(size))), f32::from(self.ts.descent(id, px(size))).abs())
+        (
+            f32::from(self.ts.ascent(id, px(size))),
+            f32::from(self.ts.descent(id, px(size))).abs(),
+        )
     }
 }
 
 /// The font equations are set in: the first of these the system has.
 pub(super) fn math_family(fonts: &FontResolver) -> SharedString {
-    ["Cambria Math", "STIX Two Math", "STIXGeneral", "Times New Roman"]
-        .into_iter()
-        .find(|name| fonts.names.iter().any(|known| known == name))
-        .unwrap_or("Times New Roman")
-        .into()
+    [
+        "Cambria Math",
+        "STIX Two Math",
+        "STIXGeneral",
+        "Times New Roman",
+    ]
+    .into_iter()
+    .find(|name| fonts.names.iter().any(|known| known == name))
+    .unwrap_or("Times New Roman")
+    .into()
 }
 
 // ---- layout --------------------------------------------------------------
@@ -249,7 +282,10 @@ impl Layout<'_> {
         let mut chars = shown.chars();
         let (one, single) = (chars.next().unwrap_or(' '), chars.next().is_none());
         // Variables slant; numbers, signs, capital Greek and names do not.
-        let italic = !style.upright && shown.chars().all(|ch| ch.is_alphabetic() && !('Α'..='Ω').contains(&ch));
+        let italic = !style.upright
+            && shown
+                .chars()
+                .all(|ch| ch.is_alphabetic() && !('Α'..='Ω').contains(&ch));
         let glyphs = self.glyphs(shown, style, italic);
         let pad = if single && is_relation(one) && !first && !style.nested {
             em * 0.22
@@ -260,7 +296,12 @@ impl Layout<'_> {
         };
         let mut out = MathBox::space(pad);
         out.append(glyphs);
-        out.width += pad + if single && matches!(one, ',' | ';') { em * 0.17 } else { 0.0 };
+        out.width += pad
+            + if single && matches!(one, ',' | ';') {
+                em * 0.17
+            } else {
+                0.0
+            };
         out
     }
 
@@ -279,12 +320,21 @@ impl Layout<'_> {
     }
 
     fn rule(x: f32, y: f32, width: f32, height: f32) -> Ink {
-        Ink::Rule { x, y, width, height }
+        Ink::Rule {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     /// `over` centred above `base` (or `under` below it), a gap apart.
     fn stacked(base: MathBox, over: Option<MathBox>, under: Option<MathBox>, gap: f32) -> MathBox {
-        let width = [Some(&base), over.as_ref(), under.as_ref()].into_iter().flatten().map(|b| b.width).fold(0.0, f32::max);
+        let width = [Some(&base), over.as_ref(), under.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|b| b.width)
+            .fold(0.0, f32::max);
         let mut out = MathBox::default();
         let (ascent, descent) = (base.ascent, base.descent);
         out.place(base.clone(), (width - base.width) / 2.0, 0.0);
@@ -302,7 +352,13 @@ impl Layout<'_> {
 
     /// Scripts beside a base: the superscript raised, the subscript
     /// lowered.
-    fn scripted(&self, base: MathBox, sub: Option<MathBox>, sup: Option<MathBox>, em: f32) -> MathBox {
+    fn scripted(
+        &self,
+        base: MathBox,
+        sub: Option<MathBox>,
+        sup: Option<MathBox>,
+        em: f32,
+    ) -> MathBox {
         let mut out = base.clone();
         let x = base.width + em * 0.04;
         if let Some(sup) = sup {
@@ -330,13 +386,20 @@ impl Layout<'_> {
                 .map(|i| {
                     let t = i as f32 / 12.0;
                     let (a, b, c) = ((1.0 - t) * (1.0 - t), 2.0 * t * (1.0 - t), t * t);
-                    (a * from.0 + b * through.0 + c * to.0, a * from.1 + b * through.1 + c * to.1)
+                    (
+                        a * from.0 + b * through.0 + c * to.0,
+                        a * from.1 + b * through.1 + c * to.1,
+                    )
                 })
                 .collect()
         };
         let mirrored = matches!(ch, ')' | ']' | '}' | '⟩' | '⌋' | '⌉');
         let mut strokes: Vec<Vec<(f32, f32)>> = match ch {
-            '(' | ')' => vec![curve((far, top), (near - width * 0.5, middle), (far, bottom))],
+            '(' | ')' => vec![curve(
+                (far, top),
+                (near - width * 0.5, middle),
+                (far, bottom),
+            )],
             '[' | ']' => vec![vec![(far, top), (near, top), (near, bottom), (far, bottom)]],
             '⌊' | '⌋' => vec![vec![(near, top), (near, bottom), (far, bottom)]],
             '⌈' | '⌉' => vec![vec![(far, top), (near, top), (near, bottom)]],
@@ -344,12 +407,27 @@ impl Layout<'_> {
             '{' | '}' => {
                 let nib = width * 0.5;
                 let mut points = curve((far, top), (nib, top), (nib, top + em * 0.25));
-                points.extend(curve((nib, middle - em * 0.2), (nib, middle), (near - width * 0.1, middle)));
-                points.extend(curve((near - width * 0.1, middle), (nib, middle), (nib, middle + em * 0.2)));
-                points.extend(curve((nib, bottom - em * 0.25), (nib, bottom), (far, bottom)));
+                points.extend(curve(
+                    (nib, middle - em * 0.2),
+                    (nib, middle),
+                    (near - width * 0.1, middle),
+                ));
+                points.extend(curve(
+                    (near - width * 0.1, middle),
+                    (nib, middle),
+                    (nib, middle + em * 0.2),
+                ));
+                points.extend(curve(
+                    (nib, bottom - em * 0.25),
+                    (nib, bottom),
+                    (far, bottom),
+                ));
                 vec![points]
             }
-            '‖' => vec![vec![(width * 0.3, top), (width * 0.3, bottom)], vec![(width * 0.7, top), (width * 0.7, bottom)]],
+            '‖' => vec![
+                vec![(width * 0.3, top), (width * 0.3, bottom)],
+                vec![(width * 0.7, top), (width * 0.7, bottom)],
+            ],
             _ => vec![vec![(width * 0.5, top), (width * 0.5, bottom)]],
         };
         if mirrored {
@@ -361,7 +439,13 @@ impl Layout<'_> {
             width,
             ascent: -top,
             descent: bottom,
-            ink: strokes.into_iter().map(|points| Ink::Stroke { points, width: line }).collect(),
+            ink: strokes
+                .into_iter()
+                .map(|points| Ink::Stroke {
+                    points,
+                    width: line,
+                })
+                .collect(),
         }
     }
 
@@ -372,16 +456,32 @@ impl Layout<'_> {
         match node {
             Math::Text(text) => self.text(text, style, first),
             Math::Fraction { num, den, bar } => {
-                let inner = if style.nested { style.script() } else { Style { nested: true, ..style } };
+                let inner = if style.nested {
+                    style.script()
+                } else {
+                    Style {
+                        nested: true,
+                        ..style
+                    }
+                };
                 let (num, den) = (self.row(num, inner), self.row(den, inner));
                 let gap = em * 0.14;
                 let width = num.width.max(den.width) + em * 0.24;
                 let mut out = MathBox::space(em * 0.08);
                 let left = out.width;
-                out.place(num.clone(), left + (width - num.width) / 2.0, axis - rule / 2.0 - gap - num.descent);
-                out.place(den.clone(), left + (width - den.width) / 2.0, axis + rule / 2.0 + gap + den.ascent);
+                out.place(
+                    num.clone(),
+                    left + (width - num.width) / 2.0,
+                    axis - rule / 2.0 - gap - num.descent,
+                );
+                out.place(
+                    den.clone(),
+                    left + (width - den.width) / 2.0,
+                    axis + rule / 2.0 + gap + den.ascent,
+                );
                 if *bar {
-                    out.ink.push(Layout::rule(left, axis - rule / 2.0, width, rule));
+                    out.ink
+                        .push(Layout::rule(left, axis - rule / 2.0, width, rule));
                 }
                 out.width = left + width + em * 0.08;
                 out
@@ -389,7 +489,12 @@ impl Layout<'_> {
             Math::Script { base, sub, sup } => {
                 let base = self.row(base, style);
                 let small = style.script();
-                self.scripted(base, sub.as_ref().map(|sub| self.row(sub, small)), sup.as_ref().map(|sup| self.row(sup, small)), em)
+                self.scripted(
+                    base,
+                    sub.as_ref().map(|sub| self.row(sub, small)),
+                    sup.as_ref().map(|sup| self.row(sup, small)),
+                    em,
+                )
             }
             Math::Radical { degree, body } => {
                 let body = self.row(body, style);
@@ -408,11 +513,17 @@ impl Layout<'_> {
                         },
                     )
                 });
-                let shift = degree.as_ref().map_or(0.0, |degree| (degree.width - em * 0.3).max(0.0));
+                let shift = degree
+                    .as_ref()
+                    .map_or(0.0, |degree| (degree.width - em * 0.3).max(0.0));
                 let mut out = MathBox::space(shift);
                 if let Some(degree) = degree {
                     let x = shift + em * 0.3 - degree.width;
-                    out.place(degree.clone(), x.max(0.0), middle - em * 0.12 - degree.descent);
+                    out.place(
+                        degree.clone(),
+                        x.max(0.0),
+                        middle - em * 0.12 - degree.descent,
+                    );
                 }
                 out.ink.push(Ink::Stroke {
                     points: vec![
@@ -429,7 +540,13 @@ impl Layout<'_> {
                 out.width = shift + sign + body.width + em * 0.14;
                 out
             }
-            Math::Nary { op, sub, sup, limits_beside, body } => {
+            Math::Nary {
+                op,
+                sub,
+                sup,
+                limits_beside,
+                body,
+            } => {
                 // The sign, large, centred on the axis.
                 let large = Style {
                     size: em * if *limits_beside { 1.8 } else { 1.5 },
@@ -443,7 +560,10 @@ impl Layout<'_> {
                     centred
                 };
                 let small = style.script();
-                let (sub, sup) = (sub.as_ref().map(|sub| self.row(sub, small)), sup.as_ref().map(|sup| self.row(sup, small)));
+                let (sub, sup) = (
+                    sub.as_ref().map(|sub| self.row(sub, small)),
+                    sup.as_ref().map(|sup| self.row(sup, small)),
+                );
                 let mut out = if *limits_beside {
                     let mut out = sign.clone();
                     let x = sign.width + em * 0.02;
@@ -498,7 +618,13 @@ impl Layout<'_> {
             Math::Function { name, arg } => {
                 // A little room before the name, unless it leads.
                 let mut out = MathBox::space(if first { 0.0 } else { em * 0.17 });
-                out.append(self.row(name, Style { upright: true, ..style }));
+                out.append(self.row(
+                    name,
+                    Style {
+                        upright: true,
+                        ..style
+                    },
+                ));
                 out.width += em * 0.17;
                 out.append(self.row(arg, style));
                 out
@@ -508,10 +634,14 @@ impl Layout<'_> {
                 let (line_ascent, _) = self.fonts.extent(em);
                 // The body of a letter is lower than the line: the mark
                 // sits on the letter.
-                let top = body.ascent.min(line_ascent * 0.78).max(body.ascent - line_ascent * 0.22);
+                let top = body
+                    .ascent
+                    .min(line_ascent * 0.78)
+                    .max(body.ascent - line_ascent * 0.22);
                 let mut out = body.clone();
                 if *mark == '\u{305}' {
-                    out.ink.push(Layout::rule(0.0, -(top + em * 0.1), body.width, rule));
+                    out.ink
+                        .push(Layout::rule(0.0, -(top + em * 0.1), body.width, rule));
                     out.ascent = out.ascent.max(top + em * 0.1 + rule);
                     return out;
                 }
@@ -530,18 +660,32 @@ impl Layout<'_> {
                 let sign_box = self.glyphs(&sign.to_string(), small, false);
                 // Spacing accents are drawn where they sit over a letter
                 // of their own height: lifted by what the body adds.
-                let lift = if sign == '→' { top - em * 0.05 } else { top - line_ascent * 0.68 };
-                out.place(sign_box.clone(), (body.width - sign_box.width) / 2.0 + em * 0.04, -lift.max(0.0));
+                let lift = if sign == '→' {
+                    top - em * 0.05
+                } else {
+                    top - line_ascent * 0.68
+                };
+                out.place(
+                    sign_box.clone(),
+                    (body.width - sign_box.width) / 2.0 + em * 0.04,
+                    -lift.max(0.0),
+                );
                 out.width = body.width;
                 out
             }
             Math::Bar { over, body } => {
                 let mut out = self.row(body, style);
                 if *over {
-                    out.ink.push(Layout::rule(0.0, -(out.ascent + em * 0.08), out.width, rule));
+                    out.ink.push(Layout::rule(
+                        0.0,
+                        -(out.ascent + em * 0.08),
+                        out.width,
+                        rule,
+                    ));
                     out.ascent += em * 0.08 + rule;
                 } else {
-                    out.ink.push(Layout::rule(0.0, out.descent + em * 0.06, out.width, rule));
+                    out.ink
+                        .push(Layout::rule(0.0, out.descent + em * 0.06, out.width, rule));
                     out.descent += em * 0.06 + rule;
                 }
                 out
@@ -556,17 +700,32 @@ impl Layout<'_> {
                 }
             }
             Math::Matrix { rows } => {
-                let cells: Vec<Vec<MathBox>> = rows.iter().map(|row| row.iter().map(|cell| self.row(cell, style)).collect()).collect();
+                let cells: Vec<Vec<MathBox>> = rows
+                    .iter()
+                    .map(|row| row.iter().map(|cell| self.row(cell, style)).collect())
+                    .collect();
                 let columns = cells.iter().map(Vec::len).max().unwrap_or(0);
                 let widths: Vec<f32> = (0..columns)
-                    .map(|column| cells.iter().filter_map(|row| row.get(column)).map(|cell| cell.width).fold(0.0, f32::max))
+                    .map(|column| {
+                        cells
+                            .iter()
+                            .filter_map(|row| row.get(column))
+                            .map(|cell| cell.width)
+                            .fold(0.0, f32::max)
+                    })
                     .collect();
                 let (column_gap, row_gap) = (em * 0.8, em * 0.3);
                 let heights: Vec<(f32, f32)> = cells
                     .iter()
-                    .map(|row| (row.iter().map(|cell| cell.ascent).fold(0.0, f32::max), row.iter().map(|cell| cell.descent).fold(0.0, f32::max)))
+                    .map(|row| {
+                        (
+                            row.iter().map(|cell| cell.ascent).fold(0.0, f32::max),
+                            row.iter().map(|cell| cell.descent).fold(0.0, f32::max),
+                        )
+                    })
                     .collect();
-                let total: f32 = heights.iter().map(|(a, d)| a + d).sum::<f32>() + row_gap * heights.len().saturating_sub(1) as f32;
+                let total: f32 = heights.iter().map(|(a, d)| a + d).sum::<f32>()
+                    + row_gap * heights.len().saturating_sub(1) as f32;
                 let mut out = MathBox::default();
                 let mut y = axis - total / 2.0;
                 for (row, (ascent, descent)) in cells.into_iter().zip(heights) {
@@ -578,7 +737,8 @@ impl Layout<'_> {
                     }
                     y += ascent + descent + row_gap;
                 }
-                out.width = widths.iter().sum::<f32>() + column_gap * columns.saturating_sub(1) as f32;
+                out.width =
+                    widths.iter().sum::<f32>() + column_gap * columns.saturating_sub(1) as f32;
                 out
             }
         }
@@ -596,7 +756,11 @@ pub(super) fn layout(equation: &Equation, size: f32, fonts: &dyn Measure) -> Mat
     };
     let layout = Layout { fonts };
     if equation.linear {
-        let shown: String = equation.to_linear().chars().filter(|ch| *ch != APPLY).collect();
+        let shown: String = equation
+            .to_linear()
+            .chars()
+            .filter(|ch| *ch != APPLY)
+            .collect();
         layout.row(&tokens(&shown), style)
     } else {
         layout.row(&equation.body, style)
@@ -607,11 +771,28 @@ pub(super) fn layout(equation: &Equation, size: f32, fonts: &dyn Measure) -> Mat
 
 /// The items that draw a box with the left end of its baseline at
 /// (x, y), in pixels from the origin of the brush.
-fn draw_box(laid: &MathBox, at: (f32, f32), color: Hsla, family: &SharedString, brush: &Brush, out: &mut Vec<Draw>) {
+fn draw_box(
+    laid: &MathBox,
+    at: (f32, f32),
+    color: Hsla,
+    family: &SharedString,
+    brush: &Brush,
+    out: &mut Vec<Draw>,
+) {
     for ink in &laid.ink {
         match ink {
-            Ink::Glyphs { text, size, italic, x, y } => {
-                let slanted = if *italic { math_italic(family, text) } else { None };
+            Ink::Glyphs {
+                text,
+                size,
+                italic,
+                x,
+                y,
+            } => {
+                let slanted = if *italic {
+                    math_italic(family, text)
+                } else {
+                    None
+                };
                 let (text, italic) = match &slanted {
                     Some(slanted) => (slanted, &false),
                     None => (text, italic),
@@ -621,10 +802,17 @@ fn draw_box(laid: &MathBox, at: (f32, f32), color: Hsla, family: &SharedString, 
                     features: Default::default(),
                     fallbacks: None,
                     weight: FontWeight::NORMAL,
-                    style: if *italic { FontStyle::Italic } else { FontStyle::Normal },
+                    style: if *italic {
+                        FontStyle::Italic
+                    } else {
+                        FontStyle::Normal
+                    },
                 };
                 let id = brush.ts.resolve_font(&font);
-                let (ascent, descent) = (f32::from(brush.ts.ascent(id, px(*size))), f32::from(brush.ts.descent(id, px(*size))).abs());
+                let (ascent, descent) = (
+                    f32::from(brush.ts.ascent(id, px(*size))),
+                    f32::from(brush.ts.descent(id, px(*size))).abs(),
+                );
                 let shared: SharedString = text.clone().into();
                 let run = TextRun {
                     len: shared.len(),
@@ -639,14 +827,31 @@ fn draw_box(laid: &MathBox, at: (f32, f32), color: Hsla, family: &SharedString, 
                 // the box says.
                 out.push(Draw::Text {
                     line,
-                    origin: point(brush.origin.x + px(at.0 + x), brush.origin.y + px(at.1 + y - ascent)),
+                    origin: point(
+                        brush.origin.x + px(at.0 + x),
+                        brush.origin.y + px(at.1 + y - ascent),
+                    ),
                     line_height: px(ascent + descent),
                     clip: brush.clip,
                 });
             }
-            Ink::Rule { x, y, width, height } => {
+            Ink::Rule {
+                x,
+                y,
+                width,
+                height,
+            } => {
                 let (x0, y0) = (at.0 + x, at.1 + y);
-                brush.fill(&[(x0, y0), (x0 + width, y0), (x0 + width, y0 + height), (x0, y0 + height)], color, out);
+                brush.fill(
+                    &[
+                        (x0, y0),
+                        (x0 + width, y0),
+                        (x0 + width, y0 + height),
+                        (x0, y0 + height),
+                    ],
+                    color,
+                    out,
+                );
             }
             Ink::Stroke { points, width } => {
                 let line = Polyline {
@@ -664,11 +869,29 @@ fn ink_color(shape: &Shape) -> Hsla {
 }
 
 /// Draw the equation of a shape in its text box, level.
-pub(super) fn draw(shape: &Shape, equation: &Equation, placed: &Placed, natural: (f32, f32), brush: &Brush, fonts: &FontResolver, out: &mut Vec<Draw>) {
+pub(super) fn draw(
+    shape: &Shape,
+    equation: &Equation,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    fonts: &FontResolver,
+    out: &mut Vec<Draw>,
+) {
     let family = math_family(fonts);
-    let measure = Fonts { ts: brush.ts, family: family.clone() };
-    let laid = layout(equation, pt_to_px(shape.font.size_pt()) * brush.zoom, &measure);
-    let level = Placed { rotation: 0.0, ..*placed };
+    let measure = Fonts {
+        ts: brush.ts,
+        family: family.clone(),
+    };
+    let laid = layout(
+        equation,
+        pt_to_px(shape.font.size_pt()) * brush.zoom,
+        &measure,
+    );
+    let level = Placed {
+        rotation: 0.0,
+        ..*placed
+    };
     let (x0, y0, x1, y1) = paint::text_box(shape, &level, natural, brush.zoom);
     let x = match shape.align {
         TextAlign::Left | TextAlign::Justify => x0,
@@ -680,26 +903,47 @@ pub(super) fn draw(shape: &Shape, equation: &Equation, placed: &Placed, natural:
         TextAnchor::Middle => (y0 + y1 - laid.height()) / 2.0,
         TextAnchor::Bottom => y1 - laid.height(),
     };
-    draw_box(&laid, (x.round(), (top + laid.ascent).round()), ink_color(shape), &family, brush, out);
+    draw_box(
+        &laid,
+        (x.round(), (top + laid.ascent).round()),
+        ink_color(shape),
+        &family,
+        brush,
+        out,
+    );
 }
 
 /// The size (at 100 %) of the box that fits the equation of a shape.
 fn fitted_size(shape: &Shape, fonts: &FontResolver, ts: &TextSystem) -> Option<(f32, f32)> {
     let equation = shape.math.as_ref()?;
-    let measure = Fonts { ts, family: math_family(fonts) };
+    let measure = Fonts {
+        ts,
+        family: math_family(fonts),
+    };
     let size = pt_to_px(shape.font.size_pt());
     let laid = layout(equation, size, &measure);
-    Some(((laid.width + 2.0 * TEXT_MARGIN.0 + size * 0.5).ceil().max(size * 4.0), (laid.height() + 2.0 * TEXT_MARGIN.1 + size * 0.3).ceil()))
+    Some((
+        (laid.width + 2.0 * TEXT_MARGIN.0 + size * 0.5)
+            .ceil()
+            .max(size * 4.0),
+        (laid.height() + 2.0 * TEXT_MARGIN.1 + size * 0.3).ceil(),
+    ))
 }
 
 /// Bring the box of an equation to the size of the equation, keeping its
 /// middle where it is. Part of the undo step being made.
 pub(super) fn fit(app: &mut ExcelApp, id: u32, cx: &mut Cx) {
     let sheet = app.sheet;
-    let Some(fitted) = app.wb.drawing(sheet, id).and_then(Drawing::as_shape).and_then(|shape| fitted_size(shape, &app.fonts, cx.text_system())) else {
+    let Some(fitted) = app
+        .wb
+        .drawing(sheet, id)
+        .and_then(Drawing::as_shape)
+        .and_then(|shape| fitted_size(shape, &app.fonts, cx.text_system()))
+    else {
         return;
     };
-    app.wb.update_drawing(sheet, id, |drawing| drawing.size = fitted);
+    app.wb
+        .update_drawing(sheet, id, |drawing| drawing.size = fitted);
 }
 
 /// The text of a shape that holds an equation changed: the equation is
@@ -731,7 +975,10 @@ impl Typing {
 
 /// The text being typed in a shape changed.
 pub(super) fn typed(app: &mut ExcelApp, cx: &mut Cx) {
-    let current = app.ext::<DrawingUi>().and_then(|ui| ui.text.as_ref()).map(|edit| (edit.id, edit.area.read(cx).text().to_string()));
+    let current = app
+        .ext::<DrawingUi>()
+        .and_then(|ui| ui.text.as_ref())
+        .map(|edit| (edit.id, edit.area.read(cx).text().to_string()));
     let preview = current.and_then(|(id, text)| {
         let shape = app.wb.drawing(app.sheet, id)?.as_shape()?;
         shape.math.as_ref()?;
@@ -743,30 +990,58 @@ pub(super) fn typed(app: &mut ExcelApp, cx: &mut Cx) {
 
 /// Under the shape whose equation is being typed: the equation as it
 /// builds up, on a white card.
-pub(super) fn draw_preview(app: &ExcelApp, drawing: &Drawing, placed: &Placed, brush: &Brush, out: &mut Vec<Draw>) {
+pub(super) fn draw_preview(
+    app: &ExcelApp,
+    drawing: &Drawing,
+    placed: &Placed,
+    brush: &Brush,
+    out: &mut Vec<Draw>,
+) {
     let Some(shape) = drawing.as_shape() else {
         return;
     };
-    let typed = app.ext::<Typing>().and_then(|typing| typing.preview.as_ref()).filter(|(id, _)| *id == drawing.id).map(|(_, equation)| equation);
+    let typed = app
+        .ext::<Typing>()
+        .and_then(|typing| typing.preview.as_ref())
+        .filter(|(id, _)| *id == drawing.id)
+        .map(|(_, equation)| equation);
     let Some(equation) = typed.or(shape.math.as_ref()) else {
         return;
     };
     let family = math_family(&app.fonts);
-    let measure = Fonts { ts: brush.ts, family: family.clone() };
-    let laid = layout(equation, pt_to_px(shape.font.size_pt()) * brush.zoom, &measure);
+    let measure = Fonts {
+        ts: brush.ts,
+        family: family.clone(),
+    };
+    let laid = layout(
+        equation,
+        pt_to_px(shape.font.size_pt()) * brush.zoom,
+        &measure,
+    );
     if laid.width <= 0.0 {
         return;
     }
     let (_, _, _, bottom) = placed.extent();
     let (x, y) = (placed.x0.min(placed.x1), bottom + 8.0);
     let (w, h) = (laid.width + 16.0, laid.height() + 12.0);
-    brush.fill(&[(x, y), (x + w, y), (x + w, y + h), (x, y + h)], c(0xFFFFFF), out);
+    brush.fill(
+        &[(x, y), (x + w, y), (x + w, y + h), (x, y + h)],
+        c(0xFFFFFF),
+        out,
+    );
     let frame = Polyline {
         points: vec![(x, y), (x + w, y), (x + w, y + h), (x, y + h)],
         closed: true,
     };
     brush.stroke(&frame, 1.0, &[], c(theme::BORDER), out);
-    draw_box(&laid, (x + 8.0, y + 6.0 + laid.ascent), c(0x000000), &family, brush, out);
+    draw_box(
+        &laid,
+        (x + 8.0, y + 6.0 + laid.ascent),
+        c(0x000000),
+        &family,
+        brush,
+        out,
+    );
 }
 
 // ---- inserting -----------------------------------------------------------
@@ -779,7 +1054,12 @@ pub(super) fn is_equation(drawing: &Drawing) -> bool {
 
 /// Insert ▸ Equation: a text box holding an equation, in the middle of
 /// what the window shows. Without text, it is ready to be typed in.
-pub(super) fn insert(app: &mut ExcelApp, linear: &str, window: &mut Window, cx: &mut Cx) -> Option<u32> {
+pub(super) fn insert(
+    app: &mut ExcelApp,
+    linear: &str,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<u32> {
     if !app.may(Intent::EditObject(None), cx) {
         return None;
     }
@@ -809,16 +1089,30 @@ pub(super) fn insert(app: &mut ExcelApp, linear: &str, window: &mut Window, cx: 
 
 /// Put the linear form of a structure or a symbol into the selected
 /// equation: where the caret is while it is typed in, else at its end.
-pub(super) fn insert_text(app: &mut ExcelApp, text: &str, window: &mut Window, cx: &mut Cx) -> bool {
-    let Some(id) = selected(app).filter(|drawing| is_equation(drawing)).map(|drawing| drawing.id) else {
+pub(super) fn insert_text(
+    app: &mut ExcelApp,
+    text: &str,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> bool {
+    let Some(id) = selected(app)
+        .filter(|drawing| is_equation(drawing))
+        .map(|drawing| drawing.id)
+    else {
         return false;
     };
     if !app.may(Intent::EditObject(Some(object_id(&Drawings, id))), cx) {
         return false;
     }
-    let editing = app.ext::<DrawingUi>().and_then(|ui| ui.text.as_ref()).filter(|edit| edit.id == id).map(|edit| edit.area.clone());
+    let editing = app
+        .ext::<DrawingUi>()
+        .and_then(|ui| ui.text.as_ref())
+        .filter(|edit| edit.id == id)
+        .map(|edit| edit.area.clone());
     if let Some(area) = editing {
-        area.update(cx, |area, cx| area.replace_text_in_range(None, text, window, cx));
+        area.update(cx, |area, cx| {
+            area.replace_text_in_range(None, text, window, cx)
+        });
         typed(app, cx);
         return true;
     }
@@ -827,7 +1121,12 @@ pub(super) fn insert_text(app: &mut ExcelApp, text: &str, window: &mut Window, c
         if let Some(shape) = drawing.as_shape_mut() {
             // A structure after a letter would be read with it: a blank
             // between them keeps them apart.
-            let glue = shape.text.chars().last().is_some_and(|ch| ch.is_alphanumeric()) && text.chars().next().is_some_and(|ch| ch.is_alphanumeric());
+            let glue = shape
+                .text
+                .chars()
+                .last()
+                .is_some_and(|ch| ch.is_alphanumeric())
+                && text.chars().next().is_some_and(|ch| ch.is_alphanumeric());
             if glue {
                 shape.text.push(' ');
             }
@@ -842,7 +1141,10 @@ pub(super) fn insert_text(app: &mut ExcelApp, text: &str, window: &mut Window, c
 
 /// Professional / Linear: how the selected equation is shown.
 pub(super) fn set_linear(app: &mut ExcelApp, linear: bool, cx: &mut Cx) -> bool {
-    let Some(id) = selected(app).filter(|drawing| is_equation(drawing)).map(|drawing| drawing.id) else {
+    let Some(id) = selected(app)
+        .filter(|drawing| is_equation(drawing))
+        .map(|drawing| drawing.id)
+    else {
         return false;
     };
     if !app.may(Intent::EditObject(Some(object_id(&Drawings, id))), cx) {
@@ -855,12 +1157,23 @@ pub(super) fn set_linear(app: &mut ExcelApp, linear: bool, cx: &mut Cx) -> bool 
         }
     });
     fit(app, id, cx);
-    app.commit(if linear { Cmd::EqLinear.label() } else { Cmd::EqProfessional.label() }, cx);
+    app.commit(
+        if linear {
+            Cmd::EqLinear.label()
+        } else {
+            Cmd::EqProfessional.label()
+        },
+        cx,
+    );
     true
 }
 
 pub(super) fn shown_linear(app: &ExcelApp) -> Option<bool> {
-    selected(app)?.as_shape()?.math.as_ref().map(|equation| equation.linear)
+    selected(app)?
+        .as_shape()?
+        .math
+        .as_ref()
+        .map(|equation| equation.linear)
 }
 
 // ---- names ---------------------------------------------------------------
@@ -901,7 +1214,13 @@ pub(super) fn structure_of(cmd: Cmd) -> Option<Structure> {
 
 /// An equation drawn in a box of the galleries: at `size`, smaller when
 /// it is wider or higher than the box.
-fn preview(linear: &'static str, family: SharedString, width: f32, height: f32, size: f32) -> impl IntoElement {
+fn preview(
+    linear: &'static str,
+    family: SharedString,
+    width: f32,
+    height: f32,
+    size: f32,
+) -> impl IntoElement {
     canvas(
         |_, _, _| {},
         move |bounds: Bounds<Pixels>, _, window, cx| {
@@ -914,16 +1233,30 @@ fn preview(linear: &'static str, family: SharedString, width: f32, height: f32, 
                 clip: bounds,
             };
             let equation = Equation::parse(linear);
-            let measure = Fonts { ts: &ts, family: family.clone() };
+            let measure = Fonts {
+                ts: &ts,
+                family: family.clone(),
+            };
             let mut laid = layout(&equation, size, &measure);
-            let fit = ((width - 6.0) / laid.width.max(1.0)).min((height - 4.0) / laid.height().max(1.0));
+            let fit =
+                ((width - 6.0) / laid.width.max(1.0)).min((height - 4.0) / laid.height().max(1.0));
             if fit < 1.0 {
                 laid = layout(&equation, (size * fit).max(5.0), &measure);
             }
             let mut items = Vec::new();
-            let at = (((width - laid.width) / 2.0).round(), ((height - laid.height()) / 2.0 + laid.ascent).round());
+            let at = (
+                ((width - laid.width) / 2.0).round(),
+                ((height - laid.height()) / 2.0 + laid.ascent).round(),
+            );
             draw_box(&laid, at, c(0x262626), &family, &brush, &mut items);
-            crate::grid::paint_layers(vec![Layer { clip: bounds, items }], window, cx);
+            crate::grid::paint_layers(
+                vec![Layer {
+                    clip: bounds,
+                    items,
+                }],
+                window,
+                cx,
+            );
         },
     )
     .w(px(width))
@@ -947,7 +1280,12 @@ struct Gallery {
 }
 
 impl Gallery {
-    fn cell(&self, index: usize, content: impl IntoElement, act: impl Fn(&mut ExcelApp, &mut Window, &mut Cx) + 'static) -> gpui::Stateful<gpui::Div> {
+    fn cell(
+        &self,
+        index: usize,
+        content: impl IntoElement,
+        act: impl Fn(&mut ExcelApp, &mut Window, &mut Cx) + 'static,
+    ) -> gpui::Stateful<gpui::Div> {
         let app = self.app.clone();
         div()
             .id(("equation-choice", index))
@@ -981,7 +1319,12 @@ impl Render for Gallery {
                             .flex()
                             .flex_col()
                             .gap(px(2.))
-                            .child(div().text_size(px(11.5)).text_color(c(theme::TEXT_MUTED)).child(built_in_name(index)))
+                            .child(
+                                div()
+                                    .text_size(px(11.5))
+                                    .text_color(c(theme::TEXT_MUTED))
+                                    .child(built_in_name(index)),
+                            )
                             .child(preview(linear, self.family.clone(), 380.0, 46.0, 17.0));
                         self.cell(index, content, move |app, window, cx| {
                             insert(app, linear, window, cx);
@@ -990,31 +1333,80 @@ impl Render for Gallery {
                     })
                     .collect();
                 cells.push(
-                    self.cell(BUILT_IN.len(), div().h(px(26.)).px(px(8.)).flex().items_center().child(t("Insert New Equation", "Insérer une nouvelle équation")), |app, window, cx| {
-                        insert(app, "", window, cx);
-                    })
+                    self.cell(
+                        BUILT_IN.len(),
+                        div()
+                            .h(px(26.))
+                            .px(px(8.))
+                            .flex()
+                            .items_center()
+                            .child(t("Insert New Equation", "Insérer une nouvelle équation")),
+                        |app, window, cx| {
+                            insert(app, "", window, cx);
+                        },
+                    )
                     .into_any_element(),
                 );
-                div().w(px(404.)).p(px(6.)).flex().flex_col().gap(px(4.)).text_size(px(12.)).children(cells)
+                div()
+                    .w(px(404.))
+                    .p(px(6.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .text_size(px(12.))
+                    .children(cells)
             }
             Offer::Structures(structure) => {
-                let cells = structure.templates().iter().enumerate().map(|(index, linear)| {
-                    let wide = linear.chars().count() > 12;
-                    self.cell(index, preview(linear, self.family.clone(), if wide { 152.0 } else { 74.0 }, 56.0, 17.0), move |app, window, cx| {
-                        insert_text(app, linear, window, cx);
-                    })
-                });
-                div().w(px(4.0 * 74.0 + 3.0 * 4.0 + 20.0)).p(px(6.)).flex().flex_wrap().gap(px(4.)).children(cells)
+                let cells = structure
+                    .templates()
+                    .iter()
+                    .enumerate()
+                    .map(|(index, linear)| {
+                        let wide = linear.chars().count() > 12;
+                        self.cell(
+                            index,
+                            preview(
+                                linear,
+                                self.family.clone(),
+                                if wide { 152.0 } else { 74.0 },
+                                56.0,
+                                17.0,
+                            ),
+                            move |app, window, cx| {
+                                insert_text(app, linear, window, cx);
+                            },
+                        )
+                    });
+                div()
+                    .w(px(4.0 * 74.0 + 3.0 * 4.0 + 20.0))
+                    .p(px(6.))
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(4.))
+                    .children(cells)
             }
             Offer::Symbols => {
                 let family = self.family.clone();
                 let cells = SYMBOLS.chars().enumerate().map(|(index, symbol)| {
-                    let content = div().size(px(26.)).flex().items_center().justify_center().font_family(family.clone()).text_size(px(15.)).child(symbol.to_string());
+                    let content = div()
+                        .size(px(26.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .font_family(family.clone())
+                        .text_size(px(15.))
+                        .child(symbol.to_string());
                     self.cell(index, content, move |app, window, cx| {
                         insert_text(app, &symbol.to_string(), window, cx);
                     })
                 });
-                div().w(px(12.0 * 28.0 + 11.0 * 2.0 + 12.0)).p(px(6.)).flex().flex_wrap().gap(px(2.)).children(cells)
+                div()
+                    .w(px(12.0 * 28.0 + 11.0 * 2.0 + 12.0))
+                    .p(px(6.))
+                    .flex()
+                    .flex_wrap()
+                    .gap(px(2.))
+                    .children(cells)
             }
         }
     }
@@ -1023,7 +1415,11 @@ impl Render for Gallery {
 pub(super) fn open_gallery(app: &mut ExcelApp, offer: Offer, window: &mut Window, cx: &mut Cx) {
     let weak = cx.weak_entity();
     let family = math_family(&app.fonts);
-    tabs::open_dropdown(app, window, cx, |_| Gallery { app: weak, offer, family });
+    tabs::open_dropdown(app, window, cx, |_| Gallery {
+        app: weak,
+        offer,
+        family,
+    });
 }
 
 // ---- the tab -------------------------------------------------------------
@@ -1056,8 +1452,15 @@ pub(super) fn equation_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
                 .into_any_element()
         })
         .collect();
-    let (first, second) = quick.into_iter().enumerate().partition::<Vec<_>, _>(|(index, _)| *index < 8);
-    let line = |cells: Vec<(usize, AnyElement)>| div().flex().children(cells.into_iter().map(|(_, cell)| cell));
+    let (first, second) = quick
+        .into_iter()
+        .enumerate()
+        .partition::<Vec<_>, _>(|(index, _)| *index < 8);
+    let line = |cells: Vec<(usize, AnyElement)>| {
+        div()
+            .flex()
+            .children(cells.into_iter().map(|(_, cell)| cell))
+    };
     let structures = [
         ("eq-fraction", Cmd::EqFraction),
         ("eq-script", Cmd::EqScript),
@@ -1074,10 +1477,15 @@ pub(super) fn equation_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
     vec![
         group(
             t("Tools", "Outils"),
-            div().flex().items_center().gap(px(2.)).child(app.cmd_large("eq-equation", Cmd::Equation, true, cx)).child(rows(vec![
-                app.cmd_labeled("eq-professional", Cmd::EqProfessional, false, cx),
-                app.cmd_labeled("eq-linear", Cmd::EqLinear, false, cx),
-            ])),
+            div()
+                .flex()
+                .items_center()
+                .gap(px(2.))
+                .child(app.cmd_large("eq-equation", Cmd::Equation, true, cx))
+                .child(rows(vec![
+                    app.cmd_labeled("eq-professional", Cmd::EqProfessional, false, cx),
+                    app.cmd_labeled("eq-linear", Cmd::EqLinear, false, cx),
+                ])),
         )
         .into_any_element(),
         group(
@@ -1086,13 +1494,22 @@ pub(super) fn equation_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
                 .flex()
                 .items_center()
                 .gap(px(4.))
-                .child(div().flex().flex_col().child(line(first)).child(line(second)))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(line(first))
+                        .child(line(second)),
+                )
                 .child(app.cmd_large("eq-symbols", Cmd::EqSymbols, true, cx)),
         )
         .into_any_element(),
         group(
             t("Structures", "Structures"),
-            row(structures.into_iter().map(|(id, cmd)| app.cmd_large(id, cmd, true, cx)).collect()),
+            row(structures
+                .into_iter()
+                .map(|(id, cmd)| app.cmd_large(id, cmd, true, cx))
+                .collect()),
         )
         .border_r_0()
         .into_any_element(),
@@ -1144,7 +1561,9 @@ mod tests {
         laid.ink
             .iter()
             .filter_map(|ink| match ink {
-                Ink::Glyphs { text, size, x, y, .. } => Some((text.clone(), *size, *x, *y)),
+                Ink::Glyphs {
+                    text, size, x, y, ..
+                } => Some((text.clone(), *size, *x, *y)),
                 _ => None,
             })
             .collect()
@@ -1154,20 +1573,35 @@ mod tests {
     fn letters_slant_and_signs_have_room() {
         let sum = laid("a+12");
         let found = glyphs(&sum);
-        assert_eq!(found.iter().map(|g| g.0.as_str()).collect::<Vec<_>>(), vec!["a", "+", "12"]);
+        assert_eq!(
+            found.iter().map(|g| g.0.as_str()).collect::<Vec<_>>(),
+            vec!["a", "+", "12"]
+        );
         // Room on both sides of the sign, none before a sign that leads.
-        assert!((found[1].2 - (10.0 + 4.4)).abs() < 0.01 && (found[2].2 - (10.0 + 4.4 + 10.0 + 4.4)).abs() < 0.01);
+        assert!(
+            (found[1].2 - (10.0 + 4.4)).abs() < 0.01
+                && (found[2].2 - (10.0 + 4.4 + 10.0 + 4.4)).abs() < 0.01
+        );
         assert_eq!(glyphs(&laid("-x"))[0], ("−".to_string(), 20.0, 0.0, 0.0));
-        let italics: Vec<bool> = laid("xΔ2").ink.iter().map(|ink| matches!(ink, Ink::Glyphs { italic: true, .. })).collect();
+        let italics: Vec<bool> = laid("xΔ2")
+            .ink
+            .iter()
+            .map(|ink| matches!(ink, Ink::Glyphs { italic: true, .. }))
+            .collect();
         assert_eq!(italics, vec![true, false, false]);
         assert_eq!((sum.ascent, sum.descent), (16.0, 4.0));
         // The name of a function stands upright, a little before its
         // argument.
         let sine = laid("sin\u{2061}x");
         assert!(matches!(&sine.ink[0], Ink::Glyphs { text, italic: false, .. } if text == "sin"));
-        assert!(matches!(&sine.ink[1], Ink::Glyphs { text, italic: true, x, .. } if text == "x" && *x > 30.0));
+        assert!(
+            matches!(&sine.ink[1], Ink::Glyphs { text, italic: true, x, .. } if text == "x" && *x > 30.0)
+        );
         // A mathematical font has its slanted letters as characters.
-        assert_eq!(math_italic("STIX Two Math", "ahZβ2").as_deref(), Some("𝑎ℎ𝑍𝛽2"));
+        assert_eq!(
+            math_italic("STIX Two Math", "ahZβ2").as_deref(),
+            Some("𝑎ℎ𝑍𝛽2")
+        );
         assert_eq!(math_italic("Times New Roman", "a"), None);
     }
 
@@ -1177,18 +1611,31 @@ mod tests {
         let found = glyphs(&half);
         // The numerator above the bar, the denominator under it, both
         // centred; the bar on the axis.
-        let Some(Ink::Rule { x, y, width, height }) = half.ink.iter().find(|ink| matches!(ink, Ink::Rule { .. })) else {
+        let Some(Ink::Rule {
+            x,
+            y,
+            width,
+            height,
+        }) = half.ink.iter().find(|ink| matches!(ink, Ink::Rule { .. }))
+        else {
             panic!("a bar");
         };
         assert!((y + height / 2.0 + AXIS * 20.0).abs() < 0.01);
         assert!(found[0].3 < *y && found[1].3 > y + height);
         let middle = x + width / 2.0;
-        assert!((found[0].2 + 5.0 - middle).abs() < 0.01 && (found[1].2 + 10.0 - middle).abs() < 0.01);
+        assert!(
+            (found[0].2 + 5.0 - middle).abs() < 0.01 && (found[1].2 + 10.0 - middle).abs() < 0.01
+        );
         assert!(half.ascent > 16.0 && half.descent > 4.0);
         // A fraction in a fraction is smaller; one without a bar has none.
         let nested = glyphs(&laid("(a/b)/c"));
         assert!(nested[0].1 < 20.0 && nested[2].1 == 20.0);
-        assert!(!laid("n¦k").ink.iter().any(|ink| matches!(ink, Ink::Rule { .. })));
+        assert!(
+            !laid("n¦k")
+                .ink
+                .iter()
+                .any(|ink| matches!(ink, Ink::Rule { .. }))
+        );
     }
 
     #[test]
@@ -1204,7 +1651,11 @@ mod tests {
         assert_eq!(deep[2].1, deep[3].1);
         // A radical: its sign runs over the body, and takes the degree.
         let root = laid("√(3&x+1)");
-        let Some(Ink::Stroke { points, .. }) = root.ink.iter().find(|ink| matches!(ink, Ink::Stroke { .. })) else {
+        let Some(Ink::Stroke { points, .. }) = root
+            .ink
+            .iter()
+            .find(|ink| matches!(ink, Ink::Stroke { .. }))
+        else {
             panic!("a radical sign");
         };
         assert_eq!(points.len(), 5);
@@ -1213,7 +1664,10 @@ mod tests {
         // A sum: limits over and under the sign, the body after it.
         let sum = glyphs(&laid("∑_(k=0)^n▒a_k"));
         let sign = sum.iter().find(|g| g.0 == "∑").unwrap();
-        let (upper, lower) = (sum.iter().find(|g| g.0 == "n").unwrap(), sum.iter().find(|g| g.0 == "k").unwrap());
+        let (upper, lower) = (
+            sum.iter().find(|g| g.0 == "n").unwrap(),
+            sum.iter().find(|g| g.0 == "k").unwrap(),
+        );
         assert_eq!(sign.1, 30.0);
         assert!(upper.3 < sign.3 - 20.0 && lower.3 > sign.3 + 4.0);
         assert!(sum.iter().find(|g| g.0 == "a").unwrap().2 > sign.2 + 15.0);
@@ -1231,13 +1685,34 @@ mod tests {
         // Around a fraction: drawn, as tall as the fraction, the same
         // above the axis as below.
         let tall = laid("(a/b)");
-        let strokes: Vec<&Vec<(f32, f32)>> = tall.ink.iter().filter_map(|ink| match ink { Ink::Stroke { points, .. } => Some(points), _ => None }).collect();
+        let strokes: Vec<&Vec<(f32, f32)>> = tall
+            .ink
+            .iter()
+            .filter_map(|ink| match ink {
+                Ink::Stroke { points, .. } => Some(points),
+                _ => None,
+            })
+            .collect();
         assert_eq!(strokes.len(), 2);
         let (top, bottom) = (strokes[0][0].1, strokes[0][strokes[0].len() - 1].1);
         assert!(((top + bottom) / 2.0 + AXIS * 20.0).abs() < 0.01 && bottom - top > 40.0);
         assert!((tall.ascent + top).abs() < 0.01 && strokes[1][0].0 > strokes[0][0].0 + 10.0);
-        for brackets in ["[a/b]", "{a/b}", "⟨a/b⟩", "|a/b|", "‖a/b‖", "⌊a/b⌋", "⌈a/b⌉"] {
-            assert!(laid(brackets).ink.iter().any(|ink| matches!(ink, Ink::Stroke { .. })), "{brackets}");
+        for brackets in [
+            "[a/b]",
+            "{a/b}",
+            "⟨a/b⟩",
+            "|a/b|",
+            "‖a/b‖",
+            "⌊a/b⌋",
+            "⌈a/b⌉",
+        ] {
+            assert!(
+                laid(brackets)
+                    .ink
+                    .iter()
+                    .any(|ink| matches!(ink, Ink::Stroke { .. })),
+                "{brackets}"
+            );
         }
         // A matrix: columns line up, rows are centred on the axis.
         let matrix = glyphs(&laid("■(a&bcd@ef&g)"));
@@ -1254,7 +1729,13 @@ mod tests {
         let mut equation = Equation::parse("a/b");
         equation.linear = true;
         let line = layout(&equation, 20.0, &Fixed);
-        assert_eq!(glyphs(&line).iter().map(|g| g.0.as_str()).collect::<Vec<_>>(), vec!["a", "/", "b"]);
+        assert_eq!(
+            glyphs(&line)
+                .iter()
+                .map(|g| g.0.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "/", "b"]
+        );
         assert_eq!(line.ascent, 16.0);
         // Every built-in equation and every structure is laid out.
         let mut all: Vec<&str> = BUILT_IN.iter().map(|(_, linear)| *linear).collect();
@@ -1263,7 +1744,13 @@ mod tests {
         }
         for linear in all {
             let laid = laid(linear);
-            assert!(laid.width > 0.0 && laid.width.is_finite() && laid.height() >= 20.0 && laid.height() < 200.0, "{linear}");
+            assert!(
+                laid.width > 0.0
+                    && laid.width.is_finite()
+                    && laid.height() >= 20.0
+                    && laid.height() < 200.0,
+                "{linear}"
+            );
         }
     }
 }

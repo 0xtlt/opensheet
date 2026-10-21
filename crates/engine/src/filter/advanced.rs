@@ -80,9 +80,16 @@ impl Workbook {
             .collect()
     }
 
-    fn criteria_test(&self, list: (usize, Rect), criteria: (usize, Rect)) -> Result<Test, AdvancedFilterError> {
+    fn criteria_test(
+        &self,
+        list: (usize, Rect),
+        criteria: (usize, Rect),
+    ) -> Result<Test, AdvancedFilterError> {
         let (sheet, range) = criteria;
-        let sh = self.sheets.get(sheet).ok_or(AdvancedFilterError::BadCriteria)?;
+        let sh = self
+            .sheets
+            .get(sheet)
+            .ok_or(AdvancedFilterError::BadCriteria)?;
         let range = self.clamp_to_used(sheet, range);
         if range.rows() < 2 {
             return Err(AdvancedFilterError::BadCriteria);
@@ -91,7 +98,10 @@ impl Workbook {
         let headings: Vec<Option<u32>> = (range.c0..=range.c1)
             .map(|col| {
                 let heading = self.display_text(sheet, range.r0, col).text.to_lowercase();
-                fields.iter().position(|f| !heading.is_empty() && *f == heading).map(|i| i as u32)
+                fields
+                    .iter()
+                    .position(|f| !heading.is_empty() && *f == heading)
+                    .map(|i| i as u32)
             })
             .collect();
         let mut rows = Vec::new();
@@ -110,7 +120,9 @@ impl Workbook {
                     (Some(field), _) => {
                         let wanted = match &value {
                             // Text alone asks for the cells that begin with it.
-                            Value::Text(text) if !text.starts_with(['=', '<', '>']) => Value::text(format!("{text}*")),
+                            Value::Text(text) if !text.starts_with(['=', '<', '>']) => {
+                                Value::text(format!("{text}*"))
+                            }
                             other => other.clone(),
                         };
                         Condition::Field(field, Comparison::parse(&wanted, self.locale))
@@ -142,14 +154,18 @@ impl Workbook {
         if range.rows() < 2 || (range.c0..=range.c1).all(|col| sh.is_blank(range.r0, col)) {
             return Err(AdvancedFilterError::NoList);
         }
-        let test = criteria.map(|criteria| self.criteria_test((sheet, range), criteria)).transpose()?;
+        let test = criteria
+            .map(|criteria| self.criteria_test((sheet, range), criteria))
+            .transpose()?;
         let session = EvalSession::new(self);
         let first = range.r0 + 1;
         let passes = |row: u32| match &test {
             None => true,
             Some(test) => test.rows.iter().any(|conditions| {
                 conditions.iter().all(|condition| match condition {
-                    Condition::Field(field, comparison) => comparison.matches(&sh.value_at(row, range.c0 + field)),
+                    Condition::Field(field, comparison) => {
+                        comparison.matches(&sh.value_at(row, range.c0 + field))
+                    }
                     Condition::Formula { row: at, col, expr } => {
                         let for_record = expr.shifted(i64::from(row) - i64::from(first), 0);
                         truthy(&session.eval(test.sheet, *at, *col, &for_record))
@@ -158,7 +174,11 @@ impl Workbook {
                 })
             }),
         };
-        let columns: Vec<u32> = if unique_on.is_empty() { (0..range.cols()).collect() } else { unique_on.to_vec() };
+        let columns: Vec<u32> = if unique_on.is_empty() {
+            (0..range.cols()).collect()
+        } else {
+            unique_on.to_vec()
+        };
         let mut seen: HashSet<Vec<String>> = HashSet::new();
         let mut rows = Vec::new();
         for row in first..=range.r1 {
@@ -168,7 +188,11 @@ impl Workbook {
             if unique {
                 let key: Vec<String> = columns
                     .iter()
-                    .map(|c| self.display_text(sheet, row, range.c0 + c).text.to_lowercase())
+                    .map(|c| {
+                        self.display_text(sheet, row, range.c0 + c)
+                            .text
+                            .to_lowercase()
+                    })
                     .collect();
                 if !seen.insert(key) {
                     continue;
@@ -192,13 +216,17 @@ impl Workbook {
     ) -> Result<usize, AdvancedFilterError> {
         let list = self.clamp_to_used(sheet, list);
         let kept = self.advanced_filter_rows((sheet, list), criteria, unique, &[])?;
-        let hidden: BTreeSet<u32> = (list.r0 + 1..=list.r1).filter(|row| kept.binary_search(row).is_err()).collect();
+        let hidden: BTreeSet<u32> = (list.r0 + 1..=list.r1)
+            .filter(|row| kept.binary_search(row).is_err())
+            .collect();
         self.snapshot();
         let sh = &mut self.sheets[sheet];
         sh.auto_filter = None;
         sh.advanced_filter = Some(AdvancedFilter {
             range: list,
-            criteria: criteria.filter(|(on, _)| *on == sheet).map(|(_, range)| range),
+            criteria: criteria
+                .filter(|(on, _)| *on == sheet)
+                .map(|(_, range)| range),
             hidden,
         });
         self.refilter(sheet);
@@ -208,7 +236,11 @@ impl Workbook {
     /// Show the rows an Advanced Filter hides (Data > Clear). False when
     /// the sheet has none. The caller commits.
     pub fn clear_advanced_filter(&mut self, sheet: usize) -> bool {
-        if !self.sheets.get(sheet).is_some_and(|sh| sh.advanced_filter.is_some()) {
+        if !self
+            .sheets
+            .get(sheet)
+            .is_some_and(|sh| sh.advanced_filter.is_some())
+        {
             return false;
         }
         self.snapshot();
@@ -220,18 +252,36 @@ impl Workbook {
     /// The columns of the list an extract takes, in order, given the
     /// "Copy to" range: those its first row names, or all of them when
     /// that row is blank.
-    fn extract_columns(&self, list: (usize, Rect), dest_sheet: usize, dest: Rect) -> Result<Vec<u32>, AdvancedFilterError> {
-        let sh = self.sheets.get(dest_sheet).ok_or(AdvancedFilterError::BadDestination)?;
+    fn extract_columns(
+        &self,
+        list: (usize, Rect),
+        dest_sheet: usize,
+        dest: Rect,
+    ) -> Result<Vec<u32>, AdvancedFilterError> {
+        let sh = self
+            .sheets
+            .get(dest_sheet)
+            .ok_or(AdvancedFilterError::BadDestination)?;
         if (dest.c0..=dest.c1).all(|col| sh.is_blank(dest.r0, col)) {
             return Ok((0..list.1.cols()).collect());
         }
         let fields = self.list_fields(list.0, list.1);
         // Trailing blank cells of a wide selection are not headings.
-        let last = (dest.c0..=dest.c1).rev().find(|col| !sh.is_blank(dest.r0, *col)).unwrap_or(dest.c0);
+        let last = (dest.c0..=dest.c1)
+            .rev()
+            .find(|col| !sh.is_blank(dest.r0, *col))
+            .unwrap_or(dest.c0);
         (dest.c0..=last)
             .map(|col| {
-                let heading = self.display_text(dest_sheet, dest.r0, col).text.to_lowercase();
-                fields.iter().position(|f| *f == heading).map(|i| i as u32).ok_or(AdvancedFilterError::BadExtract)
+                let heading = self
+                    .display_text(dest_sheet, dest.r0, col)
+                    .text
+                    .to_lowercase();
+                fields
+                    .iter()
+                    .position(|f| *f == heading)
+                    .map(|i| i as u32)
+                    .ok_or(AdvancedFilterError::BadExtract)
             })
             .collect()
     }
@@ -250,11 +300,22 @@ impl Workbook {
         let columns = self.extract_columns(list, dest_sheet, dest)?;
         let rows = self.advanced_filter_rows(list, criteria, unique, &columns)?;
         // A "Copy to" range several rows tall takes no more than it holds.
-        let count = if dest.rows() > 1 { rows.len().min(dest.rows() as usize - 1) } else { rows.len() } as u32;
-        if dest.r0 + count >= MAX_ROWS || dest.c0 as usize + columns.len() > crate::refs::MAX_COLS as usize {
+        let count = if dest.rows() > 1 {
+            rows.len().min(dest.rows() as usize - 1)
+        } else {
+            rows.len()
+        } as u32;
+        if dest.r0 + count >= MAX_ROWS
+            || dest.c0 as usize + columns.len() > crate::refs::MAX_COLS as usize
+        {
             return Err(AdvancedFilterError::BadDestination);
         }
-        let extent = Rect::new(dest.r0, dest.c0, dest.r0 + count, dest.c0 + columns.len() as u32 - 1);
+        let extent = Rect::new(
+            dest.r0,
+            dest.c0,
+            dest.r0 + count,
+            dest.c0 + columns.len() as u32 - 1,
+        );
         if list.0 == dest_sheet && extent.intersects(&list.1) {
             return Err(AdvancedFilterError::BadDestination);
         }
@@ -288,14 +349,17 @@ impl Workbook {
                 columns
                     .iter()
                     .map(|c| {
-                        self.sheets[list.0].cells.get(&(*row, list.1.c0 + c)).map(|cell| Cell {
-                            content: match &cell.value {
-                                Value::Empty => Content::Empty,
-                                value => Content::Value(value.clone()),
-                            },
-                            value: cell.value.clone(),
-                            style: cell.style,
-                        })
+                        self.sheets[list.0]
+                            .cells
+                            .get(&(*row, list.1.c0 + c))
+                            .map(|cell| Cell {
+                                content: match &cell.value {
+                                    Value::Empty => Content::Empty,
+                                    value => Content::Value(value.clone()),
+                                },
+                                value: cell.value.clone(),
+                                style: cell.style,
+                            })
                     })
                     .collect()
             })
@@ -320,8 +384,12 @@ pub(super) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit) {
         return;
     };
     match edit {
-        StructuralEdit::InsertRows { at, count } => filter.hidden = shift_set(&filter.hidden, true, at, count, MAX_ROWS),
-        StructuralEdit::DeleteRows { at, count } => filter.hidden = shift_set(&filter.hidden, false, at, count, MAX_ROWS),
+        StructuralEdit::InsertRows { at, count } => {
+            filter.hidden = shift_set(&filter.hidden, true, at, count, MAX_ROWS)
+        }
+        StructuralEdit::DeleteRows { at, count } => {
+            filter.hidden = shift_set(&filter.hidden, false, at, count, MAX_ROWS)
+        }
         StructuralEdit::InsertCols { .. } | StructuralEdit::DeleteCols { .. } => {}
     }
     // The list moves the way the range of a filter does.
@@ -372,7 +440,15 @@ mod tests {
         wb(&cells)
     }
 
-    const LIST: (usize, Rect) = (0, Rect { r0: 0, c0: 0, r1: 6, c1: 2 });
+    const LIST: (usize, Rect) = (
+        0,
+        Rect {
+            r0: 0,
+            c0: 0,
+            r1: 6,
+            c1: 2,
+        },
+    );
 
     fn range(text: &str) -> Option<(usize, Rect)> {
         Some((0, Rect::parse(text).unwrap()))
@@ -380,12 +456,22 @@ mod tests {
 
     /// The (1-based) sheet rows kept.
     fn kept(w: &Workbook, criteria: &str) -> Vec<u32> {
-        w.advanced_filter_rows(LIST, range(criteria), false, &[]).unwrap().iter().map(|row| row + 1).collect()
+        w.advanced_filter_rows(LIST, range(criteria), false, &[])
+            .unwrap()
+            .iter()
+            .map(|row| row + 1)
+            .collect()
     }
 
     #[test]
     fn and_along_a_row_or_between_rows() {
-        let w = list(&[("E1", "City"), ("F1", "Qty"), ("E2", "Paris"), ("F2", ">5"), ("E3", "Lyon")]);
+        let w = list(&[
+            ("E1", "City"),
+            ("F1", "Qty"),
+            ("E2", "Paris"),
+            ("F2", ">5"),
+            ("E3", "Lyon"),
+        ]);
         // Paris with more than 5, or anything in Lyon.
         assert_eq!(kept(&w, "E1:F3"), [3, 4, 7]);
         assert_eq!(kept(&w, "E1:F2"), [4]);
@@ -434,7 +520,12 @@ mod tests {
         let w = list(&[("E2", "=B2>AVERAGE($B$2:$B$7)")]);
         assert_eq!(kept(&w, "E1:E2"), [3, 5]);
         // Under a heading that is not a field, with a field criterion.
-        let w = list(&[("E1", "Calc"), ("F1", "City"), ("E2", "=LEN(A2)=6"), ("F2", "Paris")]);
+        let w = list(&[
+            ("E1", "Calc"),
+            ("F1", "City"),
+            ("E2", "=LEN(A2)=6"),
+            ("F2", "Paris"),
+        ]);
         assert_eq!(kept(&w, "E1:F2"), [2, 4, 6]);
         // A constant there is true or false for every record.
         let w = list(&[("E1", "Calc"), ("E2", "FALSE")]);
@@ -456,9 +547,19 @@ mod tests {
         let mut w = list(&[("E1", "City"), ("E2", "Paris")]);
         w.toggle_auto_filter(0, Rect::cell(1, 0)).unwrap();
         w.commit("filter");
-        assert_eq!(w.advanced_filter_in_place(0, LIST.1, range("E1:E2"), false), Ok(3));
+        assert_eq!(
+            w.advanced_filter_in_place(0, LIST.1, range("E1:E2"), false),
+            Ok(3)
+        );
         w.commit("Advanced Filter");
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2, 4, 6]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2, 4, 6]
+        );
         assert!(w.sheets[0].auto_filter.is_none());
         // Reapplying the sheet's filters keeps them hidden.
         w.reapply_filters(0);
@@ -467,8 +568,18 @@ mod tests {
         // Rows inserted above move the hidden rows with the list.
         w.insert_rows(0, 0, 2);
         w.commit("Insert");
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [4, 6, 8]);
-        assert_eq!(w.sheets[0].advanced_filter.as_ref().unwrap().range, Rect::new(2, 0, 8, 2));
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [4, 6, 8]
+        );
+        assert_eq!(
+            w.sheets[0].advanced_filter.as_ref().unwrap().range,
+            Rect::new(2, 0, 8, 2)
+        );
         assert!(w.clear_advanced_filter(0));
         w.commit("Clear");
         assert!(w.sheets[0].filtered_rows.is_empty());
@@ -482,7 +593,9 @@ mod tests {
     fn copy_to_another_location() {
         let mut w = list(&[("E1", "City"), ("E2", "Paris"), ("I5", "old")]);
         let dest = Rect::parse("I1").unwrap();
-        let extent = w.advanced_filter_copy(LIST, range("E1:E2"), false, 0, dest).unwrap();
+        let extent = w
+            .advanced_filter_copy(LIST, range("E1:E2"), false, 0, dest)
+            .unwrap();
         w.commit("Advanced Filter");
         assert_eq!(extent, Rect::parse("I1:K4").unwrap());
         assert_eq!(val(&w, "I1"), Value::text("Name"));
@@ -511,7 +624,9 @@ mod tests {
         assert_eq!(val(&w, "K2"), Value::Empty);
         // A range several rows tall takes what it holds.
         let mut w = list(&[]);
-        let extent = w.advanced_filter_copy(LIST, None, false, 0, Rect::parse("I1:K3").unwrap()).unwrap();
+        let extent = w
+            .advanced_filter_copy(LIST, None, false, 0, Rect::parse("I1:K3").unwrap())
+            .unwrap();
         assert_eq!(extent, Rect::parse("I1:K3").unwrap());
     }
 
@@ -527,7 +642,10 @@ mod tests {
             Err(AdvancedFilterError::BadDestination)
         );
         // Criteria without a row of conditions, a list without records.
-        assert_eq!(w.advanced_filter_rows(LIST, range("E1"), false, &[]), Err(AdvancedFilterError::BadCriteria));
+        assert_eq!(
+            w.advanced_filter_rows(LIST, range("E1"), false, &[]),
+            Err(AdvancedFilterError::BadCriteria)
+        );
         assert_eq!(
             w.advanced_filter_rows((0, Rect::parse("A1:C1").unwrap()), None, false, &[]),
             Err(AdvancedFilterError::NoList)

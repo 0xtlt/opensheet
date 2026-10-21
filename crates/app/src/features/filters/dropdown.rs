@@ -10,8 +10,8 @@
 //! running an entry puts the drop-down back (`FilterMenu::keep_open`).
 
 use super::{
-    Cmd, State, apply_criteria, blanks_label, clear_filter_label, column_title, custom, dynamic_label, month_name,
-    sort, sort_labels, sort_target,
+    Cmd, State, apply_criteria, blanks_label, clear_filter_label, column_title, custom,
+    dynamic_label, month_name, sort, sort_labels, sort_target,
 };
 use super::{OpenMenu, SortTarget, button_box};
 use crate::app::ExcelApp;
@@ -19,15 +19,18 @@ use crate::features::{Command, Cx, Intent};
 use crate::i18n::t;
 use crate::text_input::{self, InputEvent, TextInput};
 use crate::theme::{self, c};
-use crate::widgets::{self, Button, ROW_H, ScrollState, TextField, Tri, check_mark, icon, virtual_rows};
+use crate::widgets::{
+    self, Button, ROW_H, ScrollState, TextField, Tri, check_mark, icon, virtual_rows,
+};
 use gpui::{
-    AnyElement, App, Bounds, Context, Corner, Entity, FocusHandle, Focusable, KeyDownEvent, MouseButton, MouseDownEvent,
-    Pixels, Point,
-    SharedString, WeakEntity, Window, anchored, canvas, deferred, div, point, prelude::*, px,
+    AnyElement, App, Bounds, Context, Corner, Entity, FocusHandle, Focusable, KeyDownEvent,
+    MouseButton, MouseDownEvent, Pixels, Point, SharedString, WeakEntity, Window, anchored, canvas,
+    deferred, div, point, prelude::*, px,
 };
 use opensheet_engine::datetime::date_to_serial;
 use opensheet_engine::filter::{
-    ColorFilter, ColumnKind, Comparison, Criteria, DynamicFilter, FilterButton, FilterDropdown, FilterScope,
+    ColorFilter, ColumnKind, Comparison, Criteria, DynamicFilter, FilterButton, FilterDropdown,
+    FilterScope,
 };
 use opensheet_engine::format;
 use opensheet_engine::functions::wildcard_match;
@@ -42,7 +45,9 @@ use std::rc::Rc;
 /// What an entry of the drop-down does.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) enum Act {
-    Sort { descending: bool },
+    Sort {
+        descending: bool,
+    },
     /// Put the cells of a fill or font colour on top.
     SortColor(SortOn),
     CustomSort,
@@ -143,7 +148,12 @@ fn color_entries(
     let mut out = vec![Entry::heading(heading)];
     for color in colors.iter().flatten() {
         let rgb = color.value();
-        let name = format!("RGB({}, {}, {})", rgb >> 16 & 0xFF, rgb >> 8 & 0xFF, rgb & 0xFF);
+        let name = format!(
+            "RGB({}, {}, {})",
+            rgb >> 16 & 0xFF,
+            rgb >> 8 & 0xFF,
+            rgb & 0xFF
+        );
         let mut entry = Entry::act(name, act(Some(*color))).checked(current == Some(Some(*color)));
         entry.swatch = Some(*color);
         out.push(entry);
@@ -236,11 +246,23 @@ fn condition_entries(data: &FilterDropdown, locale: &Locale) -> Entry {
                 custom(equals, Comparison::Equals, None),
                 custom(not_equal, Comparison::NotEquals, None),
                 Entry::separator(),
-                custom(t("Begins With…", "Commence par…"), Comparison::BeginsWith, None),
-                custom(t("Ends With…", "Se termine par…"), Comparison::EndsWith, None),
+                custom(
+                    t("Begins With…", "Commence par…"),
+                    Comparison::BeginsWith,
+                    None,
+                ),
+                custom(
+                    t("Ends With…", "Se termine par…"),
+                    Comparison::EndsWith,
+                    None,
+                ),
                 Entry::separator(),
                 custom(t("Contains…", "Contient…"), Comparison::Contains, None),
-                custom(t("Does Not Contain…", "Ne contient pas…"), Comparison::NotContains, None),
+                custom(
+                    t("Does Not Contain…", "Ne contient pas…"),
+                    Comparison::NotContains,
+                    None,
+                ),
             ],
         ),
         ColumnKind::Number => (
@@ -249,7 +271,11 @@ fn condition_entries(data: &FilterDropdown, locale: &Locale) -> Entry {
                 custom(equals, Comparison::Equals, None),
                 custom(not_equal, Comparison::NotEquals, None),
                 Entry::separator(),
-                custom(t("Greater Than…", "Supérieur à…"), Comparison::Greater, None),
+                custom(
+                    t("Greater Than…", "Supérieur à…"),
+                    Comparison::Greater,
+                    None,
+                ),
                 custom(
                     t("Greater Than Or Equal To…", "Supérieur ou égal à…"),
                     Comparison::GreaterOrEqual,
@@ -270,12 +296,16 @@ fn condition_entries(data: &FilterDropdown, locale: &Locale) -> Entry {
             ],
         ),
         ColumnKind::Date => {
-            let mut period: Vec<Entry> = (1..=4).map(|q| dynamic(DynamicFilter::Quarter(q))).collect();
+            let mut period: Vec<Entry> = (1..=4)
+                .map(|q| dynamic(DynamicFilter::Quarter(q)))
+                .collect();
             period.push(Entry::separator());
             period.extend((1..=12).map(|m| dynamic(DynamicFilter::Month(m))));
             let in_period = matches!(
                 data.criteria,
-                Some(Criteria::Dynamic(DynamicFilter::Quarter(_) | DynamicFilter::Month(_)))
+                Some(Criteria::Dynamic(
+                    DynamicFilter::Quarter(_) | DynamicFilter::Month(_)
+                ))
             );
             let mut entries = vec![
                 custom(equals, Comparison::Equals, None),
@@ -285,11 +315,31 @@ fn condition_entries(data: &FilterDropdown, locale: &Locale) -> Entry {
                 custom(between, range.0, range.1),
             ];
             let groups = [
-                [DynamicFilter::Tomorrow, DynamicFilter::Today, DynamicFilter::Yesterday],
-                [DynamicFilter::NextWeek, DynamicFilter::ThisWeek, DynamicFilter::LastWeek],
-                [DynamicFilter::NextMonth, DynamicFilter::ThisMonth, DynamicFilter::LastMonth],
-                [DynamicFilter::NextQuarter, DynamicFilter::ThisQuarter, DynamicFilter::LastQuarter],
-                [DynamicFilter::NextYear, DynamicFilter::ThisYear, DynamicFilter::LastYear],
+                [
+                    DynamicFilter::Tomorrow,
+                    DynamicFilter::Today,
+                    DynamicFilter::Yesterday,
+                ],
+                [
+                    DynamicFilter::NextWeek,
+                    DynamicFilter::ThisWeek,
+                    DynamicFilter::LastWeek,
+                ],
+                [
+                    DynamicFilter::NextMonth,
+                    DynamicFilter::ThisMonth,
+                    DynamicFilter::LastMonth,
+                ],
+                [
+                    DynamicFilter::NextQuarter,
+                    DynamicFilter::ThisQuarter,
+                    DynamicFilter::LastQuarter,
+                ],
+                [
+                    DynamicFilter::NextYear,
+                    DynamicFilter::ThisYear,
+                    DynamicFilter::LastYear,
+                ],
             ];
             for group in groups {
                 entries.push(Entry::separator());
@@ -298,14 +348,27 @@ fn condition_entries(data: &FilterDropdown, locale: &Locale) -> Entry {
             entries.push(Entry::separator());
             entries.push(dynamic(DynamicFilter::YearToDate));
             entries.push(
-                Entry::sub(t("All Dates in the Period", "Toutes les dates de cette période"), period).checked(in_period),
+                Entry::sub(
+                    t(
+                        "All Dates in the Period",
+                        "Toutes les dates de cette période",
+                    ),
+                    period,
+                )
+                .checked(in_period),
             );
             (t("Date Filters", "Filtres chronologiques"), entries)
         }
     };
     entries.push(Entry::separator());
     let other = matches!(data.criteria, Some(Criteria::Custom(_))) && !listed;
-    entries.push(Entry::act(t("Custom Filter…", "Filtre personnalisé…"), Act::CustomDialog).checked(other));
+    entries.push(
+        Entry::act(
+            t("Custom Filter…", "Filtre personnalisé…"),
+            Act::CustomDialog,
+        )
+        .checked(other),
+    );
     let active = matches!(
         data.criteria,
         Some(Criteria::Custom(_) | Criteria::Top10(_) | Criteria::Dynamic(_))
@@ -325,11 +388,17 @@ pub(super) fn entries(data: &FilterDropdown, col: u32, locale: &Locale) -> Vec<E
         Entry::act(descending, Act::Sort { descending: true })
             .icon("sort-desc")
             .checked(data.sort == Some(true)),
-        Entry::sub(t("Sort by Color", "Trier par couleur"), sort_color_entries(data)),
+        Entry::sub(
+            t("Sort by Color", "Trier par couleur"),
+            sort_color_entries(data),
+        ),
         Entry::separator(),
-        Entry::act(clear_filter_label(&column_title(&data.header, col)), Act::Clear)
-            .icon("filters-clear")
-            .disabled(!data.is_filtered()),
+        Entry::act(
+            clear_filter_label(&column_title(&data.header, col)),
+            Act::Clear,
+        )
+        .icon("filters-clear")
+        .disabled(!data.is_filtered()),
         Entry::sub(t("Filter by Color", "Filtrer par couleur"), by_color)
             .disabled(no_colors)
             .checked(matches!(data.criteria, Some(Criteria::Color(_)))),
@@ -354,16 +423,34 @@ pub(super) fn perform(
         return;
     }
     let sort_on = |app: &mut ExcelApp, on: SortOn, descending: bool, cx: &mut Cx| {
-        sort_target(app, SortTarget::Filter { scope, range }, range.c0 + col_id, on, descending, cx)
+        sort_target(
+            app,
+            SortTarget::Filter { scope, range },
+            range.c0 + col_id,
+            on,
+            descending,
+            cx,
+        )
     };
     match act {
         Act::Sort { descending } => sort_on(app, SortOn::Values, descending, cx),
         Act::SortColor(on) => sort_on(app, on, false, cx),
         Act::CustomSort => sort::open_on(app, SortTarget::Filter { scope, range }, window, cx),
         Act::Clear => apply_criteria(app, sheet, scope, col_id, None, cx),
-        Act::Color(color) => apply_criteria(app, sheet, scope, col_id, Some(Criteria::Color(color)), cx),
-        Act::Dynamic(dynamic) => apply_criteria(app, sheet, scope, col_id, Some(Criteria::Dynamic(dynamic)), cx),
-        Act::Custom(first, second) => custom::open(app, scope, col_id, Some((first, second)), window, cx),
+        Act::Color(color) => {
+            apply_criteria(app, sheet, scope, col_id, Some(Criteria::Color(color)), cx)
+        }
+        Act::Dynamic(dynamic) => apply_criteria(
+            app,
+            sheet,
+            scope,
+            col_id,
+            Some(Criteria::Dynamic(dynamic)),
+            cx,
+        ),
+        Act::Custom(first, second) => {
+            custom::open(app, scope, col_id, Some((first, second)), window, cx)
+        }
         Act::CustomDialog => custom::open(app, scope, col_id, None, window, cx),
         Act::Top10 => custom::open_top10(app, scope, col_id, window, cx),
     }
@@ -456,15 +543,25 @@ impl ValueList {
     /// would show it.
     fn day_text(&self, year: i32, month: u32, day: u32) -> String {
         let short = date_to_serial(year as i64, month as i64, day as i64)
-            .map(|serial| format::format_number(serial, self.locale.short_date_format, self.locale).text)
+            .map(|serial| {
+                format::format_number(serial, self.locale.short_date_format, self.locale).text
+            })
             .unwrap_or_default();
-        format!("{day:02} {} {year} {short}", self.locale.months[(month.clamp(1, 12) - 1) as usize])
+        format!(
+            "{day:02} {} {year} {short}",
+            self.locale.months[(month.clamp(1, 12) - 1) as usize]
+        )
     }
 
     fn matches(&self) -> Shown {
         let all = !self.searching();
         Shown {
-            items: self.data.items.iter().map(|item| all || self.found(&item.text)).collect(),
+            items: self
+                .data
+                .items
+                .iter()
+                .map(|item| all || self.found(&item.text))
+                .collect(),
             days: self
                 .data
                 .dates
@@ -476,7 +573,13 @@ impl ValueList {
                             month
                                 .days
                                 .iter()
-                                .map(|day| all || self.found(&self.day_text(year.year, month.month, day.day)))
+                                .map(|day| {
+                                    all || self.found(&self.day_text(
+                                        year.year,
+                                        month.month,
+                                        day.day,
+                                    ))
+                                })
                                 .collect()
                         })
                         .collect()
@@ -501,12 +604,29 @@ impl ValueList {
     /// Every leaf with whether it is listed, for reading or ticking.
     fn leaves_mut(&mut self) -> impl Iterator<Item = (bool, &mut bool)> {
         let shown = &self.shown;
-        let items = self.data.items.iter_mut().zip(&shown.items).map(|(item, on)| (*on, &mut item.checked));
-        let days = self.data.dates.iter_mut().zip(&shown.days).flat_map(|(year, months)| {
-            year.months.iter_mut().zip(months).flat_map(|(month, days)| {
-                month.days.iter_mut().zip(days).map(|(day, on)| (*on, &mut day.checked))
-            })
-        });
+        let items = self
+            .data
+            .items
+            .iter_mut()
+            .zip(&shown.items)
+            .map(|(item, on)| (*on, &mut item.checked));
+        let days = self
+            .data
+            .dates
+            .iter_mut()
+            .zip(&shown.days)
+            .flat_map(|(year, months)| {
+                year.months
+                    .iter_mut()
+                    .zip(months)
+                    .flat_map(|(month, days)| {
+                        month
+                            .days
+                            .iter_mut()
+                            .zip(days)
+                            .map(|(day, on)| (*on, &mut day.checked))
+                    })
+            });
         let blanks = self
             .data
             .has_blanks
@@ -563,7 +683,8 @@ impl ValueList {
             .filter(|(_, shown)| **shown)
             .map(|(item, _)| item.checked);
         let days = (0..self.data.dates.len()).flat_map(|year| self.day_states(year, None));
-        let blanks = (self.data.has_blanks && self.shown.blanks).then_some(self.data.blanks_checked);
+        let blanks =
+            (self.data.has_blanks && self.shown.blanks).then_some(self.data.blanks_checked);
         items.chain(days).chain(blanks)
     }
 
@@ -587,10 +708,18 @@ impl ValueList {
                 if !self.searching() && !self.expanded.contains(&(year.year, month.month)) {
                     continue;
                 }
-                out.extend((0..month.days.len()).filter(|d| self.shown.days[y][m][*d]).map(|d| Row::Day(y, m, d)));
+                out.extend(
+                    (0..month.days.len())
+                        .filter(|d| self.shown.days[y][m][*d])
+                        .map(|d| Row::Day(y, m, d)),
+                );
             }
         }
-        out.extend((0..self.data.items.len()).filter(|i| self.shown.items[*i]).map(Row::Item));
+        out.extend(
+            (0..self.data.items.len())
+                .filter(|i| self.shown.items[*i])
+                .map(Row::Item),
+        );
         if self.data.has_blanks && self.shown.blanks {
             out.push(Row::Blanks);
         }
@@ -613,7 +742,11 @@ impl ValueList {
             )
             .to_string(),
             Row::All => t("(Select All)", "(Sélectionner tout)").to_string(),
-            Row::Add => t("Add current selection to filter", "Ajouter la sélection actuelle au filtre").to_string(),
+            Row::Add => t(
+                "Add current selection to filter",
+                "Ajouter la sélection actuelle au filtre",
+            )
+            .to_string(),
             Row::Year(y) => self.data.dates[y].year.to_string(),
             Row::Month(y, m) => month_name(self.locale, self.data.dates[y].months[m].month),
             Row::Day(y, m, d) => format!("{:02}", self.data.dates[y].months[m].days[d].day),
@@ -782,7 +915,18 @@ pub(super) fn open(app: &mut ExcelApp, button: FilterButton, window: &mut Window
             anchor.x = layout.to_window(left, 0.0).x;
         }
     }
-    let view = cx.new(|cx| FilterMenu::new(weak, sheet, button, data, locale, anchor, dismissed.clone(), cx));
+    let view = cx.new(|cx| {
+        FilterMenu::new(
+            weak,
+            sheet,
+            button,
+            data,
+            locale,
+            anchor,
+            dismissed.clone(),
+            cx,
+        )
+    });
     app.open_popup_view(anchor, view.clone(), cx);
     window.focus(&view.read(cx).menu_focus);
     app.ext_mut::<State>().menu = Some(OpenMenu {
@@ -803,7 +947,9 @@ impl FilterMenu {
         cx: &mut Context<Self>,
     ) -> Self {
         let search = widgets::input(cx, "");
-        search.update(cx, |field, _| field.placeholder = t("Search", "Rechercher").into());
+        search.update(cx, |field, _| {
+            field.placeholder = t("Search", "Rechercher").into()
+        });
         cx.subscribe(&search, |this: &mut Self, field, event: &InputEvent, cx| {
             if *event == InputEvent::Changed {
                 let text = field.read(cx).text().to_string();
@@ -839,8 +985,16 @@ impl FilterMenu {
     /// What a press inside a submenu ends with, unless it ran an entry.
     /// Submenus hang outside the drop-down, so the press has just closed
     /// it as a press outside does: this puts it back as it was.
-    fn keep_open(&self, cx: &mut Context<Self>) -> impl Fn(&MouseDownEvent, &mut Window, &mut App) + use<> {
-        let (app, view, anchor, focus) = (self.app.clone(), cx.entity(), self.anchor, self.menu_focus.clone());
+    fn keep_open(
+        &self,
+        cx: &mut Context<Self>,
+    ) -> impl Fn(&MouseDownEvent, &mut Window, &mut App) + use<> {
+        let (app, view, anchor, focus) = (
+            self.app.clone(),
+            cx.entity(),
+            self.anchor,
+            self.menu_focus.clone(),
+        );
         move |_, window, cx| {
             app.update(cx, |app, cx| {
                 if app.popup.is_none() {
@@ -868,7 +1022,11 @@ impl FilterMenu {
     /// and those of its siblings close.
     fn hover(&mut self, level: usize, index: usize, cx: &mut Context<Self>) {
         // A panel that was just folded may still report the pointer.
-        let Some(entry) = self.level(level).get(index).filter(|_| level <= self.path.len()) else {
+        let Some(entry) = self
+            .level(level)
+            .get(index)
+            .filter(|_| level <= self.path.len())
+        else {
             return;
         };
         let opens = matches!(entry.kind, EntryKind::Sub(_)) && !entry.disabled;
@@ -915,13 +1073,16 @@ impl FilterMenu {
 
     fn run(&self, act: Act, window: &mut Window, cx: &mut Context<Self>) {
         let (sheet, scope, col_id) = (self.sheet, self.scope, self.col_id);
-        self.finish(window, cx, move |app, window, cx| perform(app, sheet, scope, col_id, act, window, cx));
+        self.finish(window, cx, move |app, window, cx| {
+            perform(app, sheet, scope, col_id, act, window, cx)
+        });
     }
 
     /// Return or Space on the highlighted entry.
     fn activate(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let level = self.path.len();
-        let Some((index, entry)) = self.hot.and_then(|i| Some((i, self.level(level).get(i)?))) else {
+        let Some((index, entry)) = self.hot.and_then(|i| Some((i, self.level(level).get(i)?)))
+        else {
             return;
         };
         if !entry.selectable() {
@@ -951,11 +1112,17 @@ impl FilterMenu {
             .filter(|(_, entry)| entry.selectable())
             .map(|(i, _)| i)
             .collect();
-        let at = self.hot.and_then(|hot| stops.iter().position(|i| *i == hot));
+        let at = self
+            .hot
+            .and_then(|hot| stops.iter().position(|i| *i == hot));
         match event.keystroke.key.as_str() {
-            "down" if !stops.is_empty() => self.hot = Some(stops[at.map_or(0, |at| (at + 1) % stops.len())]),
+            "down" if !stops.is_empty() => {
+                self.hot = Some(stops[at.map_or(0, |at| (at + 1) % stops.len())])
+            }
             "up" if !stops.is_empty() => {
-                self.hot = Some(stops[at.map_or(stops.len() - 1, |at| (at + stops.len() - 1) % stops.len())])
+                self.hot = Some(
+                    stops[at.map_or(stops.len() - 1, |at| (at + stops.len() - 1) % stops.len())],
+                )
             }
             "right" => {
                 let opens = self
@@ -974,11 +1141,17 @@ impl FilterMenu {
             "space" => self.activate(window, cx),
             _ => {
                 // Typing goes to the search box.
-                let Some(text) = event.keystroke.key_char.clone().filter(|text| !text.trim().is_empty()) else {
+                let Some(text) = event
+                    .keystroke
+                    .key_char
+                    .clone()
+                    .filter(|text| !text.trim().is_empty())
+                else {
                     return;
                 };
                 window.focus(&self.search.read(cx).focus_handle(cx));
-                self.search.update(cx, |field, cx| field.insert(&text, window, cx));
+                self.search
+                    .update(cx, |field, cx| field.insert(&text, window, cx));
             }
         }
         cx.stop_propagation();
@@ -1019,8 +1192,9 @@ impl FilterMenu {
             _ => return,
         };
         self.cursor = next;
-        self.scroll
-            .update(cx, |scroll, _| scroll.reveal(next, next, ROW_H, LIST_ROWS * ROW_H));
+        self.scroll.update(cx, |scroll, _| {
+            scroll.reveal(next, next, ROW_H, LIST_ROWS * ROW_H)
+        });
         cx.stop_propagation();
         cx.notify();
     }
@@ -1061,9 +1235,20 @@ impl FilterMenu {
         }
     }
 
-    fn entry_row(&self, level: usize, index: usize, entry: &Entry, cx: &mut Context<Self>) -> AnyElement {
+    fn entry_row(
+        &self,
+        level: usize,
+        index: usize,
+        entry: &Entry,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         if entry.kind == EntryKind::Separator {
-            return div().h(px(1.)).my(px(3.)).mx(px(8.)).bg(c(theme::BORDER)).into_any_element();
+            return div()
+                .h(px(1.))
+                .my(px(3.))
+                .mx(px(8.))
+                .bg(c(theme::BORDER))
+                .into_any_element();
         }
         if entry.kind == EntryKind::Heading {
             return div()
@@ -1078,15 +1263,34 @@ impl FilterMenu {
                 .into_any_element();
         }
         let lit = !entry.disabled
-            && (self.path.get(level) == Some(&index) || (self.path.len() == level && self.hot == Some(index)));
-        let color = if entry.disabled { theme::TEXT_DISABLED } else { theme::TEXT };
-        let mark = div().w(px(18.)).h(px(18.)).flex_none().flex().items_center().justify_center();
+            && (self.path.get(level) == Some(&index)
+                || (self.path.len() == level && self.hot == Some(index)));
+        let color = if entry.disabled {
+            theme::TEXT_DISABLED
+        } else {
+            theme::TEXT
+        };
+        let mark = div()
+            .w(px(18.))
+            .h(px(18.))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center();
         let mark = match (entry.icon, entry.checked) {
             // A sort entry in use shows its icon pressed.
             (Some(name), on) => mark
                 .rounded(px(3.))
                 .when(on, |d| d.bg(c(theme::TOGGLED)))
-                .child(icon(name, 14.0, if entry.disabled { color } else { theme::TEXT_MUTED })),
+                .child(icon(
+                    name,
+                    14.0,
+                    if entry.disabled {
+                        color
+                    } else {
+                        theme::TEXT_MUTED
+                    },
+                )),
             (None, true) => mark.child(icon("check", 13.0, theme::ACCENT)),
             (None, false) => mark,
         };
@@ -1102,7 +1306,11 @@ impl FilterMenu {
                         .border_color(c(theme::BORDER_STRONG)),
                 )
                 .into_any_element(),
-            None => div().flex_1().truncate().child(entry.label.clone()).into_any_element(),
+            None => div()
+                .flex_1()
+                .truncate()
+                .child(entry.label.clone())
+                .into_any_element(),
         };
         let mut row = div()
             .id(("filter-entry", level * 1000 + index))
@@ -1140,7 +1348,8 @@ impl FilterMenu {
                 });
             }
             EntryKind::Act(act) if !entry.disabled => {
-                let (app, sheet, scope, col_id, act) = (self.app.clone(), self.sheet, self.scope, self.col_id, *act);
+                let (app, sheet, scope, col_id, act) =
+                    (self.app.clone(), self.sheet, self.scope, self.col_id, *act);
                 row = row.on_mouse_down(MouseButton::Left, move |_, window, cx| {
                     app.update(cx, |app, cx| {
                         app.close_popup(window, cx);
@@ -1164,9 +1373,17 @@ impl FilterMenu {
                 continue;
             };
             let entries = self.level(level);
-            let longest = entries.iter().map(|entry| entry.label.chars().count()).max().unwrap_or(0);
+            let longest = entries
+                .iter()
+                .map(|entry| entry.label.chars().count())
+                .max()
+                .unwrap_or(0);
             let swatches = entries.iter().any(|entry| entry.swatch.is_some());
-            let width = if swatches { 190.0 } else { (longest as f32 * 7.0 + 64.0).clamp(160.0, 340.0) };
+            let width = if swatches {
+                190.0
+            } else {
+                (longest as f32 * 7.0 + 64.0).clamp(160.0, 340.0)
+            };
             let rows: Vec<AnyElement> = entries
                 .iter()
                 .enumerate()
@@ -1222,7 +1439,10 @@ impl FilterMenu {
                 .items_center()
                 .justify_center()
                 .text_color(c(theme::TEXT_MUTED))
-                .child(t("No items match your search.", "Aucun élément ne correspond à votre recherche."))
+                .child(t(
+                    "No items match your search.",
+                    "Aucun élément ne correspond à votre recherche.",
+                ))
                 .into_any_element();
         }
         self.cursor = self.cursor.min(rows.len() - 1);
@@ -1245,7 +1465,15 @@ impl FilterMenu {
                         .justify_center()
                         .rounded(px(2.))
                         .hover(|s| s.bg(c(theme::HOVER)))
-                        .child(icon(if open { "chevron-down" } else { "chevron-right" }, 9.0, theme::TEXT_MUTED))
+                        .child(icon(
+                            if open {
+                                "chevron-down"
+                            } else {
+                                "chevron-right"
+                            },
+                            9.0,
+                            theme::TEXT_MUTED,
+                        ))
                         // On the press, which then never reaches the line:
                         // unfolding must not tick its box as well.
                         .on_mouse_down(MouseButton::Left, move |_, _, cx: &mut App| {
@@ -1271,7 +1499,9 @@ impl FilterMenu {
                 .items_center()
                 .gap(px(5.))
                 .when(focused && i == cursor, |d| d.bg(c(widgets::SELECTED_BG)))
-                .when(!(focused && i == cursor), |d| d.hover(|s| s.bg(c(0xF5F5F5))))
+                .when(!(focused && i == cursor), |d| {
+                    d.hover(|s| s.bg(c(0xF5F5F5)))
+                })
                 .when(tree, |d| d.child(expander))
                 .child(check_mark(list.state(row), false))
                 .child(div().truncate().child(list.label(row)))
@@ -1332,7 +1562,9 @@ impl Render for FilterMenu {
                     .track_focus(&self.menu_focus)
                     .flex()
                     .flex_col()
-                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| this.menu_key(event, window, cx)))
+                    .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                        this.menu_key(event, window, cx)
+                    }))
                     .children(menu),
             )
             .child(
@@ -1360,19 +1592,23 @@ impl Render for FilterMenu {
                         div()
                             .flex()
                             // Down leaves the search box for the list.
-                            .on_action(move |_: &text_input::Down, window, _| window.focus(&list_focus))
+                            .on_action(move |_: &text_input::Down, window, _| {
+                                window.focus(&list_focus)
+                            })
                             .child(
-                                TextField::new(&self.search)
-                                    .trailing(div().pr(px(4.)).child(icon("search", 12.0, theme::TEXT_MUTED))),
+                                TextField::new(&self.search).trailing(
+                                    div()
+                                        .pr(px(4.))
+                                        .child(icon("search", 12.0, theme::TEXT_MUTED)),
+                                ),
                             ),
                     )
                     .child(values)
                     .when(self.list.data.truncated, |d| {
-                        d.child(
-                            div()
-                                .text_color(c(theme::TEXT_MUTED))
-                                .child(t("Not all items showing", "Les éléments ne s'affichent pas tous")),
-                        )
+                        d.child(div().text_color(c(theme::TEXT_MUTED)).child(t(
+                            "Not all items showing",
+                            "Les éléments ne s'affichent pas tous",
+                        )))
                     })
                     .child(
                         div()
@@ -1385,11 +1621,16 @@ impl Render for FilterMenu {
                                 Button::new("filter-ok", t("OK", "OK"))
                                     .primary()
                                     .disabled(!self.list.can_apply())
-                                    .on_click(cx.listener(|this, _, window, cx| this.ok(window, cx))),
+                                    .on_click(
+                                        cx.listener(|this, _, window, cx| this.ok(window, cx)),
+                                    ),
                             )
                             .child(
-                                Button::new("filter-cancel", t("Cancel", "Annuler"))
-                                    .on_click(cx.listener(|this, _, window, cx| this.finish(window, cx, |_, _, _| {}))),
+                                Button::new("filter-cancel", t("Cancel", "Annuler")).on_click(
+                                    cx.listener(|this, _, window, cx| {
+                                        this.finish(window, cx, |_, _, _| {})
+                                    }),
+                                ),
                             ),
                     ),
             )

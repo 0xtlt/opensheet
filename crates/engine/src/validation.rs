@@ -27,7 +27,10 @@ use std::sync::Arc;
 /// The text for the workbook's language; `texts` follows `Locale::all()`:
 /// en, fr, es, de, it. The wording is Excel's own.
 pub(crate) fn localized(locale: &Locale, texts: [&'static str; 5]) -> &'static str {
-    let index = Locale::all().iter().position(|l| l.id == locale.id).unwrap_or(0);
+    let index = Locale::all()
+        .iter()
+        .position(|l| l.id == locale.id)
+        .unwrap_or(0);
     texts[index]
 }
 
@@ -75,7 +78,9 @@ impl ValidationKind {
     }
 
     pub fn from_ooxml_name(name: &str) -> Option<ValidationKind> {
-        ValidationKind::ALL.into_iter().find(|k| k.ooxml_name() == name)
+        ValidationKind::ALL
+            .into_iter()
+            .find(|k| k.ooxml_name() == name)
     }
 
     /// The entry of the "Allow" list.
@@ -83,7 +88,13 @@ impl ValidationKind {
         localized(
             locale,
             match self {
-                ValidationKind::Any => ["Any value", "Tout", "Cualquier valor", "Jeden Wert", "Qualsiasi valore"],
+                ValidationKind::Any => [
+                    "Any value",
+                    "Tout",
+                    "Cualquier valor",
+                    "Jeden Wert",
+                    "Qualsiasi valore",
+                ],
                 ValidationKind::Whole => [
                     "Whole number",
                     "Nombre entier",
@@ -182,9 +193,27 @@ impl Operator {
                     "non compreso tra",
                 ],
                 Operator::Equal => ["equal to", "égale à", "igual a", "gleich", "uguale a"],
-                Operator::NotEqual => ["not equal to", "différente de", "no igual a", "ungleich", "diverso da"],
-                Operator::GreaterThan => ["greater than", "supérieure à", "mayor que", "größer als", "maggiore di"],
-                Operator::LessThan => ["less than", "inférieure à", "menor que", "kleiner als", "minore di"],
+                Operator::NotEqual => [
+                    "not equal to",
+                    "différente de",
+                    "no igual a",
+                    "ungleich",
+                    "diverso da",
+                ],
+                Operator::GreaterThan => [
+                    "greater than",
+                    "supérieure à",
+                    "mayor que",
+                    "größer als",
+                    "maggiore di",
+                ],
+                Operator::LessThan => [
+                    "less than",
+                    "inférieure à",
+                    "menor que",
+                    "kleiner als",
+                    "minore di",
+                ],
                 Operator::GreaterOrEqual => [
                     "greater than or equal to",
                     "supérieure ou égale à",
@@ -235,7 +264,11 @@ pub enum AlertStyle {
 }
 
 impl AlertStyle {
-    pub const ALL: [AlertStyle; 3] = [AlertStyle::Stop, AlertStyle::Warning, AlertStyle::Information];
+    pub const ALL: [AlertStyle; 3] = [
+        AlertStyle::Stop,
+        AlertStyle::Warning,
+        AlertStyle::Information,
+    ];
 
     /// The `errorStyle` attribute of `<dataValidation>`.
     pub fn ooxml_name(self) -> &'static str {
@@ -256,7 +289,13 @@ impl AlertStyle {
             locale,
             match self {
                 AlertStyle::Stop => ["Stop", "Stop", "Alto", "Stopp", "Interruzione"],
-                AlertStyle::Warning => ["Warning", "Avertissement", "Advertencia", "Warnung", "Avviso"],
+                AlertStyle::Warning => [
+                    "Warning",
+                    "Avertissement",
+                    "Advertencia",
+                    "Warnung",
+                    "Avviso",
+                ],
                 AlertStyle::Information => [
                     "Information",
                     "Informations",
@@ -465,13 +504,43 @@ impl Field {
                     "eine Funktion",
                     "una formula",
                 ],
-                ["the Formula", "la formule", "la fórmula", "die Funktion", "la formula"],
-                ["The Formula", "La formule", "la fórmula", "Die Funktion", "la formula"],
+                [
+                    "the Formula",
+                    "la formule",
+                    "la fórmula",
+                    "die Funktion",
+                    "la formula",
+                ],
+                [
+                    "The Formula",
+                    "La formule",
+                    "la fórmula",
+                    "Die Funktion",
+                    "la formula",
+                ],
             ],
             Field::Source => [
-                ["a Source", "une source", "un origen", "eine Quelle", "una sorgente"],
-                ["the Source", "la source", "el origen", "die Quelle", "l'origine"],
-                ["The Source", "La source", "El origen", "Die Quelle", "L'origine"],
+                [
+                    "a Source",
+                    "une source",
+                    "un origen",
+                    "eine Quelle",
+                    "una sorgente",
+                ],
+                [
+                    "the Source",
+                    "la source",
+                    "el origen",
+                    "die Quelle",
+                    "l'origine",
+                ],
+                [
+                    "The Source",
+                    "La source",
+                    "El origen",
+                    "Die Quelle",
+                    "L'origine",
+                ],
             ],
             Field::StartDate => [
                 [
@@ -567,8 +636,20 @@ impl Field {
             ],
             Field::Value => [
                 ["a Value", "une valeur", "un valor", "ein Wert", "un valore"],
-                ["the Value", "la valeur", "el valor", "der Wert", "il valore"],
-                ["The Value", "la valeur", "el valor", "Der Wert", "Il valore"],
+                [
+                    "the Value",
+                    "la valeur",
+                    "el valor",
+                    "der Wert",
+                    "il valore",
+                ],
+                [
+                    "The Value",
+                    "la valeur",
+                    "el valor",
+                    "Der Wert",
+                    "Il valore",
+                ],
             ],
             Field::Date => [
                 ["a Date", "une date", "una fecha", "ein Datum", "una data"],
@@ -581,9 +662,27 @@ impl Field {
                 ["The Time", "l'heure", "la hora", "Die Zeit", "L'ora"],
             ],
             Field::Length => [
-                ["a Length", "une longueur", "un largo", "eine Länge", "una lunghezza"],
-                ["the Length", "la longueur", "el largo", "die Länge", "la lunghezza"],
-                ["The Length", "la longueur", "El largo", "Die Länge", "La lunghezza"],
+                [
+                    "a Length",
+                    "une longueur",
+                    "un largo",
+                    "eine Länge",
+                    "una lunghezza",
+                ],
+                [
+                    "the Length",
+                    "la longueur",
+                    "el largo",
+                    "die Länge",
+                    "la lunghezza",
+                ],
+                [
+                    "The Length",
+                    "la longueur",
+                    "El largo",
+                    "Die Länge",
+                    "La lunghezza",
+                ],
             ],
         }
     }
@@ -608,7 +707,9 @@ pub fn operand_fields(kind: ValidationKind, operator: Operator) -> (Option<Field
         ValidationKind::Any => return (None, None),
         ValidationKind::List => return (Some(Field::Source), None),
         ValidationKind::Custom => return (Some(Field::Formula), None),
-        ValidationKind::Whole | ValidationKind::Decimal => (Field::Minimum, Field::Maximum, Field::Value),
+        ValidationKind::Whole | ValidationKind::Decimal => {
+            (Field::Minimum, Field::Maximum, Field::Value)
+        }
         ValidationKind::Date => (Field::StartDate, Field::EndDate, Field::Date),
         ValidationKind::Time => (Field::StartTime, Field::EndTime, Field::Time),
         ValidationKind::TextLength => (Field::Minimum, Field::Maximum, Field::Length),
@@ -647,7 +748,8 @@ pub enum RuleError {
 impl RuleError {
     /// Excel's message for the error.
     pub fn message(&self, locale: &Locale) -> String {
-        let fill = |texts: [&'static str; 5], with: &str| localized(locale, texts).replace('|', with);
+        let fill =
+            |texts: [&'static str; 5], with: &str| localized(locale, texts).replace('|', with);
         match self {
             RuleError::Missing(field) => fill(
                 ["You must enter |.", "Vous devez taper |.", "Debe introducir |.", "Sie müssen | eingeben.", "Immettere |."],
@@ -798,7 +900,12 @@ fn constant_number(expr: &Expr) -> Option<f64> {
 /// of the language; elsewhere a number, a date or a time as the kind of
 /// rule expects, or a formula typed without its `=`. The formula reads as
 /// typed, that is from the active cell.
-pub fn parse_operand(kind: ValidationKind, field: Field, text: &str, locale: &Locale) -> Result<Expr, RuleError> {
+pub fn parse_operand(
+    kind: ValidationKind,
+    field: Field,
+    text: &str,
+    locale: &Locale,
+) -> Result<Expr, RuleError> {
     let text = text.trim();
     if text.is_empty() {
         return Err(RuleError::Missing(field));
@@ -811,10 +918,14 @@ pub fn parse_operand(kind: ValidationKind, field: Field, text: &str, locale: &Lo
             let items: Vec<&str> = text.split(locale.arg_sep).map(str::trim).collect();
             Ok(Expr::Text(Arc::from(items.join(","))))
         }
-        ValidationKind::Any | ValidationKind::Custom => parse_formula(text, locale).map_err(RuleError::Formula),
+        ValidationKind::Any | ValidationKind::Custom => {
+            parse_formula(text, locale).map_err(RuleError::Formula)
+        }
         _ => {
             let typed = locale.parse_number(text).or_else(|| match kind {
-                ValidationKind::Date | ValidationKind::Time => input::parse_date_time(text, locale).map(|(n, _)| n),
+                ValidationKind::Date | ValidationKind::Time => {
+                    input::parse_date_time(text, locale).map(|(n, _)| n)
+                }
                 _ => None,
             });
             if let Some(n) = typed {
@@ -848,9 +959,11 @@ pub fn operand_text(kind: ValidationKind, expr: &Expr, locale: &Locale) -> Strin
         return items.replace(',', &locale.arg_sep.to_string());
     }
     match constant_number(expr) {
-        Some(n) if matches!(kind, ValidationKind::Date | ValidationKind::Time) => {
-            input::edit_text(&Content::Value(Value::Number(n)), locale.short_date_format, locale)
-        }
+        Some(n) if matches!(kind, ValidationKind::Date | ValidationKind::Time) => input::edit_text(
+            &Content::Value(Value::Number(n)),
+            locale.short_date_format,
+            locale,
+        ),
         Some(n) => locale.number_to_text(n),
         None => format!("={}", expr.to_text(locale)),
     }
@@ -1009,9 +1122,14 @@ fn coalesce(rects: &mut Vec<Rect>) {
     let joined = |a: &Rect, b: &Rect| -> Option<Rect> {
         let union = a.union(b);
         let inside = union == *a || union == *b;
-        let stacked = a.c0 == b.c0 && a.c1 == b.c1 && a.r0 <= b.r1.saturating_add(1) && b.r0 <= a.r1.saturating_add(1);
-        let side_by_side =
-            a.r0 == b.r0 && a.r1 == b.r1 && a.c0 <= b.c1.saturating_add(1) && b.c0 <= a.c1.saturating_add(1);
+        let stacked = a.c0 == b.c0
+            && a.c1 == b.c1
+            && a.r0 <= b.r1.saturating_add(1)
+            && b.r0 <= a.r1.saturating_add(1);
+        let side_by_side = a.r0 == b.r0
+            && a.r1 == b.r1
+            && a.c0 <= b.c1.saturating_add(1)
+            && b.c0 <= a.c1.saturating_add(1);
         (inside || stacked || side_by_side).then_some(union)
     };
     let mut merged = true;
@@ -1033,7 +1151,14 @@ fn coalesce(rects: &mut Vec<Rect>) {
 /// How one side of a range follows rows or columns inserted or deleted:
 /// the new interval and where its first cell was before the edit. `None`
 /// when the whole interval was deleted.
-fn adjust_span(lo: u32, hi: u32, insert: bool, at: u32, count: u32, max: u32) -> Option<(u32, u32, u32)> {
+fn adjust_span(
+    lo: u32,
+    hi: u32,
+    insert: bool,
+    at: u32,
+    count: u32,
+    max: u32,
+) -> Option<(u32, u32, u32)> {
     if insert {
         let new_lo = if lo >= at { lo + count } else { lo };
         // Cells inserted right after the last one take its rule, as they
@@ -1094,7 +1219,9 @@ fn same_entry(a: &Value, b: &Value) -> bool {
 
 /// The entries of a list typed in the dialog.
 fn typed_items(list: &str) -> impl Iterator<Item = &str> {
-    list.split(',').map(str::trim).filter(|item| !item.is_empty())
+    list.split(',')
+        .map(str::trim)
+        .filter(|item| !item.is_empty())
 }
 
 /// What an entry of a typed list puts in the cell: what typing it would.
@@ -1132,7 +1259,9 @@ impl Validation {
 
     /// A rule that restricts nothing and says nothing: the same as none.
     pub fn is_noop(&self) -> bool {
-        self.kind == ValidationKind::Any && self.input_title.is_empty() && self.input_message.is_empty()
+        self.kind == ValidationKind::Any
+            && self.input_title.is_empty()
+            && self.input_message.is_empty()
     }
 
     fn formula_at(&self, formula: &Option<Arc<Expr>>, row: u32, col: u32) -> Option<Expr> {
@@ -1170,11 +1299,18 @@ impl Validation {
     /// Fill the formulas from the boxes of the dialog, with the checks the
     /// dialog makes on OK. The formulas read as typed (from the active
     /// cell): `Workbook::set_validation` moves them to the anchor.
-    pub fn set_operands(&mut self, first: &str, second: &str, locale: &Locale) -> Result<(), RuleError> {
+    pub fn set_operands(
+        &mut self,
+        first: &str,
+        second: &str,
+        locale: &Locale,
+    ) -> Result<(), RuleError> {
         let (field1, field2) = operand_fields(self.kind, self.operator);
         let empty = |text: &str| text.trim().is_empty();
         match (field1, field2) {
-            (Some(a), Some(b)) if empty(first) && empty(second) => return Err(RuleError::MissingBoth(a, b)),
+            (Some(a), Some(b)) if empty(first) && empty(second) => {
+                return Err(RuleError::MissingBoth(a, b));
+            }
             _ => {}
         }
         let parse = |field: Option<Field>, text: &str| {
@@ -1264,7 +1400,10 @@ impl Validation {
     }
 
     fn map_formulas(&mut self, f: impl Fn(&Expr) -> Expr) {
-        for formula in [&mut self.formula1, &mut self.formula2].into_iter().flatten() {
+        for formula in [&mut self.formula1, &mut self.formula2]
+            .into_iter()
+            .flatten()
+        {
             let mapped = f(formula);
             if mapped != **formula {
                 *formula = Arc::new(mapped);
@@ -1288,7 +1427,11 @@ impl Validation {
 fn remove_from(sheet: &mut Sheet, cuts: &[Rect]) -> bool {
     let mut changed = false;
     for rule in &mut sheet.validations {
-        if rule.ranges.iter().any(|r| cuts.iter().any(|cut| cut.intersects(r))) {
+        if rule
+            .ranges
+            .iter()
+            .any(|r| cuts.iter().any(|cut| cut.intersects(r)))
+        {
             rule.set_ranges(subtract_all(&rule.ranges, cuts));
             changed = true;
         }
@@ -1362,7 +1505,11 @@ impl Workbook {
         let mut found: Option<&Validation> = None;
         let mut covered = Vec::new();
         for rule in &sh.validations {
-            if !rule.ranges.iter().any(|r| ranges.iter().any(|sel| sel.intersects(r))) {
+            if !rule
+                .ranges
+                .iter()
+                .any(|r| ranges.iter().any(|sel| sel.intersects(r)))
+            {
                 continue;
             }
             match found {
@@ -1374,7 +1521,9 @@ impl Workbook {
         }
         match found {
             None => SelectionValidation::None,
-            Some(rule) if subtract_all(ranges, &covered).is_empty() => SelectionValidation::Uniform(rule),
+            Some(rule) if subtract_all(ranges, &covered).is_empty() => {
+                SelectionValidation::Uniform(rule)
+            }
             Some(rule) => SelectionValidation::Partial(rule),
         }
     }
@@ -1399,7 +1548,13 @@ impl Workbook {
     /// The formulas of `rule` read as typed with `active` as the active
     /// cell; `rule.ranges` is ignored. A rule that restricts nothing and
     /// has no input message clears instead. Recorded for undo.
-    pub fn set_validation(&mut self, sheet: usize, ranges: &[Rect], active: (u32, u32), mut rule: Validation) -> bool {
+    pub fn set_validation(
+        &mut self,
+        sheet: usize,
+        ranges: &[Rect],
+        active: (u32, u32),
+        mut rule: Validation,
+    ) -> bool {
         if sheet >= self.sheets.len() || ranges.is_empty() {
             return false;
         }
@@ -1427,9 +1582,11 @@ impl Workbook {
     /// there was none. Recorded for undo.
     pub fn clear_validation(&mut self, sheet: usize, ranges: &[Rect]) -> bool {
         let touched = self.sheets.get(sheet).is_some_and(|sh| {
-            sh.validations
-                .iter()
-                .any(|rule| rule.ranges.iter().any(|r| ranges.iter().any(|cut| cut.intersects(r))))
+            sh.validations.iter().any(|rule| {
+                rule.ranges
+                    .iter()
+                    .any(|r| ranges.iter().any(|cut| cut.intersects(r)))
+            })
         });
         if !touched {
             return false;
@@ -1442,7 +1599,14 @@ impl Workbook {
     /// `src`, cell for cell, as pasting does (`paste` calls this for
     /// Paste and for Paste Special ▸ Validation): cells without a rule
     /// clear the rule of their destination. Recorded for undo.
-    pub fn copy_validation(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
+    pub fn copy_validation(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest_row: u32,
+        dest_col: u32,
+    ) {
         if dest_row >= MAX_ROWS || dest_col >= MAX_COLS {
             return;
         }
@@ -1457,7 +1621,13 @@ impl Workbook {
     /// one turned copy of `src` lands. Cells without a rule clear the
     /// rule of the cell they land on; the relative references of the
     /// formulas are turned with the cells. Recorded for undo.
-    pub(crate) fn transpose_validation(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, out: Rect) {
+    pub(crate) fn transpose_validation(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        out: Rect,
+    ) {
         use crate::paste_special::{transposed, turned};
         if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
             return;
@@ -1475,7 +1645,10 @@ impl Workbook {
                 copies.push(copy);
             }
         }
-        let has_rules = self.sheets[dest_sheet].validations.iter().any(|rule| rule.ranges.iter().any(|r| r.intersects(&out)));
+        let has_rules = self.sheets[dest_sheet]
+            .validations
+            .iter()
+            .any(|rule| rule.ranges.iter().any(|r| r.intersects(&out)));
         if copies.is_empty() && !has_rules {
             return;
         }
@@ -1494,18 +1667,30 @@ impl Workbook {
     /// the blocks of rows a filter leaves shown (see `without_bands`):
     /// the rows it hides keep their rules. All in one pass, so that the
     /// rules do not crumble a little more with every block.
-    pub(crate) fn tile_validation(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dests: &[Rect]) {
+    pub(crate) fn tile_validation(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dests: &[Rect],
+    ) {
         if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
             return;
         }
         let mut copies = Vec::new();
         for rule in &self.sheets[src_sheet].validations {
             for piece in rule.ranges.iter().filter_map(|r| r.intersection(&src)) {
-                let ranges: Vec<Rect> = dests.iter().flat_map(|dest| tiled(piece, &src, dest)).collect();
+                let ranges: Vec<Rect> = dests
+                    .iter()
+                    .flat_map(|dest| tiled(piece, &src, dest))
+                    .collect();
                 let Some(first) = ranges.first() else {
                     continue;
                 };
-                let (d_row, d_col) = (first.r0 as i64 - piece.r0 as i64, first.c0 as i64 - piece.c0 as i64);
+                let (d_row, d_col) = (
+                    first.r0 as i64 - piece.r0 as i64,
+                    first.c0 as i64 - piece.c0 as i64,
+                );
                 // The copy says in its cells what the original says in
                 // its own: the formulas keep their relative reading.
                 let mut copy = rule.clone();
@@ -1550,7 +1735,12 @@ impl Workbook {
     /// were just filled in (`Validation::set_operands`, the formulas still
     /// reading from `active`): a list named after nothing, or a formula
     /// that gives an error where it stands.
-    pub fn rule_formula_warning(&self, sheet: usize, active: (u32, u32), rule: &Validation) -> Option<FormulaWarning> {
+    pub fn rule_formula_warning(
+        &self,
+        sheet: usize,
+        active: (u32, u32),
+        rule: &Validation,
+    ) -> Option<FormulaWarning> {
         let (row, col) = active;
         let (field1, field2) = operand_fields(rule.kind, rule.operator);
         let boxes = [(field1, &rule.formula1), (field2, &rule.formula2)];
@@ -1560,12 +1750,16 @@ impl Workbook {
             };
             // A list read from cells is judged entry by entry, not as a whole.
             if rule.kind == ValidationKind::List
-                && (matches!(formula, Expr::Text(_)) || self.list_reference(sheet, row, col, formula, 0).is_some())
+                && (matches!(formula, Expr::Text(_))
+                    || self.list_reference(sheet, row, col, formula, 0).is_some())
             {
                 continue;
             }
             let value = Calc::eval_once(self, sheet, row, col, formula).into_scalar();
-            if rule.kind == ValidationKind::List && matches!(formula, Expr::Name(_)) && value.is_error() {
+            if rule.kind == ValidationKind::List
+                && matches!(formula, Expr::Name(_))
+                && value.is_error()
+            {
                 return Some(FormulaWarning::UnknownName);
             }
             if value.is_error() {
@@ -1609,7 +1803,14 @@ impl Workbook {
     /// Whether `rule` accepts `content` in a cell. The content is put in
     /// the cell for the time of the check, so that formulas of the rule
     /// that look at the cell see it.
-    fn try_entry(&mut self, sheet: usize, row: u32, col: u32, content: Content, rule: &Validation) -> bool {
+    fn try_entry(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        content: Content,
+        rule: &Validation,
+    ) -> bool {
         let deep = [rule.formula1_at(row, col), rule.formula2_at(row, col)]
             .iter()
             .flatten()
@@ -1618,13 +1819,19 @@ impl Workbook {
             Content::Empty => Value::Empty,
             Content::Value(value) => value.clone(),
             // A formula never yields a blank.
-            Content::Formula(expr) => match Calc::eval_once(self, sheet, row, col, expr).into_scalar() {
-                Value::Empty => Value::Number(0.0),
-                value => value,
-            },
+            Content::Formula(expr) => {
+                match Calc::eval_once(self, sheet, row, col, expr).into_scalar() {
+                    Value::Empty => Value::Number(0.0),
+                    value => value,
+                }
+            }
         };
         let style = self.sheets[sheet].style_id_at(row, col);
-        let trial = Cell { content, value, style };
+        let trial = Cell {
+            content,
+            value,
+            style,
+        };
         let previous = self.sheets[sheet].cells.insert((row, col), trial);
         if deep {
             self.recalc();
@@ -1643,7 +1850,13 @@ impl Workbook {
     /// Whether a formula of a rule may read the result of another formula:
     /// then the workbook must be recalculated before the rule can judge an
     /// entry. `skip` is the cell being judged.
-    fn reads_formulas(&self, sheet: usize, skip: (usize, u32, u32), expr: &Expr, depth: u32) -> bool {
+    fn reads_formulas(
+        &self,
+        sheet: usize,
+        skip: (usize, u32, u32),
+        expr: &Expr,
+        depth: u32,
+    ) -> bool {
         let mut found = false;
         expr.walk(&mut |e| match e {
             Expr::Ref(r) => {
@@ -1657,18 +1870,18 @@ impl Workbook {
                 let rect = r.rect();
                 let spilled = |sp: &crate::workbook::Spill| {
                     let (rows, cols) = (sp.array.rows as u32, sp.array.cols as u32);
-                    Rect::new(sp.row, sp.col, sp.row + rows - 1, sp.col + cols - 1).intersects(&rect)
+                    Rect::new(sp.row, sp.col, sp.row + rows - 1, sp.col + cols - 1)
+                        .intersects(&rect)
                 };
                 found |= sh.spills.iter().any(spilled)
-                    || sh
-                        .cells
-                        .range((rect.r0, 0)..=(rect.r1, u32::MAX))
-                        .any(|((row, col), cell)| {
+                    || sh.cells.range((rect.r0, 0)..=(rect.r1, u32::MAX)).any(
+                        |((row, col), cell)| {
                             *col >= rect.c0
                                 && *col <= rect.c1
                                 && matches!(cell.content, Content::Formula(_))
                                 && (target.unwrap_or(sheet), *row, *col) != skip
-                        });
+                        },
+                    );
             }
             Expr::Name(name) => {
                 if let Some(definition) = self.defined_name(name) {
@@ -1696,7 +1909,9 @@ impl Workbook {
             Expr::Number(n) => Value::Number(*n),
             Expr::Text(text) => Value::Text(text.clone()),
             Expr::Bool(b) => Value::Bool(*b),
-            Expr::Ref(r) if r.sheet.is_none() && r.rect().is_single() => self.value_at(sheet, r.rect().r0, r.rect().c0),
+            Expr::Ref(r) if r.sheet.is_none() && r.rect().is_single() => {
+                self.value_at(sheet, r.rect().r0, r.rect().c0)
+            }
             _ => Calc::eval_once(self, sheet, row, col, expr).into_scalar(),
         }
     }
@@ -1722,16 +1937,21 @@ impl Workbook {
             },
             _ => {
                 let entry = match (rule.kind, &value) {
-                    (ValidationKind::TextLength, Value::Text(text)) => Some(text.chars().count() as f64),
+                    (ValidationKind::TextLength, Value::Text(text)) => {
+                        Some(text.chars().count() as f64)
+                    }
                     (ValidationKind::TextLength, Value::Number(n)) => {
                         Some(locale.number_to_text(*n).chars().count() as f64)
                     }
-                    (ValidationKind::TextLength, Value::Bool(b)) => Some(locale.bool_name(*b).chars().count() as f64),
+                    (ValidationKind::TextLength, Value::Bool(b)) => {
+                        Some(locale.bool_name(*b).chars().count() as f64)
+                    }
                     (ValidationKind::TextLength, Value::Empty) => Some(0.0),
                     (ValidationKind::Whole, Value::Number(n)) => (n.fract() == 0.0).then_some(*n),
-                    (ValidationKind::Decimal | ValidationKind::Date | ValidationKind::Time, Value::Number(n)) => {
-                        Some(*n)
-                    }
+                    (
+                        ValidationKind::Decimal | ValidationKind::Date | ValidationKind::Time,
+                        Value::Number(n),
+                    ) => Some(*n),
                     _ => None,
                 };
                 // Where blanks count, a value of the wrong kind is refused
@@ -1769,7 +1989,14 @@ impl Workbook {
 
     /// The cells a list takes its entries from, when its source is a
     /// range, a name for one or a formula giving one.
-    fn list_reference(&self, sheet: usize, row: u32, col: u32, source: &Expr, depth: u32) -> Option<Reference> {
+    fn list_reference(
+        &self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        source: &Expr,
+        depth: u32,
+    ) -> Option<Reference> {
         match source {
             Expr::Paren(inner) => self.list_reference(sheet, row, col, inner, depth),
             Expr::Ref(r) => {
@@ -1779,7 +2006,9 @@ impl Workbook {
                 };
                 Some(Reference::new(target, r.rect()))
             }
-            Expr::Name(name) if depth < 8 => self.list_reference(sheet, row, col, self.defined_name(name)?, depth + 1),
+            Expr::Name(name) if depth < 8 => {
+                self.list_reference(sheet, row, col, self.defined_name(name)?, depth + 1)
+            }
             Expr::Func(..) => {
                 // Where the result of OFFSET, INDIRECT, INDEX… lies is
                 // asked of the functions that describe a reference.
@@ -1791,7 +2020,12 @@ impl Workbook {
                     }
                 };
                 let (top, left) = (ask("ROW")? - 1, ask("COLUMN")? - 1);
-                let rect = Rect::new(top, left, top + ask("ROWS")? - 1, left + ask("COLUMNS")? - 1);
+                let rect = Rect::new(
+                    top,
+                    left,
+                    top + ask("ROWS")? - 1,
+                    left + ask("COLUMNS")? - 1,
+                );
                 Some(Reference::new(ask("SHEET")? as usize - 1, rect))
             }
             _ => None,
@@ -1827,7 +2061,14 @@ impl Workbook {
         }
     }
 
-    fn list_accepts(&self, sheet: usize, row: u32, col: u32, rule: &Validation, value: &Value) -> bool {
+    fn list_accepts(
+        &self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        rule: &Validation,
+        value: &Value,
+    ) -> bool {
         let Some(source) = rule.formula1_at(row, col) else {
             return true;
         };
@@ -1842,7 +2083,10 @@ impl Workbook {
         let entries = self.list_entries(sheet, row, col, &source);
         // Blank cells in a named list let anything in while blanks are
         // ignored; in a plain range they do not.
-        if rule.allow_blank && matches!(source, Expr::Name(_)) && entries.iter().any(|e| e.value.is_empty()) {
+        if rule.allow_blank
+            && matches!(source, Expr::Name(_))
+            && entries.iter().any(|e| e.value.is_empty())
+        {
             return true;
         }
         entries.iter().any(|entry| same_entry(&entry.value, value))
@@ -1875,7 +2119,11 @@ impl Workbook {
         let Some(sh) = self.sheets.get(sheet) else {
             return out;
         };
-        'rules: for rule in sh.validations.iter().filter(|rule| rule.kind != ValidationKind::Any) {
+        'rules: for rule in sh
+            .validations
+            .iter()
+            .filter(|rule| rule.kind != ValidationKind::Any)
+        {
             for range in &rule.ranges {
                 let mut candidates: Vec<(u32, u32)> = Vec::new();
                 if rule.allow_blank {
@@ -1890,14 +2138,17 @@ impl Workbook {
                         let (rows, cols) = (sp.array.rows as u32, sp.array.cols as u32);
                         let block = Rect::new(sp.row, sp.col, sp.row + rows - 1, sp.col + cols - 1);
                         if let Some(part) = block.intersection(range) {
-                            candidates
-                                .extend((part.r0..=part.r1).flat_map(|r| (part.c0..=part.c1).map(move |c| (r, c))));
+                            candidates.extend(
+                                (part.r0..=part.r1)
+                                    .flat_map(|r| (part.c0..=part.c1).map(move |c| (r, c))),
+                            );
                         }
                     }
                     candidates.sort_unstable();
                     candidates.dedup();
                 }
-                let all = (range.r0..=range.r1).flat_map(|r| (range.c0..=range.c1).map(move |c| (r, c)));
+                let all =
+                    (range.r0..=range.r1).flat_map(|r| (range.c0..=range.c1).map(move |c| (r, c)));
                 let cells: Box<dyn Iterator<Item = (u32, u32)>> = if rule.allow_blank {
                     Box::new(candidates.into_iter())
                 } else {
@@ -2115,7 +2366,12 @@ mod tests {
         apply(
             &mut w,
             "A1",
-            rule(ValidationKind::Date, Operator::Between, "1/1/2024", "12/31/2024"),
+            rule(
+                ValidationKind::Date,
+                Operator::Between,
+                "1/1/2024",
+                "12/31/2024",
+            ),
         );
         apply(
             &mut w,
@@ -2130,7 +2386,12 @@ mod tests {
         apply(
             &mut w,
             "D1",
-            rule(ValidationKind::Date, Operator::GreaterOrEqual, "=TODAY()", ""),
+            rule(
+                ValidationKind::Date,
+                Operator::GreaterOrEqual,
+                "=TODAY()",
+                "",
+            ),
         );
         let rule = w.validation_at(0, 0, 0).unwrap();
         assert_eq!(
@@ -2139,7 +2400,9 @@ mod tests {
         );
         assert_eq!(rule.operand1_text(0, 0, Locale::en()), "1/1/2024");
         assert_eq!(
-            w.validation_at(0, 0, 1).unwrap().operand2_text(0, 1, Locale::en()),
+            w.validation_at(0, 0, 1)
+                .unwrap()
+                .operand2_text(0, 1, Locale::en()),
             "17:00:00"
         );
         assert!(accepts(&mut w, "A1", "6/15/2024"));
@@ -2176,7 +2439,12 @@ mod tests {
         apply(
             &mut w,
             "B1",
-            strict(rule(ValidationKind::TextLength, Operator::LessThan, "3", "")),
+            strict(rule(
+                ValidationKind::TextLength,
+                Operator::LessThan,
+                "3",
+                "",
+            )),
         );
         apply(
             &mut w,
@@ -2210,11 +2478,23 @@ mod tests {
         apply(
             &mut w,
             "A1",
-            rule(ValidationKind::List, Operator::Between, "Yes, No ,Maybe", ""),
+            rule(
+                ValidationKind::List,
+                Operator::Between,
+                "Yes, No ,Maybe",
+                "",
+            ),
         );
-        apply(&mut w, "B1", rule(ValidationKind::List, Operator::Between, "1,2,3", ""));
+        apply(
+            &mut w,
+            "B1",
+            rule(ValidationKind::List, Operator::Between, "1,2,3", ""),
+        );
         let rule = w.validation_at(0, 0, 0).unwrap();
-        assert_eq!(rule.formula1.as_deref(), Some(&Expr::Text(Arc::from("Yes,No,Maybe"))));
+        assert_eq!(
+            rule.formula1.as_deref(),
+            Some(&Expr::Text(Arc::from("Yes,No,Maybe")))
+        );
         assert_eq!(rule.operand1_text(0, 0, Locale::en()), "Yes,No,Maybe");
         assert_eq!(rule.operand1_text(0, 0, Locale::fr()), "Yes;No;Maybe");
         let items = w.validation_list(0, 0, 0).unwrap();
@@ -2231,7 +2511,10 @@ mod tests {
         assert!(!accepts(&mut w, "A1", "Perhaps"));
         assert!(accepts(&mut w, "A1", "=\"May\"&\"be\""));
         // Numbers of a typed list are numbers.
-        assert_eq!(w.validation_list(0, 0, 1).unwrap()[1].value, Value::Number(2.0));
+        assert_eq!(
+            w.validation_list(0, 0, 1).unwrap()[1].value,
+            Value::Number(2.0)
+        );
         assert!(accepts(&mut w, "B1", "2"));
         assert!(accepts(&mut w, "B1", "2.0"));
         assert!(accepts(&mut w, "B1", "'2"));
@@ -2243,7 +2526,10 @@ mod tests {
             ..Default::default()
         };
         fr.set_operands("Oui;Non", "", Locale::fr()).unwrap();
-        assert_eq!(fr.formula1.as_deref(), Some(&Expr::Text(Arc::from("Oui,Non"))));
+        assert_eq!(
+            fr.formula1.as_deref(),
+            Some(&Expr::Text(Arc::from("Oui,Non")))
+        );
     }
 
     #[test]
@@ -2258,8 +2544,14 @@ mod tests {
             ("G1", "=\"D1:D2\""),
         ]);
         w.update_style(0, rect("D2"), &|s| s.num_fmt = Arc::from("0%"));
-        w.define_name("Fruit", parse_formula("Sheet1!$D$1:$D$5", Locale::en()).unwrap());
-        w.define_name("Letters", parse_formula("Sheet1!$F$1:$F$2", Locale::en()).unwrap());
+        w.define_name(
+            "Fruit",
+            parse_formula("Sheet1!$D$1:$D$5", Locale::en()).unwrap(),
+        );
+        w.define_name(
+            "Letters",
+            parse_formula("Sheet1!$F$1:$F$2", Locale::en()).unwrap(),
+        );
         w.commit("setup");
         apply(
             &mut w,
@@ -2284,7 +2576,12 @@ mod tests {
         apply(
             &mut w,
             "A5",
-            rule(ValidationKind::List, Operator::Between, "=OFFSET($F$1,0,0,2,1)", ""),
+            rule(
+                ValidationKind::List,
+                Operator::Between,
+                "=OFFSET($F$1,0,0,2,1)",
+                "",
+            ),
         );
 
         // The lines are the cells as displayed, blank ones included; choosing one stores the value.
@@ -2293,7 +2590,10 @@ mod tests {
         assert_eq!(texts, ["Apple", "50%", "", "3/1/2024", "#DIV/0!"]);
         assert_eq!(items[1].value, Value::Number(0.5));
         assert_eq!(items[2].value, Value::Empty);
-        assert_eq!(items[3].value, Value::Number(date_to_serial(2024, 3, 1).unwrap()));
+        assert_eq!(
+            items[3].value,
+            Value::Number(date_to_serial(2024, 3, 1).unwrap())
+        );
         assert_eq!(w.validation_list(0, 1, 0).unwrap(), items);
         let texts = |w: &Workbook, row: u32| -> Vec<String> {
             w.validation_list(0, row, 0)
@@ -2341,7 +2641,12 @@ mod tests {
         apply(
             &mut w,
             "B2",
-            rule(ValidationKind::List, Operator::Between, "=Sheet2!$A$1:$A$2", ""),
+            rule(
+                ValidationKind::List,
+                Operator::Between,
+                "=Sheet2!$A$1:$A$2",
+                "",
+            ),
         );
         assert!(accepts(&mut w, "B2", "Far"));
         assert!(!accepts(&mut w, "B2", "near"));
@@ -2349,7 +2654,12 @@ mod tests {
 
     #[test]
     fn custom_formulas_see_the_entry() {
-        let mut w = wb(&[("A1", "a"), ("A2", "b"), ("C1", "=SUM(B1:B3)"), ("B1", "40")]);
+        let mut w = wb(&[
+            ("A1", "a"),
+            ("A2", "b"),
+            ("C1", "=SUM(B1:B3)"),
+            ("B1", "40"),
+        ]);
         // No duplicates in A1:A5: the formula is relative to each cell.
         apply(
             &mut w,
@@ -2362,7 +2672,9 @@ mod tests {
             ),
         );
         assert_eq!(
-            w.validation_at(0, 2, 0).unwrap().operand1_text(2, 0, Locale::en()),
+            w.validation_at(0, 2, 0)
+                .unwrap()
+                .operand1_text(2, 0, Locale::en()),
             "=COUNTIF($A$1:$A$5,A3)=1"
         );
         assert!(accepts(&mut w, "A3", "c"));
@@ -2389,7 +2701,11 @@ mod tests {
             "E1",
             rule(ValidationKind::Custom, Operator::Between, "=\"yes\"", ""),
         );
-        apply(&mut w, "E2", rule(ValidationKind::Custom, Operator::Between, "=F2", ""));
+        apply(
+            &mut w,
+            "E2",
+            rule(ValidationKind::Custom, Operator::Between, "=F2", ""),
+        );
         assert!(!accepts(&mut w, "E1", "1"));
         assert!(accepts(&mut w, "E2", "1"));
         w.sheets[0].validations.last_mut().unwrap().allow_blank = false;
@@ -2398,7 +2714,12 @@ mod tests {
         apply(
             &mut w,
             "G1",
-            rule(ValidationKind::Custom, Operator::Between, "=ISNUMBER(G1)", ""),
+            rule(
+                ValidationKind::Custom,
+                Operator::Between,
+                "=ISNUMBER(G1)",
+                "",
+            ),
         );
         assert!(accepts(&mut w, "G1", "12"));
         w.update_style(0, rect("G1"), &|s| s.num_fmt = Arc::from("@"));
@@ -2409,7 +2730,11 @@ mod tests {
     #[test]
     fn alerts() {
         let mut w = wb(&[]);
-        apply(&mut w, "A1", rule(ValidationKind::Whole, Operator::Equal, "1", ""));
+        apply(
+            &mut w,
+            "A1",
+            rule(ValidationKind::Whole, Operator::Equal, "1", ""),
+        );
         let alert = |w: &mut Workbook, text: &str| match w.check_entry(0, 0, 0, text) {
             EntryCheck::Invalid(alert) => alert,
             EntryCheck::Accepted => panic!("{text} was accepted"),
@@ -2463,7 +2788,10 @@ mod tests {
             ..Default::default()
         };
         apply(&mut w, "A1:B2", note);
-        assert_eq!(w.input_message(0, 1, 1), Some(("Tip", "Any value will do.")));
+        assert_eq!(
+            w.input_message(0, 1, 1),
+            Some(("Tip", "Any value will do."))
+        );
         assert_eq!(w.input_message(0, 2, 2), None);
         assert_eq!(w.check_entry(0, 0, 0, "whatever"), EntryCheck::Accepted);
         w.sheets[0].validations[0].show_input = false;
@@ -2484,9 +2812,15 @@ mod tests {
             "C3:D4",
             rule(ValidationKind::List, Operator::Between, "a,b", ""),
         );
-        assert_eq!(ranges(&w), [vec!["B2:E2", "B5:E6", "B3:B4", "E3:E4"], vec!["C3:D4"]]);
+        assert_eq!(
+            ranges(&w),
+            [vec!["B2:E2", "B5:E6", "B3:B4", "E3:E4"], vec!["C3:D4"]]
+        );
         assert_eq!(w.validation_at(0, 2, 2).unwrap().kind, ValidationKind::List);
-        assert_eq!(w.validation_at(0, 2, 1).unwrap().kind, ValidationKind::Whole);
+        assert_eq!(
+            w.validation_at(0, 2, 1).unwrap().kind,
+            ValidationKind::Whole
+        );
         assert!(w.validation_at(0, 0, 0).is_none());
         // The same rule again fills the hole: one range, one rule.
         apply(&mut w, "C3:D4", whole());
@@ -2495,9 +2829,17 @@ mod tests {
         apply(&mut w, "G1", whole());
         apply(&mut w, "B7:E7", whole());
         assert_eq!(ranges(&w), [vec!["B2:E7", "G1"]]);
-        assert_eq!(w.validation_ranges_like(0, 0, 6), [rect("B2:E7"), rect("G1")]);
+        assert_eq!(
+            w.validation_ranges_like(0, 0, 6),
+            [rect("B2:E7"), rect("G1")]
+        );
         // A selection that overlaps itself gives each cell once.
-        assert!(w.set_validation(0, &[rect("J1:K2"), rect("K2:L3"), rect("J1")], (0, 9), whole()));
+        assert!(w.set_validation(
+            0,
+            &[rect("J1:K2"), rect("K2:L3"), rect("J1")],
+            (0, 9),
+            whole()
+        ));
         assert_eq!(ranges(&w), [vec!["B2:E7", "G1", "J1:K2", "K3:L3", "L2"]]);
         assert!(w.clear_validation(0, &[rect("J:L")]));
         w.rollback();
@@ -2521,7 +2863,10 @@ mod tests {
         assert!(w.set_validation(0, &[rect("B2:B5")], cell("B5"), greater.clone()));
         w.commit("rule");
         let stored = &w.sheets[0].validations[0];
-        assert_eq!(stored.formula1.as_ref().unwrap().to_text(Locale::en()), "A2");
+        assert_eq!(
+            stored.formula1.as_ref().unwrap().to_text(Locale::en()),
+            "A2"
+        );
         assert_eq!(stored.operand1_text(3, 1, Locale::en()), "=A4");
         // The same relative rule elsewhere is the same rule.
         assert!(w.set_validation(
@@ -2537,7 +2882,10 @@ mod tests {
         w.commit("clear");
         let stored = &w.sheets[0].validations[0];
         assert_eq!(stored.anchor(), Some(cell("B4")));
-        assert_eq!(stored.formula1.as_ref().unwrap().to_text(Locale::en()), "A4");
+        assert_eq!(
+            stored.formula1.as_ref().unwrap().to_text(Locale::en()),
+            "A4"
+        );
         w.set_cell_text(0, 3, 0, "10").unwrap();
         w.commit("bound");
         assert!(accepts(&mut w, "B4", "11"));
@@ -2549,9 +2897,20 @@ mod tests {
     #[test]
     fn selections() {
         let mut w = wb(&[]);
-        apply(&mut w, "A1:A3", rule(ValidationKind::Whole, Operator::Equal, "1", ""));
-        apply(&mut w, "C1", rule(ValidationKind::List, Operator::Between, "a,b", ""));
-        assert_eq!(w.selection_validation(0, &[rect("E1:F9")]), SelectionValidation::None);
+        apply(
+            &mut w,
+            "A1:A3",
+            rule(ValidationKind::Whole, Operator::Equal, "1", ""),
+        );
+        apply(
+            &mut w,
+            "C1",
+            rule(ValidationKind::List, Operator::Between, "a,b", ""),
+        );
+        assert_eq!(
+            w.selection_validation(0, &[rect("E1:F9")]),
+            SelectionValidation::None
+        );
         assert!(
             matches!(w.selection_validation(0, &[rect("A1:A2")]), SelectionValidation::Uniform(v) if v.kind == ValidationKind::Whole)
         );
@@ -2584,13 +2943,22 @@ mod tests {
         apply(
             &mut w,
             "B2:B5",
-            rule(ValidationKind::Decimal, Operator::Between, "=$A$1", "=A2+100"),
+            rule(
+                ValidationKind::Decimal,
+                Operator::Between,
+                "=$A$1",
+                "=A2+100",
+            ),
         );
         let texts = |w: &Workbook| {
             let rule = &w.sheets[0].validations[0];
             let text = |e: &Option<Arc<Expr>>| e.as_ref().unwrap().to_text(Locale::en());
             (
-                rule.ranges.iter().map(Rect::name).collect::<Vec<_>>().join(" "),
+                rule.ranges
+                    .iter()
+                    .map(Rect::name)
+                    .collect::<Vec<_>>()
+                    .join(" "),
                 text(&rule.formula1),
                 text(&rule.formula2),
             )
@@ -2624,7 +2992,12 @@ mod tests {
             other,
             &[rect("A1")],
             (0, 0),
-            rule(ValidationKind::List, Operator::Between, "=Sheet1!$C$2:$C$4", "")
+            rule(
+                ValidationKind::List,
+                Operator::Between,
+                "=Sheet1!$C$2:$C$4",
+                ""
+            )
         ));
         w.commit("rule");
         w.insert_rows(0, 0, 3);
@@ -2649,7 +3022,12 @@ mod tests {
         apply(
             &mut w,
             "A1",
-            rule(ValidationKind::List, Operator::Between, "=Sheet1!$D$1:$D$2", ""),
+            rule(
+                ValidationKind::List,
+                Operator::Between,
+                "=Sheet1!$D$1:$D$2",
+                "",
+            ),
         );
         apply(
             &mut w,
@@ -2692,9 +3070,14 @@ mod tests {
             rule(ValidationKind::Whole, Operator::Between, "1", "10"),
         );
         let found = w.invalid_cells(0);
-        assert_eq!(found.cells, [cell("B1"), cell("A2"), cell("C2"), cell("A3")]);
+        assert_eq!(
+            found.cells,
+            [cell("B1"), cell("A2"), cell("C2"), cell("A3")]
+        );
         assert!(!found.truncated && found.warning(Locale::en()).is_none());
-        assert!(w.cell_is_valid(0, 0, 0) && !w.cell_is_valid(0, 1, 0) && w.cell_is_valid(0, 20, 20));
+        assert!(
+            w.cell_is_valid(0, 0, 0) && !w.cell_is_valid(0, 1, 0) && w.cell_is_valid(0, 20, 20)
+        );
         // Blank cells are wrong where blanks are not ignored, and Excel stops at 255 circles.
         w.sheets[0].validations[0].allow_blank = false;
         let found = w.invalid_cells(0);
@@ -2712,13 +3095,19 @@ mod tests {
             "A1:A2",
             rule(ValidationKind::Decimal, Operator::GreaterThan, "=B1", ""),
         );
-        apply(&mut w, "D4", rule(ValidationKind::Whole, Operator::Equal, "1", ""));
+        apply(
+            &mut w,
+            "D4",
+            rule(ValidationKind::Whole, Operator::Equal, "1", ""),
+        );
         // A1:A3 onto D3:D5: two cells with the rule, one without.
         w.copy_validation(0, rect("A1:A3"), 0, 2, 3);
         w.commit("paste");
         assert_eq!(ranges(&w), [vec!["A1:A2", "D3:D4"]]);
         assert_eq!(
-            w.validation_at(0, 3, 3).unwrap().operand1_text(3, 3, Locale::en()),
+            w.validation_at(0, 3, 3)
+                .unwrap()
+                .operand1_text(3, 3, Locale::en()),
             "=E4"
         );
         assert!(w.validation_at(0, 4, 3).is_none());
@@ -2729,7 +3118,10 @@ mod tests {
     #[test]
     fn formulas_that_fail_are_asked_about() {
         let mut w = wb(&[("A1", "0"), ("C1", "x"), ("C2", "=1/0")]);
-        w.define_name("Fruits", crate::parser::parse_formula("Sheet1!$C$1:$C$2", Locale::en()).unwrap());
+        w.define_name(
+            "Fruits",
+            crate::parser::parse_formula("Sheet1!$C$1:$C$2", Locale::en()).unwrap(),
+        );
         w.commit("names");
         let warning = |w: &Workbook, kind, first: &str| {
             w.rule_formula_warning(0, (4, 4), &rule(kind, Operator::GreaterThan, first, ""))
@@ -2784,7 +3176,10 @@ mod tests {
             operand_fields(ValidationKind::Whole, Operator::LessThan),
             (Some(Field::Maximum), None)
         );
-        assert_eq!(operand_fields(ValidationKind::Any, Operator::Between), (None, None));
+        assert_eq!(
+            operand_fields(ValidationKind::Any, Operator::Between),
+            (None, None)
+        );
         let build = |kind, operator, first: &str, second: &str, locale: &Locale| {
             let mut rule = Validation {
                 kind,
@@ -2795,7 +3190,9 @@ mod tests {
                 .map(|_| rule)
                 .map_err(|e| e.message(locale))
         };
-        let error = |kind, operator, first: &str, second: &str| build(kind, operator, first, second, en).unwrap_err();
+        let error = |kind, operator, first: &str, second: &str| {
+            build(kind, operator, first, second, en).unwrap_err()
+        };
         use Operator::*;
         use ValidationKind::*;
         assert_eq!(
@@ -2817,7 +3214,10 @@ mod tests {
             error(TextLength, LessThan, "-1", ""),
             "Negative values cannot be used for Text length conditions."
         );
-        assert!(error(Decimal, GreaterThan, "abc", "").starts_with("The Minimum must be a numeric value"));
+        assert!(
+            error(Decimal, GreaterThan, "abc", "")
+                .starts_with("The Minimum must be a numeric value")
+        );
         assert_eq!(
             error(Date, Between, "1/1/2024", "someday"),
             "The date you entered for the End Date is invalid."
@@ -2826,7 +3226,10 @@ mod tests {
             error(Time, Equal, "noon", ""),
             "The time you entered for the Time is invalid."
         );
-        assert!(error(List, Between, "=$A$1:$B$5", "").starts_with("The list source must be a delimited list"));
+        assert!(
+            error(List, Between, "=$A$1:$B$5", "")
+                .starts_with("The list source must be a delimited list")
+        );
         assert!(matches!(
             Validation {
                 kind: Custom,
@@ -2864,18 +3267,29 @@ mod tests {
         assert!(build(List, Between, "=$A$1:$A$9", "", en).is_ok());
         assert!(build(List, Between, "=Names", "", en).is_ok());
         // Operators that take no second value drop the one left in the box.
-        assert!(build(Whole, Equal, "3", "99", en).unwrap().formula2.is_none());
+        assert!(
+            build(Whole, Equal, "3", "99", en)
+                .unwrap()
+                .formula2
+                .is_none()
+        );
         assert_eq!(build(Any, Between, "1", "2", en).unwrap().formula1, None);
     }
 
     #[test]
     fn file_names() {
         for kind in ValidationKind::ALL {
-            assert_eq!(ValidationKind::from_ooxml_name(kind.ooxml_name()), Some(kind));
+            assert_eq!(
+                ValidationKind::from_ooxml_name(kind.ooxml_name()),
+                Some(kind)
+            );
             assert!(!kind.label(Locale::it()).is_empty());
         }
         for operator in Operator::ALL {
-            assert_eq!(Operator::from_ooxml_name(operator.ooxml_name()), Some(operator));
+            assert_eq!(
+                Operator::from_ooxml_name(operator.ooxml_name()),
+                Some(operator)
+            );
         }
         for style in AlertStyle::ALL {
             assert_eq!(AlertStyle::from_ooxml_name(style.ooxml_name()), Some(style));

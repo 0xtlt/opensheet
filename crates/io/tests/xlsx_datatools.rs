@@ -3,16 +3,23 @@
 
 mod common;
 
-use common::{assert_well_formed, assert_workbook_order, assert_worksheet_order, enter, package, part, part_names, value};
+use common::{
+    assert_well_formed, assert_workbook_order, assert_worksheet_order, enter, package, part,
+    part_names, value,
+};
 use opensheet_engine::consolidate::{ConsolidateFunction, ConsolidateSource, Consolidation};
-use opensheet_engine::text_columns::{ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextImport};
+use opensheet_engine::text_columns::{
+    ColumnFormat, DateOrder, Delimiters, Layout, Spec, TextImport,
+};
 use opensheet_engine::whatif::{DataTable, Scenario, ScenarioCell};
 use opensheet_engine::{Locale, Rect, Value, Workbook};
 use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -26,8 +33,21 @@ fn rect(name: &str) -> Rect {
 /// The package with one part replaced.
 fn with_part(bytes: &[u8], name: &str, text: &str) -> Vec<u8> {
     let names = part_names(bytes);
-    let texts: Vec<String> = names.iter().map(|n| if n == name { text.to_string() } else { part(bytes, n) }).collect();
-    let parts: Vec<(&str, &str)> = names.iter().map(String::as_str).zip(texts.iter().map(String::as_str)).collect();
+    let texts: Vec<String> = names
+        .iter()
+        .map(|n| {
+            if n == name {
+                text.to_string()
+            } else {
+                part(bytes, n)
+            }
+        })
+        .collect();
+    let parts: Vec<(&str, &str)> = names
+        .iter()
+        .map(String::as_str)
+        .zip(texts.iter().map(String::as_str))
+        .collect();
     package(&parts)
 }
 
@@ -58,7 +78,8 @@ fn list() -> Workbook {
 #[test]
 fn advanced_filter_in_place_round_trips() {
     let mut wb = list();
-    wb.advanced_filter_in_place(0, rect("A1:B5"), Some((0, rect("D1:D2"))), false).unwrap();
+    wb.advanced_filter_in_place(0, rect("A1:B5"), Some((0, rect("D1:D2"))), false)
+        .unwrap();
     // A row hidden by hand under the list stays one.
     wb.snapshot();
     wb.sheets[0].hidden_rows.insert(7);
@@ -66,12 +87,17 @@ fn advanced_filter_in_place_round_trips() {
     let bytes = to_bytes(&wb);
     common::keep_sample("data-advanced-filter.xlsx", &bytes);
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
-    assert!(sheet.contains("<sheetPr filterMode=\"1\"></sheetPr>"), "{sheet}");
+    assert!(
+        sheet.contains("<sheetPr filterMode=\"1\"></sheetPr>"),
+        "{sheet}"
+    );
     assert!(sheet.contains("<row r=\"3\" hidden=\"1\""), "{sheet}");
     assert!(!sheet.contains("<autoFilter"));
     let workbook = part(&bytes, "xl/workbook.xml");
     assert!(
-        workbook.contains("<definedName name=\"_xlnm.Criteria\" localSheetId=\"0\">Sheet1!$D$1:$D$2</definedName>"),
+        workbook.contains(
+            "<definedName name=\"_xlnm.Criteria\" localSheetId=\"0\">Sheet1!$D$1:$D$2</definedName>"
+        ),
         "{workbook}"
     );
     assert!(
@@ -80,12 +106,29 @@ fn advanced_filter_in_place_round_trips() {
     );
 
     let mut back = load(&bytes);
-    let filter = back.sheets[0].advanced_filter.clone().expect("the filter is read back");
+    let filter = back.sheets[0]
+        .advanced_filter
+        .clone()
+        .expect("the filter is read back");
     assert_eq!(filter.range, rect("A1:B5"));
     assert_eq!(filter.criteria, Some(rect("D1:D2")));
     assert_eq!(filter.hidden.iter().copied().collect::<Vec<_>>(), [2, 4]);
-    assert_eq!(back.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2, 4]);
-    assert_eq!(back.sheets[0].hidden_rows.iter().copied().collect::<Vec<_>>(), [7]);
+    assert_eq!(
+        back.sheets[0]
+            .filtered_rows
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [2, 4]
+    );
+    assert_eq!(
+        back.sheets[0]
+            .hidden_rows
+            .iter()
+            .copied()
+            .collect::<Vec<_>>(),
+        [7]
+    );
     // Clear shows the rows of the list again, not the one hidden by hand.
     assert!(back.clear_advanced_filter(0));
     back.commit("Clear");
@@ -100,7 +143,8 @@ fn filter_mode_of_an_autofilter_is_not_an_advanced_filter() {
     wb.toggle_auto_filter(0, Rect::cell(0, 0)).unwrap();
     wb.commit("filter");
     let bytes = to_bytes(&wb);
-    let sheet = part(&bytes, "xl/worksheets/sheet1.xml").replace("<dimension", "<sheetPr filterMode=\"1\"/><dimension");
+    let sheet = part(&bytes, "xl/worksheets/sheet1.xml")
+        .replace("<dimension", "<sheetPr filterMode=\"1\"/><dimension");
     let bytes = with_part(&bytes, "xl/worksheets/sheet1.xml", &sheet);
     let back = load(&bytes);
     assert!(back.sheets[0].auto_filter.is_some());
@@ -156,7 +200,10 @@ fn consolidation_settings_round_trip() {
         "<dataConsolidate function=\"average\" topLabels=\"1\">",
         "<dataConsolidate function=\"stdDevp\" leftLabels=\"1\" link=\"1\">",
     );
-    let excel = excel.replace("<dataRef ref=\"F1:G2\" sheet=\"Sheet1\"/>", "<dataRef ref=\"A1:B9\" sheet=\"Other\" r:id=\"rId9\"/>");
+    let excel = excel.replace(
+        "<dataRef ref=\"F1:G2\" sheet=\"Sheet1\"/>",
+        "<dataRef ref=\"A1:B9\" sheet=\"Other\" r:id=\"rId9\"/>",
+    );
     let back = load(&with_part(&bytes, "xl/worksheets/sheet1.xml", &excel));
     let read = back.sheets[0].consolidation.as_ref().expect("the settings");
     assert_eq!(read.function, ConsolidateFunction::StdDevP);
@@ -182,7 +229,10 @@ fn scenario(name: &str, cells: &[(u32, u32, &str)]) -> Scenario {
 #[test]
 fn scenarios_round_trip() {
     let mut wb = list();
-    let mut low = scenario("Low & slow", &[(0, 5, "50"), (1, 5, "5%"), (2, 5, "some \"text\"")]);
+    let mut low = scenario(
+        "Low & slow",
+        &[(0, 5, "50"), (1, 5, "5%"), (2, 5, "some \"text\"")],
+    );
     low.comment = "Created by Ann on 10/12/2026".into();
     low.user = "Ann".into();
     low.locked = true;
@@ -217,7 +267,10 @@ fn scenarios_round_trip() {
     let french = read_xlsx(Cursor::new(&bytes), Locale::fr()).unwrap();
     assert_eq!(french.sheets[0].scenarios[1].cells[0].value, "1,5");
     assert_eq!(french.sheets[0].scenarios[0].cells[1].value, "0,05");
-    assert!(part(&to_bytes(&french), "xl/worksheets/sheet1.xml").contains("<inputCells r=\"F1\" val=\"1.5\"/>"));
+    assert!(
+        part(&to_bytes(&french), "xl/worksheets/sheet1.xml")
+            .contains("<inputCells r=\"F1\" val=\"1.5\"/>")
+    );
 
     // As Excel writes them, with what we do not keep; a scenario without
     // cells or with a name already taken is left out.
@@ -226,9 +279,20 @@ fn scenarios_round_trip() {
         "<scenarios current=\"1\" show=\"1\" sqref=\"A3\"><scenario name=\"Empty\" count=\"0\"/><scenario name=\"high\" count=\"1\"><inputCells r=\"$B$2\" val=\"7\" numFmtId=\"9\"/></scenario>",
     );
     let back = load(&with_part(&bytes, "xl/worksheets/sheet1.xml", &excel));
-    let names: Vec<&str> = back.sheets[0].scenarios.iter().map(|s| s.name.as_str()).collect();
+    let names: Vec<&str> = back.sheets[0]
+        .scenarios
+        .iter()
+        .map(|s| s.name.as_str())
+        .collect();
     assert_eq!(names, ["high", "Low & slow"]);
-    assert_eq!(back.sheets[0].scenarios[0].cells, [ScenarioCell { row: 1, col: 1, value: "7".into() }]);
+    assert_eq!(
+        back.sheets[0].scenarios[0].cells,
+        [ScenarioCell {
+            row: 1,
+            col: 1,
+            value: "7".into()
+        }]
+    );
 }
 
 #[test]
@@ -252,9 +316,12 @@ fn data_tables_round_trip() {
         enter(&mut wb, 0, cell, text);
     }
     wb.commit("setup");
-    wb.data_table_create(0, rect("D1:F3"), Some((0, 1)), Some((1, 1))).unwrap();
-    wb.data_table_create(0, rect("D7:E8"), None, Some((1, 1))).unwrap();
-    wb.data_table_create(0, rect("A10:B11"), Some((0, 1)), None).unwrap();
+    wb.data_table_create(0, rect("D1:F3"), Some((0, 1)), Some((1, 1)))
+        .unwrap();
+    wb.data_table_create(0, rect("D7:E8"), None, Some((1, 1)))
+        .unwrap();
+    wb.data_table_create(0, rect("A10:B11"), Some((0, 1)), None)
+        .unwrap();
     wb.commit("Data Table");
     let bytes = to_bytes(&wb);
     common::keep_sample("data-tables.xlsx", &bytes);
@@ -317,7 +384,12 @@ fn text_imports_round_trip() {
         first_row: 2,
         spec: Spec {
             layout: Layout::Delimited(semicolons),
-            formats: vec![ColumnFormat::Text, ColumnFormat::General, ColumnFormat::Date(DateOrder::DMY), ColumnFormat::Skip],
+            formats: vec![
+                ColumnFormat::Text,
+                ColumnFormat::General,
+                ColumnFormat::Date(DateOrder::DMY),
+                ColumnFormat::Skip,
+            ],
         },
         web: None,
         props: Default::default(),
@@ -340,15 +412,27 @@ fn text_imports_round_trip() {
         web: None,
         props: Default::default(),
     };
-    wb.import_text(0, (9, 0), "skipped\n007;x|31/01/2024;gone\n008;y|01/02/2024;gone", delimited.clone()).unwrap();
-    wb.import_text(1, (0, 0), "Jean Dup 12\nAnne Mar  7", fixed.clone()).unwrap();
+    wb.import_text(
+        0,
+        (9, 0),
+        "skipped\n007;x|31/01/2024;gone\n008;y|01/02/2024;gone",
+        delimited.clone(),
+    )
+    .unwrap();
+    wb.import_text(1, (0, 0), "Jean Dup 12\nAnne Mar  7", fixed.clone())
+        .unwrap();
     wb.import_text(1, (5, 2), "a\tb", plain.clone()).unwrap();
     wb.commit("Import Data");
     let bytes = to_bytes(&wb);
     common::keep_sample("data-text-import.xlsx", &bytes);
 
     let names = part_names(&bytes);
-    for name in ["xl/connections.xml", "xl/queryTables/queryTable1.xml", "xl/queryTables/queryTable3.xml", "xl/worksheets/_rels/sheet2.xml.rels"] {
+    for name in [
+        "xl/connections.xml",
+        "xl/queryTables/queryTable1.xml",
+        "xl/queryTables/queryTable3.xml",
+        "xl/worksheets/_rels/sheet2.xml.rels",
+    ] {
         assert!(names.iter().any(|n| n == name), "{name} in {names:?}");
     }
     let connections = part(&bytes, "xl/connections.xml");
@@ -368,15 +452,37 @@ fn text_imports_round_trip() {
     assert_well_formed("queryTable2", &query);
     assert!(query.contains("<queryTable xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" name=\"stock\" connectionId=\"2\""), "{query}");
     let types = part(&bytes, "[Content_Types].xml");
-    assert!(types.contains("/xl/connections.xml") && types.contains("spreadsheetml.connections+xml"), "{types}");
-    assert!(types.contains("/xl/queryTables/queryTable3.xml") && types.contains("spreadsheetml.queryTable+xml"));
-    assert!(part(&bytes, "xl/_rels/workbook.xml.rels").contains("relationships/connections\" Target=\"connections.xml\""));
+    assert!(
+        types.contains("/xl/connections.xml") && types.contains("spreadsheetml.connections+xml"),
+        "{types}"
+    );
+    assert!(
+        types.contains("/xl/queryTables/queryTable3.xml")
+            && types.contains("spreadsheetml.queryTable+xml")
+    );
+    assert!(
+        part(&bytes, "xl/_rels/workbook.xml.rels")
+            .contains("relationships/connections\" Target=\"connections.xml\"")
+    );
     let rels = part(&bytes, "xl/worksheets/_rels/sheet2.xml.rels");
-    assert!(rels.contains("relationships/queryTable\" Target=\"../queryTables/queryTable2.xml\""), "{rels}");
+    assert!(
+        rels.contains("relationships/queryTable\" Target=\"../queryTables/queryTable2.xml\""),
+        "{rels}"
+    );
     let workbook = part(&bytes, "xl/workbook.xml");
     assert_workbook_order(&workbook);
-    assert!(workbook.contains("<definedName name=\"sales\" localSheetId=\"0\">Sheet1!$A$10:$C$11</definedName>"), "{workbook}");
-    assert!(workbook.contains("<definedName name=\"notes\" localSheetId=\"1\">Sheet2!$C$6:$D$6</definedName>"), "{workbook}");
+    assert!(
+        workbook.contains(
+            "<definedName name=\"sales\" localSheetId=\"0\">Sheet1!$A$10:$C$11</definedName>"
+        ),
+        "{workbook}"
+    );
+    assert!(
+        workbook.contains(
+            "<definedName name=\"notes\" localSheetId=\"1\">Sheet2!$C$6:$D$6</definedName>"
+        ),
+        "{workbook}"
+    );
 
     let mut back = load(&bytes);
     let read = |sheet: usize, index: usize| back.sheets[sheet].text_imports[index].clone();
@@ -401,9 +507,16 @@ fn text_imports_round_trip() {
 
     // A query on something else than a text file, or without its range, is left out.
     let other = connections.replace("type=\"6\" refreshedVersion=\"8\" background=\"1\" saveData=\"1\"><textPr codePage=\"65001\" sourceFile=\"/Users/ann/notes.txt\"><textFields count=\"2\"><textField/><textField/></textFields></textPr>", "type=\"5\"><dbPr connection=\"x\" command=\"y\"/>");
-    let unnamed = workbook.replace("<definedName name=\"stock\" localSheetId=\"1\">Sheet2!$A$1:$C$2</definedName>", "");
+    let unnamed = workbook.replace(
+        "<definedName name=\"stock\" localSheetId=\"1\">Sheet2!$A$1:$C$2</definedName>",
+        "",
+    );
     assert_ne!(unnamed, workbook);
-    let bytes = with_part(&with_part(&bytes, "xl/connections.xml", &other), "xl/workbook.xml", &unnamed);
+    let bytes = with_part(
+        &with_part(&bytes, "xl/connections.xml", &other),
+        "xl/workbook.xml",
+        &unnamed,
+    );
     let back = load(&bytes);
     assert_eq!(back.sheets[0].text_imports.len(), 1);
     assert!(back.sheets[1].text_imports.is_empty());
@@ -415,12 +528,14 @@ fn text_imports_round_trip() {
 fn every_data_tool_in_one_sample() {
     // Sheet1: the list under an Advanced Filter, scenarios and a text import.
     let mut wb = list();
-    wb.advanced_filter_in_place(0, rect("A1:B5"), Some((0, rect("D1:D2"))), false).unwrap();
+    wb.advanced_filter_in_place(0, rect("A1:B5"), Some((0, rect("D1:D2"))), false)
+        .unwrap();
     let mut low = scenario("Low", &[(0, 5, "50"), (1, 5, "5%")]);
     low.comment = "Created by Ann on 10/12/2026".into();
     low.user = "Ann".into();
     wb.scenario_add(0, low).unwrap();
-    wb.scenario_add(0, scenario("High", &[(0, 5, "150")])).unwrap();
+    wb.scenario_add(0, scenario("High", &[(0, 5, "150")]))
+        .unwrap();
     let import = TextImport {
         name: String::new(),
         path: "/Users/ann/sales.csv".into(),
@@ -434,7 +549,16 @@ fn every_data_tool_in_one_sample() {
 
     // Sheet2: the sources and the result of a consolidation.
     wb.add_sheet(1);
-    for (cell, text) in [("A1", "Q1"), ("A2", "4"), ("B1", "Q2"), ("B2", "5"), ("D1", "Q1"), ("D2", "6"), ("E1", "Q2"), ("E2", "7")] {
+    for (cell, text) in [
+        ("A1", "Q1"),
+        ("A2", "4"),
+        ("B1", "Q2"),
+        ("B2", "5"),
+        ("D1", "Q1"),
+        ("D2", "6"),
+        ("E1", "Q2"),
+        ("E2", "7"),
+    ] {
         enter(&mut wb, 1, cell, text);
     }
     let spec = Consolidation {
@@ -475,13 +599,19 @@ fn every_data_tool_in_one_sample() {
         enter(&mut wb, 2, cell, text);
     }
     wb.commit("setup");
-    wb.data_table_create(2, rect("D1:F3"), Some((0, 1)), Some((1, 1))).unwrap();
-    wb.data_table_create(2, rect("D7:E8"), None, Some((1, 1))).unwrap();
-    wb.data_table_create(2, rect("A10:B11"), Some((0, 1)), None).unwrap();
+    wb.data_table_create(2, rect("D1:F3"), Some((0, 1)), Some((1, 1)))
+        .unwrap();
+    wb.data_table_create(2, rect("D7:E8"), None, Some((1, 1)))
+        .unwrap();
+    wb.data_table_create(2, rect("A10:B11"), Some((0, 1)), None)
+        .unwrap();
     wb.commit("Data Table");
 
     let bytes = to_bytes(&wb);
-    for name in part_names(&bytes).iter().filter(|name| name.ends_with(".xml") || name.ends_with(".rels")) {
+    for name in part_names(&bytes)
+        .iter()
+        .filter(|name| name.ends_with(".xml") || name.ends_with(".rels"))
+    {
         assert_well_formed(name, &part(&bytes, name));
     }
     common::keep_sample("data-tools.xlsx", &bytes);
@@ -496,7 +626,13 @@ fn every_data_tool_in_one_sample() {
 fn consolidation_links_round_trip_with_their_outline() {
     let mut wb = Workbook::new(Locale::en());
     wb.add_sheet(1);
-    for (cell, text) in [("A1", "Q1"), ("A2", "4"), ("A3", "6"), ("B1", "Q2"), ("B2", "5")] {
+    for (cell, text) in [
+        ("A1", "Q1"),
+        ("A2", "4"),
+        ("A3", "6"),
+        ("B1", "Q2"),
+        ("B2", "5"),
+    ] {
         enter(&mut wb, 1, cell, text);
     }
     let spec = Consolidation {
@@ -516,16 +652,24 @@ fn consolidation_links_round_trip_with_their_outline() {
     let xml = part(&bytes, "xl/worksheets/sheet1.xml");
     assert_well_formed("sheet1.xml", &xml);
     assert_worksheet_order("sheet1.xml", &xml);
-    assert!(xml.contains("<dataConsolidate topLabels=\"1\" link=\"1\">"), "{xml}");
-    assert!(xml.contains("<row r=\"2\" hidden=\"1\" outlineLevel=\"1\">"), "{xml}");
-    assert!(xml.contains("<f>Sheet2!$A$2</f>") && xml.contains("<f>SUM(A2)</f>"), "{xml}");
+    assert!(
+        xml.contains("<dataConsolidate topLabels=\"1\" link=\"1\">"),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("<row r=\"2\" hidden=\"1\" outlineLevel=\"1\">"),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("<f>Sheet2!$A$2</f>") && xml.contains("<f>SUM(A2)</f>"),
+        "{xml}"
+    );
     let back = load(&bytes);
     assert_eq!(back.sheets[0].consolidation, Some(spec));
     assert_eq!(back.sheets[0].outline, wb.sheets[0].outline);
     assert_eq!(value(&back, 0, "A3"), Value::Number(4.0));
     assert_eq!(value(&back, 0, "A5"), Value::Number(6.0));
 }
-
 
 /// The page the kept sample queries.
 const SALES_PAGE: &str = "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><title>Sales</title></head><body>\n<table><tr><th>Menu</th></tr><tr><td>Home</td></tr></table>\n<table id=\"sales\"><tr><th>Name</th><th>Qty</th><th>Day</th></tr>\n<tr><td>Ann</td><td>3</td><td>2024-03-05</td></tr>\n<tr><td>Bob</td><td>4</td><td>2024-03-06</td></tr></table>\n</body></html>\n";
@@ -563,15 +707,26 @@ fn web_queries_round_trip() {
             adjust_width: false,
         },
     );
-    let people = query(format!("file://{dir}/getdata-people.json"), None, QueryProps::default());
-    let named = query("http://127.0.0.1:8123/report?year=2024&all=1".into(), Some(QueryItem::Name("data.items".into())), QueryProps::default());
+    let people = query(
+        format!("file://{dir}/getdata-people.json"),
+        None,
+        QueryProps::default(),
+    );
+    let named = query(
+        "http://127.0.0.1:8123/report?year=2024&all=1".into(),
+        Some(QueryItem::Name("data.items".into())),
+        QueryProps::default(),
+    );
 
     let mut wb = Workbook::new(Locale::en());
     let tables = html_tables(SALES_PAGE);
-    wb.import_source_table(0, (0, 0), &tables[1], page.clone()).unwrap();
+    wb.import_source_table(0, (0, 0), &tables[1], page.clone())
+        .unwrap();
     let records = json_tables(json, "people").unwrap();
-    wb.import_source_table(0, (0, 5), &records[0], people.clone()).unwrap();
-    wb.import_source_table(0, (9, 0), &tables[0], named.clone()).unwrap();
+    wb.import_source_table(0, (0, 5), &records[0], people.clone())
+        .unwrap();
+    wb.import_source_table(0, (9, 0), &tables[0], named.clone())
+        .unwrap();
     wb.commit("Import Data");
     let bytes = to_bytes(&wb);
     common::keep_sample("getdata-web-queries.xlsx", &bytes);
@@ -597,9 +752,17 @@ fn web_queries_round_trip() {
         table.contains("name=\"getdata_sales\" refreshOnLoad=\"1\" preserveFormatting=\"0\" adjustColumnWidth=\"0\" connectionId=\"1\" autoFormatId=\"16\""),
         "{table}"
     );
-    assert!(part(&bytes, "xl/queryTables/queryTable2.xml").contains("name=\"getdata_people\" connectionId=\"2\""));
+    assert!(
+        part(&bytes, "xl/queryTables/queryTable2.xml")
+            .contains("name=\"getdata_people\" connectionId=\"2\"")
+    );
     let workbook = part(&bytes, "xl/workbook.xml");
-    assert!(workbook.contains("<definedName name=\"getdata_sales\" localSheetId=\"0\">Sheet1!$A$1:$C$3</definedName>"), "{workbook}");
+    assert!(
+        workbook.contains(
+            "<definedName name=\"getdata_sales\" localSheetId=\"0\">Sheet1!$A$1:$C$3</definedName>"
+        ),
+        "{workbook}"
+    );
 
     let back = load(&bytes);
     let expect = |mut import: TextImport, name: &str, range: &str| {
@@ -607,7 +770,14 @@ fn web_queries_round_trip() {
         import.range = rect(range);
         import
     };
-    assert_eq!(back.sheets[0].text_imports, [expect(page, "getdata_sales", "A1:C3"), expect(people, "getdata_people", "F1:H3"), expect(named, "report", "A10:A11")]);
+    assert_eq!(
+        back.sheets[0].text_imports,
+        [
+            expect(page, "getdata_sales", "A1:C3"),
+            expect(people, "getdata_people", "F1:H3"),
+            expect(named, "report", "A10:A11")
+        ]
+    );
     assert_eq!(value(&back, 0, "B2"), Value::Number(3.0));
     assert_eq!(value(&back, 0, "G2"), Value::text("Paris"));
     // Written again, nothing is lost.
@@ -622,5 +792,8 @@ fn web_queries_round_trip() {
     assert_ne!(foreign, connections);
     let back = load(&with_part(&bytes, "xl/connections.xml", &foreign));
     let whole = &back.sheets[0].text_imports[2];
-    assert_eq!((whole.path.as_str(), whole.web.clone()), ("http://127.0.0.1:8123/all", Some(WebQuery { item: None })));
+    assert_eq!(
+        (whole.path.as_str(), whole.web.clone()),
+        ("http://127.0.0.1:8123/all", Some(WebQuery { item: None }))
+    );
 }

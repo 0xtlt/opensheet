@@ -20,14 +20,31 @@ use crate::view::{icon, tooltip};
 use crate::widgets::text_area as area;
 use crate::widgets::{self, Button};
 use gpui::{
-    AnyElement, App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, EventEmitter, FocusHandle, Focusable, Font, GlobalElementId, Hsla, KeyBinding, LayoutId,
-    MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollWheelEvent, ShapedLine, SharedString,
-    Style, Subscription, TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill, font, point, prelude::*, px, relative, size,
+    AnyElement, App, Bounds, ClipboardItem, ContentMask, Context, CursorStyle, Element, ElementId,
+    ElementInputHandler, Entity, EntityInputHandler, EventEmitter, FocusHandle, Focusable, Font,
+    GlobalElementId, Hsla, KeyBinding, LayoutId, MouseButton, MouseDownEvent, MouseMoveEvent,
+    MouseUpEvent, Pixels, Point, ScrollWheelEvent, ShapedLine, SharedString, Style, Subscription,
+    TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill, font, point, prelude::*,
+    px, relative, size,
 };
 use std::ops::Range;
 
-actions!(code_editor, [Save, Undo, Redo, ToggleComment, PageUp, PageDown, Find, Replace, FindNext, FindPrevious, GoToLine]);
+actions!(
+    code_editor,
+    [
+        Save,
+        Undo,
+        Redo,
+        ToggleComment,
+        PageUp,
+        PageDown,
+        Find,
+        Replace,
+        FindNext,
+        FindPrevious,
+        GoToLine
+    ]
+);
 
 /// Key context of the keys the editor adds to those of the text boxes.
 const CONTEXT: &str = "CodeEditor";
@@ -322,9 +339,14 @@ impl CodeEditor {
     /// keys going to its first field.
     pub(crate) fn open_bar(&mut self, bar: Bar, window: &mut Window, cx: &mut Context<Self>) {
         // Replacing changes the text: not in a viewer.
-        let bar = if self.read_only && bar == Bar::Replace { Bar::Find } else { bar };
+        let bar = if self.read_only && bar == Bar::Replace {
+            Bar::Find
+        } else {
+            bar
+        };
         // What is selected on one line is what is looked for.
-        let selected = Some(self.buffer.selected_text().to_string()).filter(|text| !text.is_empty() && !text.contains('\n'));
+        let selected = Some(self.buffer.selected_text().to_string())
+            .filter(|text| !text.is_empty() && !text.contains('\n'));
         let finder = self.finder(window, cx);
         let field = match bar {
             Bar::GoToLine => {
@@ -333,7 +355,9 @@ impl CodeEditor {
             }
             _ => {
                 if let Some(text) = selected {
-                    finder.query.update(cx, |input, cx| input.set_text(text, cx));
+                    finder
+                        .query
+                        .update(cx, |input, cx| input.set_text(text, cx));
                 }
                 finder.query.clone()
             }
@@ -370,7 +394,11 @@ impl CodeEditor {
     /// The match the selection is on, when it is on one.
     fn current_match(&self) -> Option<usize> {
         let selected = self.buffer.selection();
-        self.finder.as_ref()?.matches.iter().position(|range| *range == selected)
+        self.finder
+            .as_ref()?
+            .matches
+            .iter()
+            .position(|range| *range == selected)
     }
 
     /// Select the next (or the previous) match, round the ends of the
@@ -395,7 +423,15 @@ impl CodeEditor {
     /// Find Next and Find Previous.
     pub(crate) fn find_step(&mut self, forward: bool, cx: &mut Context<Self>) -> bool {
         let selected = self.buffer.selection();
-        self.find_from(if forward { selected.end } else { selected.start }, forward, cx)
+        self.find_from(
+            if forward {
+                selected.end
+            } else {
+                selected.start
+            },
+            forward,
+            cx,
+        )
     }
 
     /// Replace the match the selection is on, then go to the next one;
@@ -406,7 +442,11 @@ impl CodeEditor {
         }
         self.refresh_matches(cx);
         if self.current_match().is_some() {
-            let replacement = self.finder.as_ref().map(|finder| finder.replacement.read(cx).text().to_string()).unwrap_or_default();
+            let replacement = self
+                .finder
+                .as_ref()
+                .map(|finder| finder.replacement.read(cx).text().to_string())
+                .unwrap_or_default();
             let range = self.buffer.selection();
             self.edit(cx, |buffer| buffer.replace(range, &replacement));
         }
@@ -425,7 +465,9 @@ impl CodeEditor {
         };
         let replacement = finder.replacement.read(cx).text().to_string();
         let count = finder.matches.len();
-        if let Some((range, text)) = search::replace_all(self.buffer.text(), &finder.matches, &replacement) {
+        if let Some((range, text)) =
+            search::replace_all(self.buffer.text(), &finder.matches, &replacement)
+        {
             self.edit(cx, |buffer| buffer.replace(range, &text));
         }
         count
@@ -445,7 +487,13 @@ impl CodeEditor {
         cx.notify();
     }
 
-    fn on_query_event(&mut self, _: &Entity<TextInput>, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_query_event(
+        &mut self,
+        _: &Entity<TextInput>,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match event {
             // The first match from where the caret is shows as the query
             // is typed.
@@ -460,7 +508,9 @@ impl CodeEditor {
             }
             InputEvent::Tab { .. } if self.bar == Some(Bar::Replace) => {
                 if let Some(finder) = &self.finder {
-                    finder.replacement.update(cx, |input, cx| input.select_all_text(cx));
+                    finder
+                        .replacement
+                        .update(cx, |input, cx| input.select_all_text(cx));
                     window.focus(&finder.replacement.read(cx).focus_handle(cx));
                 }
             }
@@ -469,7 +519,13 @@ impl CodeEditor {
         }
     }
 
-    fn on_replacement_event(&mut self, _: &Entity<TextInput>, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_replacement_event(
+        &mut self,
+        _: &Entity<TextInput>,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match event {
             InputEvent::Enter { .. } => self.replace_one(cx),
             InputEvent::Tab { .. } => {
@@ -482,7 +538,13 @@ impl CodeEditor {
         }
     }
 
-    fn on_line_event(&mut self, input: &Entity<TextInput>, event: &InputEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_line_event(
+        &mut self,
+        input: &Entity<TextInput>,
+        event: &InputEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         match event {
             InputEvent::Enter { .. } => {
                 if let Ok(line) = input.read(cx).text().trim().parse::<u32>() {
@@ -519,7 +581,13 @@ impl CodeEditor {
     /// The bar shown, the matches and the one the selection is on.
     #[cfg(test)]
     pub fn found(&self) -> (Option<Bar>, usize, Option<usize>) {
-        (self.bar, self.finder.as_ref().map_or(0, |finder| finder.matches.len()), self.current_match())
+        (
+            self.bar,
+            self.finder
+                .as_ref()
+                .map_or(0, |finder| finder.matches.len()),
+            self.current_match(),
+        )
     }
 
     /// A small button of the bar.
@@ -552,10 +620,25 @@ impl CodeEditor {
 
     fn render_bar(&self, bar: Bar, cx: &mut Context<Self>) -> Option<AnyElement> {
         let finder = self.finder.as_ref()?;
-        let close = Self::bar_button("ce-find-close", icon("close", 12.0, theme::TEXT).into_any_element(), t("Close", "Fermer"), false, cx, |editor, window, cx| {
-            editor.close_bar(window, cx)
-        });
-        let frame = div().flex_none().px(px(6.)).py(px(4.)).flex().flex_col().gap(px(4.)).bg(c(theme::PANEL_BG)).border_b_1().border_color(c(theme::BORDER)).cursor(CursorStyle::Arrow);
+        let close = Self::bar_button(
+            "ce-find-close",
+            icon("close", 12.0, theme::TEXT).into_any_element(),
+            t("Close", "Fermer"),
+            false,
+            cx,
+            |editor, window, cx| editor.close_bar(window, cx),
+        );
+        let frame = div()
+            .flex_none()
+            .px(px(6.))
+            .py(px(4.))
+            .flex()
+            .flex_col()
+            .gap(px(4.))
+            .bg(c(theme::PANEL_BG))
+            .border_b_1()
+            .border_color(c(theme::BORDER))
+            .cursor(CursorStyle::Arrow);
         if bar == Bar::GoToLine {
             let label = crate::i18n::labelled(t("Go to line", "Atteindre la ligne"), "");
             return Some(
@@ -573,7 +656,10 @@ impl CodeEditor {
             );
         }
         let total = finder.matches.len();
-        let count = match (finder.query.read(cx).text().is_empty(), self.current_match()) {
+        let count = match (
+            finder.query.read(cx).text().is_empty(),
+            self.current_match(),
+        ) {
             (true, _) => String::new(),
             (false, _) if total == 0 => t("No results", "Aucun résultat").to_string(),
             (false, Some(current)) => format!("{}/{total}", current + 1),
@@ -585,15 +671,51 @@ impl CodeEditor {
             .items_center()
             .gap(px(2.))
             .child(widgets::TextField::new(&finder.query).height(22.0))
-            .child(div().flex_none().px(px(4.)).text_size(px(11.)).text_color(c(theme::TEXT_MUTED)).debug_selector(|| "ce-find-count".to_string()).child(count))
-            .child(Self::bar_button("ce-find-case", letters("Aa"), t("Match case", "Respecter la casse"), finder.options.match_case, cx, |editor, window, cx| editor.toggle_option(false, window, cx)))
-            .child(Self::bar_button("ce-find-word", letters("ab|"), t("Find whole words only", "Mot entier"), finder.options.whole_word, cx, |editor, window, cx| editor.toggle_option(true, window, cx)))
-            .child(Self::bar_button("ce-find-prev", icon("chevron-up", 12.0, theme::TEXT).into_any_element(), t("Find Previous", "Précédent"), false, cx, |editor, _, cx| {
-                editor.find_step(false, cx);
-            }))
-            .child(Self::bar_button("ce-find-next", icon("chevron-down", 12.0, theme::TEXT).into_any_element(), t("Find Next", "Suivant"), false, cx, |editor, _, cx| {
-                editor.find_step(true, cx);
-            }))
+            .child(
+                div()
+                    .flex_none()
+                    .px(px(4.))
+                    .text_size(px(11.))
+                    .text_color(c(theme::TEXT_MUTED))
+                    .debug_selector(|| "ce-find-count".to_string())
+                    .child(count),
+            )
+            .child(Self::bar_button(
+                "ce-find-case",
+                letters("Aa"),
+                t("Match case", "Respecter la casse"),
+                finder.options.match_case,
+                cx,
+                |editor, window, cx| editor.toggle_option(false, window, cx),
+            ))
+            .child(Self::bar_button(
+                "ce-find-word",
+                letters("ab|"),
+                t("Find whole words only", "Mot entier"),
+                finder.options.whole_word,
+                cx,
+                |editor, window, cx| editor.toggle_option(true, window, cx),
+            ))
+            .child(Self::bar_button(
+                "ce-find-prev",
+                icon("chevron-up", 12.0, theme::TEXT).into_any_element(),
+                t("Find Previous", "Précédent"),
+                false,
+                cx,
+                |editor, _, cx| {
+                    editor.find_step(false, cx);
+                },
+            ))
+            .child(Self::bar_button(
+                "ce-find-next",
+                icon("chevron-down", 12.0, theme::TEXT).into_any_element(),
+                t("Find Next", "Suivant"),
+                false,
+                cx,
+                |editor, _, cx| {
+                    editor.find_step(true, cx);
+                },
+            ))
             .child(close);
         let replace_row = (bar == Bar::Replace).then(|| {
             let editor = cx.entity();
@@ -603,14 +725,31 @@ impl CodeEditor {
                 .items_center()
                 .gap(px(4.))
                 .child(widgets::TextField::new(&finder.replacement).height(22.0))
-                .child(div().debug_selector(|| "ce-find-replace".to_string()).child(Button::new("ce-find-replace", t("Replace", "Remplacer")).on_click(move |_, _, cx| one.update(cx, |editor, cx| editor.replace_one(cx)))))
-                .child(div().debug_selector(|| "ce-find-all".to_string()).child(Button::new("ce-find-all", t("Replace All", "Remplacer tout")).on_click(move |_, _, cx| {
-                    all.update(cx, |editor, cx| {
-                        editor.replace_everything(cx);
-                    })
-                })))
+                .child(
+                    div()
+                        .debug_selector(|| "ce-find-replace".to_string())
+                        .child(
+                            Button::new("ce-find-replace", t("Replace", "Remplacer")).on_click(
+                                move |_, _, cx| one.update(cx, |editor, cx| editor.replace_one(cx)),
+                            ),
+                        ),
+                )
+                .child(div().debug_selector(|| "ce-find-all".to_string()).child(
+                    Button::new("ce-find-all", t("Replace All", "Remplacer tout")).on_click(
+                        move |_, _, cx| {
+                            all.update(cx, |editor, cx| {
+                                editor.replace_everything(cx);
+                            })
+                        },
+                    ),
+                ))
         });
-        Some(frame.child(find_row).children(replace_row).into_any_element())
+        Some(
+            frame
+                .child(find_row)
+                .children(replace_row)
+                .into_any_element(),
+        )
     }
 
     // ---- completion -------------------------------------------------------
@@ -622,7 +761,11 @@ impl CodeEditor {
 
     /// Show the parameters of the call the caret is in, if it is in one.
     fn refresh_hint(&mut self) {
-        self.hint = if self.completes() && self.buffer.selection().is_empty() { complete::hint(self.buffer.text(), self.buffer.caret()) } else { None };
+        self.hint = if self.completes() && self.buffer.selection().is_empty() {
+            complete::hint(self.buffer.text(), self.buffer.caret())
+        } else {
+            None
+        };
     }
 
     /// Open, narrow or close the list for what stands before the caret:
@@ -664,7 +807,11 @@ impl CodeEditor {
         let Some(proposal) = self.proposal.take() else {
             return false;
         };
-        let Some(entry) = proposal.completion.entries.get(index.unwrap_or(proposal.selected)) else {
+        let Some(entry) = proposal
+            .completion
+            .entries
+            .get(index.unwrap_or(proposal.selected))
+        else {
             return false;
         };
         let range = proposal.completion.start..self.buffer.caret();
@@ -676,26 +823,49 @@ impl CodeEditor {
     /// The names the list shows, the selected one and the first shown.
     #[cfg(test)]
     pub fn proposed(&self) -> Option<(Vec<String>, usize)> {
-        self.proposal.as_ref().map(|proposal| (proposal.completion.entries.iter().map(|entry| entry.name.clone()).collect(), proposal.selected))
+        self.proposal.as_ref().map(|proposal| {
+            (
+                proposal
+                    .completion
+                    .entries
+                    .iter()
+                    .map(|entry| entry.name.clone())
+                    .collect(),
+                proposal.selected,
+            )
+        })
     }
 
     /// Where an entry of the list was drawn, when it is among those shown.
     #[cfg(test)]
     pub fn proposal_row(&self, index: usize) -> Option<Point<Pixels>> {
-        self.geometry.as_ref()?.proposal_rows.iter().find(|(row, _)| *row == index).map(|(_, place)| place.center())
+        self.geometry
+            .as_ref()?
+            .proposal_rows
+            .iter()
+            .find(|(row, _)| *row == index)
+            .map(|(_, place)| place.center())
     }
 
     /// What stands beside the selected entry of the list.
     #[cfg(test)]
     pub fn proposed_detail(&self) -> Option<String> {
-        self.proposal.as_ref().and_then(|proposal| proposal.completion.entries.get(proposal.selected)).map(|entry| entry.detail.clone())
+        self.proposal
+            .as_ref()
+            .and_then(|proposal| proposal.completion.entries.get(proposal.selected))
+            .map(|entry| entry.detail.clone())
     }
 
     /// The hint shown, the parameter being typed between brackets.
     #[cfg(test)]
     pub fn hinted(&self) -> Option<String> {
         self.hint.as_ref().map(|hint| match &hint.active {
-            Some(active) => format!("{}[{}]{}", &hint.signature[..active.start], &hint.signature[active.clone()], &hint.signature[active.end..]),
+            Some(active) => format!(
+                "{}[{}]{}",
+                &hint.signature[..active.start],
+                &hint.signature[active.clone()],
+                &hint.signature[active.end..]
+            ),
             None => hint.signature.clone(),
         })
     }
@@ -744,25 +914,38 @@ impl CodeEditor {
 
     /// How many lines the box shows.
     fn page(&self) -> isize {
-        let height = self.geometry.as_ref().map_or(LINE_HEIGHT * 10.0, |g| f32::from(g.bounds.size.height));
+        let height = self
+            .geometry
+            .as_ref()
+            .map_or(LINE_HEIGHT * 10.0, |g| f32::from(g.bounds.size.height));
         ((height / LINE_HEIGHT).floor() as isize - 1).max(1)
     }
 
     fn line_end(&self) -> usize {
-        self.buffer.line_range(self.buffer.line_of(self.buffer.caret())).end
+        self.buffer
+            .line_range(self.buffer.line_of(self.buffer.caret()))
+            .end
     }
 
     // ---- keys -----------------------------------------------------------
 
     fn left(&mut self, _: &line::Left, _: &mut Window, cx: &mut Context<Self>) {
         let selected = self.buffer.selection();
-        let to = if selected.is_empty() { self.buffer.previous_boundary(selected.start) } else { selected.start };
+        let to = if selected.is_empty() {
+            self.buffer.previous_boundary(selected.start)
+        } else {
+            selected.start
+        };
         self.move_to(to, cx);
     }
 
     fn right(&mut self, _: &line::Right, _: &mut Window, cx: &mut Context<Self>) {
         let selected = self.buffer.selection();
-        let to = if selected.is_empty() { self.buffer.next_boundary(selected.end) } else { selected.end };
+        let to = if selected.is_empty() {
+            self.buffer.next_boundary(selected.end)
+        } else {
+            selected.end
+        };
         self.move_to(to, cx);
     }
 
@@ -857,7 +1040,12 @@ impl CodeEditor {
         self.move_to(self.buffer.text().len(), cx);
     }
 
-    fn select_text_start(&mut self, _: &area::SelectTextStart, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_text_start(
+        &mut self,
+        _: &area::SelectTextStart,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.select_to(0, cx);
     }
 
@@ -873,15 +1061,30 @@ impl CodeEditor {
         self.move_to(self.buffer.next_word(self.buffer.caret()), cx);
     }
 
-    fn select_word_left(&mut self, _: &line::SelectWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_word_left(
+        &mut self,
+        _: &line::SelectWordLeft,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.select_to(self.buffer.previous_word(self.buffer.caret()), cx);
     }
 
-    fn select_word_right(&mut self, _: &line::SelectWordRight, _: &mut Window, cx: &mut Context<Self>) {
+    fn select_word_right(
+        &mut self,
+        _: &line::SelectWordRight,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.select_to(self.buffer.next_word(self.buffer.caret()), cx);
     }
 
-    fn delete_word_left(&mut self, _: &line::DeleteWordLeft, _: &mut Window, cx: &mut Context<Self>) {
+    fn delete_word_left(
+        &mut self,
+        _: &line::DeleteWordLeft,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.edit(cx, |buffer| {
             if buffer.selection().is_empty() {
                 buffer.select_to(buffer.previous_word(buffer.caret()));
@@ -991,7 +1194,12 @@ impl CodeEditor {
         cx.emit(EditorEvent::Save);
     }
 
-    fn show_character_palette(&mut self, _: &line::ShowCharacterPalette, window: &mut Window, _: &mut Context<Self>) {
+    fn show_character_palette(
+        &mut self,
+        _: &line::ShowCharacterPalette,
+        window: &mut Window,
+        _: &mut Context<Self>,
+    ) {
         window.show_character_palette();
     }
 
@@ -1003,13 +1211,17 @@ impl CodeEditor {
 
     fn copy(&mut self, _: &line::Copy, _: &mut Window, cx: &mut Context<Self>) {
         if !self.buffer.selection().is_empty() {
-            cx.write_to_clipboard(ClipboardItem::new_string(self.buffer.selected_text().to_string()));
+            cx.write_to_clipboard(ClipboardItem::new_string(
+                self.buffer.selected_text().to_string(),
+            ));
         }
     }
 
     fn cut(&mut self, _: &line::Cut, _: &mut Window, cx: &mut Context<Self>) {
         if !self.buffer.selection().is_empty() && !self.read_only {
-            cx.write_to_clipboard(ClipboardItem::new_string(self.buffer.selected_text().to_string()));
+            cx.write_to_clipboard(ClipboardItem::new_string(
+                self.buffer.selected_text().to_string(),
+            ));
             self.edit(cx, |buffer| buffer.insert(""));
         }
     }
@@ -1028,17 +1240,30 @@ impl CodeEditor {
         match geometry.lines.iter().find(|(index, _)| *index == line) {
             Some((_, shaped)) => start + shaped.closest_index_for_x(x.max(px(0.))),
             None => {
-                let col = (f32::from(x) / f32::from(geometry.char_width)).round().max(0.0) as usize;
+                let col = (f32::from(x) / f32::from(geometry.char_width))
+                    .round()
+                    .max(0.0) as usize;
                 self.buffer.offset_of(line, col)
             }
         }
     }
 
-    fn on_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_mouse_down(
+        &mut self,
+        event: &MouseDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         // The keys come back from the bar to the text.
         window.focus(&self.focus_handle);
         // A click on an entry of the list takes it.
-        let clicked = self.geometry.as_ref().and_then(|geometry| geometry.proposal_rows.iter().find(|(_, row)| row.contains(&event.position)).map(|(index, _)| *index));
+        let clicked = self.geometry.as_ref().and_then(|geometry| {
+            geometry
+                .proposal_rows
+                .iter()
+                .find(|(_, row)| row.contains(&event.position))
+                .map(|(index, _)| *index)
+        });
         if let Some(index) = clicked.filter(|_| self.proposal.is_some()) {
             self.accept_proposal(Some(index), cx);
             return;
@@ -1096,7 +1321,12 @@ impl EntityInputHandler for CodeEditor {
         Some(self.buffer.text()[range].to_string())
     }
 
-    fn selected_text_range(&mut self, _: bool, _: &mut Window, _: &mut Context<Self>) -> Option<UTF16Selection> {
+    fn selected_text_range(
+        &mut self,
+        _: bool,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<UTF16Selection> {
         Some(UTF16Selection {
             range: self.buffer.range_to_utf16(&self.buffer.selection()),
             reversed: self.buffer.reversed(),
@@ -1104,18 +1334,29 @@ impl EntityInputHandler for CodeEditor {
     }
 
     fn marked_text_range(&self, _: &mut Window, _: &mut Context<Self>) -> Option<Range<usize>> {
-        self.marked.as_ref().map(|range| self.buffer.range_to_utf16(range))
+        self.marked
+            .as_ref()
+            .map(|range| self.buffer.range_to_utf16(range))
     }
 
     fn unmark_text(&mut self, _: &mut Window, _: &mut Context<Self>) {
         self.marked = None;
     }
 
-    fn replace_text_in_range(&mut self, range_utf16: Option<Range<usize>>, text: &str, _: &mut Window, cx: &mut Context<Self>) {
+    fn replace_text_in_range(
+        &mut self,
+        range_utf16: Option<Range<usize>>,
+        text: &str,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.read_only {
             return;
         }
-        let range = range_utf16.as_ref().map(|range| self.buffer.range_from_utf16(range)).or(self.marked.take());
+        let range = range_utf16
+            .as_ref()
+            .map(|range| self.buffer.range_from_utf16(range))
+            .or(self.marked.take());
         self.marked = None;
         let typed = range.is_none();
         match range {
@@ -1155,7 +1396,8 @@ impl EntityInputHandler for CodeEditor {
             // Given inside the composed text.
             let composed = CodeBuffer::new(text);
             let selected = composed.range_from_utf16(&selected);
-            self.buffer.select(start + selected.start..start + selected.end);
+            self.buffer
+                .select(start + selected.start..start + selected.end);
         }
         self.changed(cx);
     }
@@ -1175,7 +1417,12 @@ impl EntityInputHandler for CodeEditor {
         Some(Bounds::new(point(x, y), size(px(1.), px(LINE_HEIGHT))))
     }
 
-    fn character_index_for_point(&mut self, at: Point<Pixels>, _: &mut Window, _: &mut Context<Self>) -> Option<usize> {
+    fn character_index_for_point(
+        &mut self,
+        at: Point<Pixels>,
+        _: &mut Window,
+        _: &mut Context<Self>,
+    ) -> Option<usize> {
         Some(self.buffer.offset_to_utf16(self.index_for_point(at)))
     }
 }
@@ -1232,7 +1479,12 @@ impl IntoElement for EditorElement {
 
 /// The runs of one line: the colours of its tokens, a wavy line under a
 /// line with a problem, a plain one under what is being composed.
-fn runs_of(line: &str, spans: &[(Range<usize>, Token)], problem: Option<u32>, composed: Option<Range<usize>>) -> Vec<TextRun> {
+fn runs_of(
+    line: &str,
+    spans: &[(Range<usize>, Token)],
+    problem: Option<u32>,
+    composed: Option<Range<usize>>,
+) -> Vec<TextRun> {
     let mut runs = Vec::new();
     let composed = composed.unwrap_or(0..0);
     for (range, token) in spans {
@@ -1247,21 +1499,22 @@ fn runs_of(line: &str, spans: &[(Range<usize>, Token)], problem: Option<u32>, co
         for pair in cuts.windows(2) {
             let (start, end) = (pair[0], pair[1]);
             let color = token_color(*token);
-            let underline = if start >= composed.start && end <= composed.end && !composed.is_empty() {
-                Some(UnderlineStyle {
-                    color: Some(color),
-                    thickness: px(1.),
-                    wavy: false,
-                })
-            } else if let Some(tint) = problem.filter(|_| !line[start..end].trim().is_empty()) {
-                Some(UnderlineStyle {
-                    color: Some(c(tint)),
-                    thickness: px(1.),
-                    wavy: true,
-                })
-            } else {
-                None
-            };
+            let underline =
+                if start >= composed.start && end <= composed.end && !composed.is_empty() {
+                    Some(UnderlineStyle {
+                        color: Some(color),
+                        thickness: px(1.),
+                        wavy: false,
+                    })
+                } else if let Some(tint) = problem.filter(|_| !line[start..end].trim().is_empty()) {
+                    Some(UnderlineStyle {
+                        color: Some(c(tint)),
+                        thickness: px(1.),
+                        wavy: true,
+                    })
+                } else {
+                    None
+                };
             runs.push(TextRun {
                 len: end - start,
                 font: code_font(),
@@ -1320,7 +1573,9 @@ impl Element for EditorElement {
                 underline: None,
                 strikethrough: None,
             };
-            window.text_system().shape_line(text, px(FONT_SIZE), &[run], None)
+            window
+                .text_system()
+                .shape_line(text, px(FONT_SIZE), &[run], None)
         };
         let char_width = plain("0".into(), c(theme::TEXT), window).width.max(px(1.));
         let line_count = buffer.line_count();
@@ -1362,7 +1617,9 @@ impl Element for EditorElement {
             (Some(finder), Some(Bar::Find | Bar::Replace)) => &finder.matches,
             _ => &[],
         };
-        let pair = (selected.is_empty() && focused && !editor.read_only).then(|| search::bracket_pair(buffer.text(), buffer.caret())).flatten();
+        let pair = (selected.is_empty() && focused && !editor.read_only)
+            .then(|| search::bracket_pair(buffer.text(), buffer.caret()))
+            .flatten();
         for line in first..last {
             let range = buffer.line_range(line);
             let text = &buffer.text()[range.clone()];
@@ -1373,15 +1630,29 @@ impl Element for EditorElement {
                 .marks
                 .iter()
                 .filter(|(marked, _, _)| *marked as usize == line + 1)
-                .map(|(_, _, warning)| if *warning { COLOR_WARNING } else { COLOR_PROBLEM })
+                .map(|(_, _, warning)| {
+                    if *warning {
+                        COLOR_WARNING
+                    } else {
+                        COLOR_PROBLEM
+                    }
+                })
                 .min_by_key(|tint| *tint == COLOR_WARNING);
             let composed = editor
                 .marked
                 .as_ref()
                 .filter(|marked| marked.start < range.end && marked.end > range.start)
-                .map(|marked| marked.start.max(range.start) - range.start..marked.end.min(range.end) - range.start);
+                .map(|marked| {
+                    marked.start.max(range.start) - range.start
+                        ..marked.end.min(range.end) - range.start
+                });
             let runs = runs_of(text, &spans, problem, composed);
-            let shaped = window.text_system().shape_line(text.to_string().into(), px(FONT_SIZE), &runs, None);
+            let shaped = window.text_system().shape_line(
+                text.to_string().into(),
+                px(FONT_SIZE),
+                &runs,
+                None,
+            );
             widest = widest.max(shaped.width);
 
             // The part of the selection on this line; a line break taken
@@ -1406,12 +1677,19 @@ impl Element for EditorElement {
             let mark = |on_line: Range<usize>| {
                 Bounds::from_corners(
                     point(left + shaped.x_for_index(on_line.start), line_top(line)),
-                    point(left + shaped.x_for_index(on_line.end), line_top(line) + px(LINE_HEIGHT)),
+                    point(
+                        left + shaped.x_for_index(on_line.end),
+                        line_top(line) + px(LINE_HEIGHT),
+                    ),
                 )
             };
             let first = matches.partition_point(|found| found.end <= range.start);
-            for found_range in matches[first..].iter().take_while(|found| found.start < range.end) {
-                let on_line = found_range.start.max(range.start) - range.start..found_range.end.min(range.end) - range.start;
+            for found_range in matches[first..]
+                .iter()
+                .take_while(|found| found.start < range.end)
+            {
+                let on_line = found_range.start.max(range.start) - range.start
+                    ..found_range.end.min(range.end) - range.start;
                 found.push((mark(on_line), *found_range == selected));
             }
             if let Some((a, b)) = pair {
@@ -1423,38 +1701,68 @@ impl Element for EditorElement {
             }
 
             let number = (line + 1).to_string();
-            let color = if line == caret_line { c(theme::TEXT) } else { c(COLOR_GUTTER_TEXT) };
+            let color = if line == caret_line {
+                c(theme::TEXT)
+            } else {
+                c(COLOR_GUTTER_TEXT)
+            };
             let shaped_number = plain(number.into(), color, window);
             let x = bounds.left() + gutter_width - char_width - shaped_number.width;
             numbers.push((shaped_number, point(x, line_top(line))));
             if let Some(tint) = problem {
                 let side = px(6.);
-                problems.push((Bounds::new(point(bounds.left() + px(3.), line_top(line) + (px(LINE_HEIGHT) - side) / 2.0), size(side, side)), tint));
+                problems.push((
+                    Bounds::new(
+                        point(
+                            bounds.left() + px(3.),
+                            line_top(line) + (px(LINE_HEIGHT) - side) / 2.0,
+                        ),
+                        size(side, side),
+                    ),
+                    tint,
+                ));
             }
             lines.push((line, shaped));
         }
         // No further right than the longest line in view.
-        scroll_left = scroll_left.min((f32::from(widest) - f32::from(text_width) + f32::from(char_width) * 2.0).max(0.0));
+        scroll_left = scroll_left.min(
+            (f32::from(widest) - f32::from(text_width) + f32::from(char_width) * 2.0).max(0.0),
+        );
 
         let caret_shaped = lines.iter().find(|(line, _)| *line == caret_line);
-        let caret_x = caret_shaped.map(|(line, shaped)| shaped.x_for_index(buffer.caret() - buffer.line_range(*line).start));
+        let caret_x = caret_shaped.map(|(line, shaped)| {
+            shaped.x_for_index(buffer.caret() - buffer.line_range(*line).start)
+        });
         let current_line = (selected.is_empty() && caret_shaped.is_some()).then(|| {
-            Bounds::new(point(bounds.left(), line_top(caret_line)), size(bounds.size.width, px(LINE_HEIGHT)))
+            Bounds::new(
+                point(bounds.left(), line_top(caret_line)),
+                size(bounds.size.width, px(LINE_HEIGHT)),
+            )
         });
         let caret = caret_x.filter(|_| focused && !editor.read_only).map(|x| {
-            Bounds::new(point(text_left - px(scroll_left) + x, line_top(caret_line)), size(px(1.5), px(LINE_HEIGHT)))
+            Bounds::new(
+                point(text_left - px(scroll_left) + x, line_top(caret_line)),
+                size(px(1.5), px(LINE_HEIGHT)),
+            )
         });
         let thumb = (content_height > height).then(|| {
             let length = (height * height / content_height).max(24.0);
             let top = scroll_top / (content_height - height) * (height - length);
-            Bounds::new(point(bounds.right() - px(7.), bounds.top() + px(top)), size(px(5.), px(length)))
+            Bounds::new(
+                point(bounds.right() - px(7.), bounds.top() + px(top)),
+                size(px(5.), px(length)),
+            )
         });
 
         // The hint of the call and the list of completions hang from the
         // caret: the hint above its line, the list below, each on the
         // other side when it has no room on its own.
-        let caret_at = caret_x.map(|x| point(text_left - px(scroll_left) + x, line_top(caret_line)));
-        let fit_x = |x: Pixels, width: Pixels| x.min(bounds.right() - width - px(8.)).max(bounds.left() + px(2.));
+        let caret_at =
+            caret_x.map(|x| point(text_left - px(scroll_left) + x, line_top(caret_line)));
+        let fit_x = |x: Pixels, width: Pixels| {
+            x.min(bounds.right() - width - px(8.))
+                .max(bounds.left() + px(2.))
+        };
         let row = px(PROPOSAL_ROW);
         let mut hint_below = false;
         let hint = caret_at.zip(editor.hint.as_ref()).map(|(at, hint)| {
@@ -1475,51 +1783,104 @@ impl Element for EditorElement {
             .into_iter()
             .filter(|run| run.len > 0)
             .collect();
-            let shaped = window.text_system().shape_line(hint.signature.clone().into(), px(FONT_SIZE), &runs, None);
+            let shaped = window.text_system().shape_line(
+                hint.signature.clone().into(),
+                px(FONT_SIZE),
+                &runs,
+                None,
+            );
             let width = (shaped.width + px(12.)).min(bounds.size.width - px(12.));
             hint_below = at.y - row - px(2.) < bounds.top();
-            let y = if hint_below { at.y + px(LINE_HEIGHT) + px(2.) } else { at.y - row - px(2.) };
-            (Bounds::new(point(fit_x(at.x, width), y), size(width, row)), shaped)
+            let y = if hint_below {
+                at.y + px(LINE_HEIGHT) + px(2.)
+            } else {
+                at.y - row - px(2.)
+            };
+            (
+                Bounds::new(point(fit_x(at.x, width), y), size(width, row)),
+                shaped,
+            )
         });
-        let proposal = caret_at.zip(editor.proposal.as_ref()).map(|(at, proposal)| {
-            let entries = &proposal.completion.entries;
-            let shown = entries.iter().enumerate().skip(proposal.first).take(PROPOSAL_ROWS);
-            let about = entries.get(proposal.selected).map(|entry| entry.about).filter(|about| !about.is_empty());
-            let count = entries.len().min(PROPOSAL_ROWS);
-            let width = px(PROPOSAL_WIDTH).min(bounds.size.width - px(12.)).max(px(120.));
-            let box_height = row * (count + about.is_some() as usize) as f32;
-            let mut below = at.y + px(LINE_HEIGHT) + px(2.);
-            if hint_below && hint.is_some() {
-                below += row + px(2.);
-            }
-            let above = at.y - box_height - px(2.) - if hint.is_some() && !hint_below { row + px(2.) } else { px(0.) };
-            let y = if below + box_height > bounds.bottom() && above >= bounds.top() { above } else { below };
-            let origin = point(fit_x(at.x, width), y);
-            let rows = shown
-                .enumerate()
-                .map(|(line, (index, entry))| {
-                    let place = Bounds::new(point(origin.x, origin.y + row * line as f32), size(width, row));
-                    (index, place, plain(entry.name.clone().into(), c(theme::TEXT), window), plain(entry.detail.clone().into(), c(theme::TEXT_MUTED), window))
-                })
-                .collect();
-            let about = about.map(|about| {
-                let place = Bounds::new(point(origin.x, origin.y + row * count as f32), size(width, row));
-                (place, plain(about.into(), c(theme::TEXT_MUTED), window))
+        let proposal = caret_at
+            .zip(editor.proposal.as_ref())
+            .map(|(at, proposal)| {
+                let entries = &proposal.completion.entries;
+                let shown = entries
+                    .iter()
+                    .enumerate()
+                    .skip(proposal.first)
+                    .take(PROPOSAL_ROWS);
+                let about = entries
+                    .get(proposal.selected)
+                    .map(|entry| entry.about)
+                    .filter(|about| !about.is_empty());
+                let count = entries.len().min(PROPOSAL_ROWS);
+                let width = px(PROPOSAL_WIDTH)
+                    .min(bounds.size.width - px(12.))
+                    .max(px(120.));
+                let box_height = row * (count + about.is_some() as usize) as f32;
+                let mut below = at.y + px(LINE_HEIGHT) + px(2.);
+                if hint_below && hint.is_some() {
+                    below += row + px(2.);
+                }
+                let above = at.y
+                    - box_height
+                    - px(2.)
+                    - if hint.is_some() && !hint_below {
+                        row + px(2.)
+                    } else {
+                        px(0.)
+                    };
+                let y = if below + box_height > bounds.bottom() && above >= bounds.top() {
+                    above
+                } else {
+                    below
+                };
+                let origin = point(fit_x(at.x, width), y);
+                let rows = shown
+                    .enumerate()
+                    .map(|(line, (index, entry))| {
+                        let place = Bounds::new(
+                            point(origin.x, origin.y + row * line as f32),
+                            size(width, row),
+                        );
+                        (
+                            index,
+                            place,
+                            plain(entry.name.clone().into(), c(theme::TEXT), window),
+                            plain(entry.detail.clone().into(), c(theme::TEXT_MUTED), window),
+                        )
+                    })
+                    .collect();
+                let about = about.map(|about| {
+                    let place = Bounds::new(
+                        point(origin.x, origin.y + row * count as f32),
+                        size(width, row),
+                    );
+                    (place, plain(about.into(), c(theme::TEXT_MUTED), window))
+                });
+                ProposalBox {
+                    bounds: Bounds::new(origin, size(width, box_height)),
+                    rows,
+                    selected: proposal.selected,
+                    about,
+                }
             });
-            ProposalBox {
-                bounds: Bounds::new(origin, size(width, box_height)),
-                rows,
-                selected: proposal.selected,
-                about,
-            }
-        });
         Some(Prepared {
             geometry: Geometry {
                 bounds,
                 text_left,
                 char_width,
                 lines,
-                proposal_rows: proposal.iter().flat_map(|proposal| proposal.rows.iter().map(|(index, place, _, _)| (*index, *place))).collect(),
+                proposal_rows: proposal
+                    .iter()
+                    .flat_map(|proposal| {
+                        proposal
+                            .rows
+                            .iter()
+                            .map(|(index, place, _, _)| (*index, *place))
+                    })
+                    .collect(),
             },
             scroll_top,
             scroll_left,
@@ -1551,7 +1912,11 @@ impl Element for EditorElement {
             return;
         };
         let focus_handle = self.editor.read(cx).focus_handle.clone();
-        window.handle_input(&focus_handle, ElementInputHandler::new(bounds, self.editor.clone()), cx);
+        window.handle_input(
+            &focus_handle,
+            ElementInputHandler::new(bounds, self.editor.clone()),
+            cx,
+        );
         let focused = focus_handle.is_focused(window);
         let line_height = px(LINE_HEIGHT);
         window.with_content_mask(Some(ContentMask { bounds }), |window| {
@@ -1559,15 +1924,36 @@ impl Element for EditorElement {
                 window.paint_quad(fill(band, c(COLOR_CURRENT_LINE)));
             }
             // The text, cut at the line numbers when it is scrolled sideways.
-            let text_area = Bounds::from_corners(point(prepared.gutter.right(), bounds.top()), bounds.bottom_right());
+            let text_area = Bounds::from_corners(
+                point(prepared.gutter.right(), bounds.top()),
+                bounds.bottom_right(),
+            );
             window.with_content_mask(Some(ContentMask { bounds: text_area }), |window| {
                 for (quad, current) in &prepared.found {
-                    window.paint_quad(fill(*quad, c(if *current { COLOR_FOUND_CURRENT } else { COLOR_FOUND })));
+                    window.paint_quad(fill(
+                        *quad,
+                        c(if *current {
+                            COLOR_FOUND_CURRENT
+                        } else {
+                            COLOR_FOUND
+                        }),
+                    ));
                 }
                 for quad in &prepared.brackets {
-                    window.paint_quad(gpui::quad(*quad, px(2.), c(COLOR_BRACKET), px(0.), gpui::transparent_black(), gpui::BorderStyle::Solid));
+                    window.paint_quad(gpui::quad(
+                        *quad,
+                        px(2.),
+                        c(COLOR_BRACKET),
+                        px(0.),
+                        gpui::transparent_black(),
+                        gpui::BorderStyle::Solid,
+                    ));
                 }
-                let tint = if focused { ca(0x0A64D2, 0.25) } else { ca(0x808080, 0.22) };
+                let tint = if focused {
+                    ca(0x0A64D2, 0.25)
+                } else {
+                    ca(0x808080, 0.22)
+                };
                 for quad in &prepared.selection {
                     window.paint_quad(fill(*quad, tint));
                 }
@@ -1607,35 +1993,72 @@ impl Element for EditorElement {
             }
             // Over the text: the hint of the call and the list.
             let panel = |place: Bounds<Pixels>, window: &mut Window| {
-                window.paint_quad(gpui::quad(place, px(3.), c(0xFFFFFF), px(1.), c(theme::BORDER), gpui::BorderStyle::Solid));
+                window.paint_quad(gpui::quad(
+                    place,
+                    px(3.),
+                    c(0xFFFFFF),
+                    px(1.),
+                    c(theme::BORDER),
+                    gpui::BorderStyle::Solid,
+                ));
             };
-            let text_y = |place: &Bounds<Pixels>| place.top() + (place.size.height - line_height) / 2.0;
+            let text_y =
+                |place: &Bounds<Pixels>| place.top() + (place.size.height - line_height) / 2.0;
             if let Some((place, shaped)) = &prepared.hint {
                 panel(*place, window);
                 window.with_content_mask(Some(ContentMask { bounds: *place }), |window| {
-                    let _ = shaped.paint(point(place.left() + px(6.), text_y(place)), line_height, window, cx);
+                    let _ = shaped.paint(
+                        point(place.left() + px(6.), text_y(place)),
+                        line_height,
+                        window,
+                        cx,
+                    );
                 });
             }
             if let Some(list) = &prepared.proposal {
                 panel(list.bounds, window);
-                window.with_content_mask(Some(ContentMask { bounds: list.bounds }), |window| {
-                    for (index, place, name, detail) in &list.rows {
-                        if *index == list.selected {
-                            window.paint_quad(fill(*place, ca(0x0A64D2, 0.16)));
+                window.with_content_mask(
+                    Some(ContentMask {
+                        bounds: list.bounds,
+                    }),
+                    |window| {
+                        for (index, place, name, detail) in &list.rows {
+                            if *index == list.selected {
+                                window.paint_quad(fill(*place, ca(0x0A64D2, 0.16)));
+                            }
+                            let y = text_y(place);
+                            let _ = name.paint(
+                                point(place.left() + px(6.), y),
+                                line_height,
+                                window,
+                                cx,
+                            );
+                            let _ = detail.paint(
+                                point(place.left() + px(6.) + name.width + px(10.), y),
+                                line_height,
+                                window,
+                                cx,
+                            );
                         }
-                        let y = text_y(place);
-                        let _ = name.paint(point(place.left() + px(6.), y), line_height, window, cx);
-                        let _ = detail.paint(point(place.left() + px(6.) + name.width + px(10.), y), line_height, window, cx);
-                    }
-                    if let Some((place, about)) = &list.about {
-                        window.paint_quad(fill(*place, c(theme::PANEL_BG)));
-                        window.paint_quad(fill(Bounds::new(place.origin, size(place.size.width, px(1.))), c(theme::BORDER)));
-                        let _ = about.paint(point(place.left() + px(6.), text_y(place)), line_height, window, cx);
-                    }
-                });
+                        if let Some((place, about)) = &list.about {
+                            window.paint_quad(fill(*place, c(theme::PANEL_BG)));
+                            window.paint_quad(fill(
+                                Bounds::new(place.origin, size(place.size.width, px(1.))),
+                                c(theme::BORDER),
+                            ));
+                            let _ = about.paint(
+                                point(place.left() + px(6.), text_y(place)),
+                                line_height,
+                                window,
+                                cx,
+                            );
+                        }
+                    },
+                );
             }
         });
-        let (geometry, scroll_top, scroll_left) = (prepared.geometry, prepared.scroll_top, prepared.scroll_left);
+        let (geometry, scroll_top, scroll_left) =
+            (prepared.geometry, prepared.scroll_top, prepared.scroll_left);
         self.editor.update(cx, |editor, _| {
             editor.geometry = Some(geometry);
             editor.scroll_top = scroll_top;
@@ -1711,7 +2134,9 @@ impl Render for CodeEditor {
                     .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
                     .on_mouse_move(cx.listener(Self::on_mouse_move))
                     .on_scroll_wheel(cx.listener(Self::on_scroll))
-                    .child(EditorElement { editor: cx.entity() }),
+                    .child(EditorElement {
+                        editor: cx.entity(),
+                    }),
             )
     }
 }
@@ -1730,9 +2155,18 @@ mod tests {
     fn a_line_is_cut_into_runs_that_cover_it() {
         let line = "let n = 12; // é";
         let (spans, _) = highlight_line(Language::TypeScript, line, LineState::Code);
-        for (problem, composed) in [(None, None), (Some(COLOR_PROBLEM), None), (None, Some(2..6)), (Some(COLOR_WARNING), Some(0..line.len()))] {
+        for (problem, composed) in [
+            (None, None),
+            (Some(COLOR_PROBLEM), None),
+            (None, Some(2..6)),
+            (Some(COLOR_WARNING), Some(0..line.len())),
+        ] {
             let runs = runs_of(line, &spans, problem, composed.clone());
-            assert_eq!(runs.iter().map(|run| run.len).sum::<usize>(), line.len(), "{problem:?} {composed:?}");
+            assert_eq!(
+                runs.iter().map(|run| run.len).sum::<usize>(),
+                line.len(),
+                "{problem:?} {composed:?}"
+            );
         }
         // A problem underlines the words, not the blanks between them.
         let runs = runs_of(line, &spans, Some(COLOR_PROBLEM), None);

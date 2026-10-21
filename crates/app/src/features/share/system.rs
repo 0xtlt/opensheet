@@ -20,7 +20,13 @@ pub trait System {
     /// Show the share sheet of macOS (Mail, Messages, AirDrop…) for
     /// `items`, hanging under the box `under` of the window. The user
     /// chooses there what happens next; nothing is sent by this call.
-    fn share(&self, items: &[Item], under: Bounds<Pixels>, window: &mut Window, cx: &mut App) -> Result<(), String>;
+    fn share(
+        &self,
+        items: &[Item],
+        under: Bounds<Pixels>,
+        window: &mut Window,
+        cx: &mut App,
+    ) -> Result<(), String>;
 
     /// The version of macOS, as "macOS 15.1".
     fn os_version(&self) -> String;
@@ -51,7 +57,13 @@ mod other {
     pub struct Other;
 
     impl System for Other {
-        fn share(&self, items: &[Item], _: Bounds<Pixels>, _: &mut Window, _: &mut App) -> Result<(), String> {
+        fn share(
+            &self,
+            items: &[Item],
+            _: Bounds<Pixels>,
+            _: &mut Window,
+            _: &mut App,
+        ) -> Result<(), String> {
             let files: Vec<String> = items
                 .iter()
                 .filter_map(|item| match item {
@@ -59,7 +71,10 @@ mod other {
                     Item::Text(_) => None,
                 })
                 .collect();
-            Err(format!("This system has no share sheet. The copy is here: {}", files.join(", ")))
+            Err(format!(
+                "This system has no share sheet. The copy is here: {}",
+                files.join(", ")
+            ))
         }
 
         fn os_version(&self) -> String {
@@ -111,7 +126,8 @@ mod mac {
     unsafe fn ns_string(text: &str) -> *mut Object {
         unsafe {
             let string: *mut Object = msg_send![class!(NSString), alloc];
-            let string: *mut Object = msg_send![string, initWithBytes: text.as_ptr() length: text.len() encoding: UTF8];
+            let string: *mut Object =
+                msg_send![string, initWithBytes: text.as_ptr() length: text.len() encoding: UTF8];
             msg_send![string, autorelease]
         }
     }
@@ -156,7 +172,13 @@ mod mac {
     }
 
     impl System for Mac {
-        fn share(&self, items: &[Item], under: Bounds<Pixels>, window: &mut Window, cx: &mut App) -> Result<(), String> {
+        fn share(
+            &self,
+            items: &[Item],
+            under: Bounds<Pixels>,
+            window: &mut Window,
+            cx: &mut App,
+        ) -> Result<(), String> {
             let view = match window.window_handle().map(|handle| handle.as_raw()) {
                 Ok(RawWindowHandle::AppKit(handle)) => handle.ns_view.as_ptr() as *mut Object,
                 _ => return Err("no window".to_string()),
@@ -168,7 +190,8 @@ mod mac {
                 f64::from(f32::from(under.size.width)),
                 f64::from(f32::from(under.size.height)),
             );
-            cx.spawn(async move |_| unsafe { show(view, &items, under) }).detach();
+            cx.spawn(async move |_| unsafe { show(view, &items, under) })
+                .detach();
             Ok(())
         }
 
@@ -211,7 +234,13 @@ pub mod fake {
     }
 
     impl System for Fake {
-        fn share(&self, items: &[Item], under: Bounds<Pixels>, _: &mut Window, _: &mut App) -> Result<(), String> {
+        fn share(
+            &self,
+            items: &[Item],
+            under: Bounds<Pixels>,
+            _: &mut Window,
+            _: &mut App,
+        ) -> Result<(), String> {
             if FAILING.with(Cell::get) {
                 return Err("the share sheet is not available".to_string());
             }

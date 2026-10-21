@@ -257,7 +257,11 @@ fn split_fixed(line: &str, breaks: &[usize]) -> Vec<String> {
 
 /// The number of fields the widest of these lines gives.
 pub fn field_count<S: AsRef<str>>(lines: &[S], layout: &Layout) -> usize {
-    lines.iter().map(|line| split_line(line.as_ref(), layout).len()).max().unwrap_or(0)
+    lines
+        .iter()
+        .map(|line| split_line(line.as_ref(), layout).len())
+        .max()
+        .unwrap_or(0)
 }
 
 /// Where the wizard proposes break lines for fixed-width text: at the
@@ -270,7 +274,11 @@ pub fn guess_breaks<S: AsRef<str>>(lines: &[S]) -> Vec<usize> {
         .filter(|line| !line.is_empty())
         .collect();
     let width = lines.iter().map(Vec::len).max().unwrap_or(0);
-    let blank = |i: usize| lines.iter().all(|line| line.get(i).is_none_or(|ch| *ch == ' '));
+    let blank = |i: usize| {
+        lines
+            .iter()
+            .all(|line| line.get(i).is_none_or(|ch| *ch == ' '))
+    };
     (1..width).filter(|&i| blank(i - 1) && !blank(i)).collect()
 }
 
@@ -292,7 +300,11 @@ pub fn looks_delimited<S: AsRef<str>>(lines: &[S]) -> bool {
 /// when every line has one.
 pub fn guess_delimiters<S: AsRef<str>>(lines: &[S]) -> Delimiters {
     let mut d = Delimiters::default();
-    let lines: Vec<&str> = lines.iter().map(AsRef::as_ref).filter(|line| !line.is_empty()).collect();
+    let lines: Vec<&str> = lines
+        .iter()
+        .map(AsRef::as_ref)
+        .filter(|line| !line.is_empty())
+        .collect();
     if lines.is_empty() || lines.iter().any(|line| line.contains('\t')) {
         return d;
     }
@@ -318,22 +330,27 @@ pub fn parse_date(text: &str, order: DateOrder) -> Option<f64> {
         .filter(|token| !token.is_empty())
         .collect();
     let digits = |s: &str| !s.is_empty() && s.chars().all(|ch| ch.is_ascii_digit());
-    let tokens: Vec<&str> = if tokens.len() == 1 && digits(tokens[0]) && matches!(tokens[0].len(), 6 | 8) {
-        // "20240131": the year takes four digits when there are eight.
-        let s = tokens[0];
-        let year_len = s.len() - 4;
-        let mut cuts = [2usize; 3];
-        cuts[order.year_index()] = year_len;
-        let (a, rest) = s.split_at(cuts[0]);
-        let (b, c) = rest.split_at(cuts[1]);
-        vec![a, b, c]
-    } else {
-        tokens
-    };
+    let tokens: Vec<&str> =
+        if tokens.len() == 1 && digits(tokens[0]) && matches!(tokens[0].len(), 6 | 8) {
+            // "20240131": the year takes four digits when there are eight.
+            let s = tokens[0];
+            let year_len = s.len() - 4;
+            let mut cuts = [2usize; 3];
+            cuts[order.year_index()] = year_len;
+            let (a, rest) = s.split_at(cuts[0]);
+            let (b, c) = rest.split_at(cuts[1]);
+            vec![a, b, c]
+        } else {
+            tokens
+        };
     if tokens.len() != 3 || !tokens.iter().all(|token| digits(token) && token.len() <= 4) {
         return None;
     }
-    let n = [tokens[0].parse().ok()?, tokens[1].parse().ok()?, tokens[2].parse().ok()?];
+    let n = [
+        tokens[0].parse().ok()?,
+        tokens[1].parse().ok()?,
+        tokens[2].parse().ok()?,
+    ];
     let (mut year, month, day): (i64, i64, i64) = order.arrange(n);
     if tokens[order.year_index()].len() <= 2 {
         year += if year < 30 { 2000 } else { 1900 };
@@ -359,7 +376,11 @@ fn source_text(wb: &Workbook, sheet: usize, row: u32, col: u32) -> String {
 impl Workbook {
     /// The lines Text to Columns would cut: the text of each cell of a
     /// one-column range, down to the last cell that holds something.
-    pub fn text_column_lines(&self, sheet: usize, source: Rect) -> Result<Vec<String>, TextColumnsError> {
+    pub fn text_column_lines(
+        &self,
+        sheet: usize,
+        source: Rect,
+    ) -> Result<Vec<String>, TextColumnsError> {
         if source.cols() != 1 {
             return Err(TextColumnsError::SeveralColumns);
         }
@@ -373,24 +394,48 @@ impl Workbook {
             .map(|((row, _), _)| *row)
             .max()
             .ok_or(TextColumnsError::NoData)?;
-        Ok((source.r0..=last).map(|row| source_text(self, sheet, row, source.c0)).collect())
+        Ok((source.r0..=last)
+            .map(|row| source_text(self, sheet, row, source.c0))
+            .collect())
     }
 
     /// Where `lines` cut by `spec` would land from `dest` (row, column)
     /// downwards: the rectangle covered, or why they cannot.
-    pub fn text_columns_extent(&self, dest: (u32, u32), lines: &[String], spec: &Spec) -> Result<Rect, TextColumnsError> {
-        let width = lines.iter().map(|line| spec.fields(line).len()).max().unwrap_or(0).max(1) as u32;
+    pub fn text_columns_extent(
+        &self,
+        dest: (u32, u32),
+        lines: &[String],
+        spec: &Spec,
+    ) -> Result<Rect, TextColumnsError> {
+        let width = lines
+            .iter()
+            .map(|line| spec.fields(line).len())
+            .max()
+            .unwrap_or(0)
+            .max(1) as u32;
         let height = lines.len().max(1) as u32;
         if dest.0 + height > MAX_ROWS || dest.1 + width > MAX_COLS {
             return Err(TextColumnsError::OffSheet);
         }
-        Ok(Rect::new(dest.0, dest.1, dest.0 + height - 1, dest.1 + width - 1))
+        Ok(Rect::new(
+            dest.0,
+            dest.1,
+            dest.0 + height - 1,
+            dest.1 + width - 1,
+        ))
     }
 
     /// True when writing `lines` from `dest` would replace data, the
     /// cells of `source` aside (the column being converted is expected to
     /// be overwritten): the case of Excel's "There's already data here".
-    pub fn text_columns_overwrites(&self, sheet: usize, source: Option<Rect>, dest: (u32, u32), lines: &[String], spec: &Spec) -> bool {
+    pub fn text_columns_overwrites(
+        &self,
+        sheet: usize,
+        source: Option<Rect>,
+        dest: (u32, u32),
+        lines: &[String],
+        spec: &Spec,
+    ) -> bool {
         let Some(sh) = self.sheets.get(sheet) else {
             return false;
         };
@@ -405,7 +450,13 @@ impl Workbook {
 
     /// Write `lines`, cut by `spec`, one per row from `dest`. The caller
     /// commits. Returns the rectangle written.
-    pub fn write_text_columns(&mut self, sheet: usize, dest: (u32, u32), lines: &[String], spec: &Spec) -> Result<Rect, TextColumnsError> {
+    pub fn write_text_columns(
+        &mut self,
+        sheet: usize,
+        dest: (u32, u32),
+        lines: &[String],
+        spec: &Spec,
+    ) -> Result<Rect, TextColumnsError> {
         let extent = self.text_columns_extent(dest, lines, spec)?;
         let date_format: Arc<str> = Arc::from(self.locale.short_date_format);
         for (i, line) in lines.iter().enumerate() {
@@ -414,22 +465,37 @@ impl Workbook {
                 let col = dest.1 + j as u32;
                 match format {
                     ColumnFormat::Text => {
-                        self.update_style(sheet, Rect::cell(row, col), &|s| s.num_fmt = Arc::from("@"));
-                        let content = if field.is_empty() { Content::Empty } else { Content::Value(Value::text(&field)) };
+                        self.update_style(sheet, Rect::cell(row, col), &|s| {
+                            s.num_fmt = Arc::from("@")
+                        });
+                        let content = if field.is_empty() {
+                            Content::Empty
+                        } else {
+                            Content::Value(Value::text(&field))
+                        };
                         self.set_content(sheet, row, col, content);
                     }
                     ColumnFormat::Date(order) => match parse_date(&field, order) {
                         Some(serial) => {
                             if self.style_at(sheet, row, col).is_general() {
                                 let fmt = date_format.clone();
-                                self.update_style(sheet, Rect::cell(row, col), &move |s| s.num_fmt = fmt.clone());
+                                self.update_style(sheet, Rect::cell(row, col), &move |s| {
+                                    s.num_fmt = fmt.clone()
+                                });
                             }
-                            self.set_content(sheet, row, col, Content::Value(Value::Number(serial)));
+                            self.set_content(
+                                sheet,
+                                row,
+                                col,
+                                Content::Value(Value::Number(serial)),
+                            );
                         }
                         // What is not a date in that order stays as it is.
                         None => self.enter_general(sheet, row, col, &field),
                     },
-                    ColumnFormat::General | ColumnFormat::Skip => self.enter_general(sheet, row, col, &field),
+                    ColumnFormat::General | ColumnFormat::Skip => {
+                        self.enter_general(sheet, row, col, &field)
+                    }
                 }
             }
         }
@@ -446,7 +512,13 @@ impl Workbook {
 
     /// Convert Text to Columns: cut the text of the one-column range
     /// `source` and write the pieces from `dest`. The caller commits.
-    pub fn text_to_columns(&mut self, sheet: usize, source: Rect, dest: (u32, u32), spec: &Spec) -> Result<Rect, TextColumnsError> {
+    pub fn text_to_columns(
+        &mut self,
+        sheet: usize,
+        source: Rect,
+        dest: (u32, u32),
+        spec: &Spec,
+    ) -> Result<Rect, TextColumnsError> {
         let lines = self.text_column_lines(sheet, source)?;
         self.text_columns_extent(dest, &lines, spec)?;
         // The column converted elsewhere keeps its text, as in Excel.
@@ -519,19 +591,43 @@ impl Workbook {
     pub fn text_import_name(&self, path: &str) -> String {
         // Of an address, the last piece of its path, or else its host.
         let path = match path.split_once("://") {
-            Some((_, rest)) => rest.split(['?', '#']).next().unwrap_or(rest).trim_end_matches('/'),
+            Some((_, rest)) => rest
+                .split(['?', '#'])
+                .next()
+                .unwrap_or(rest)
+                .trim_end_matches('/'),
             None => path,
         };
-        let stem = std::path::Path::new(path).file_stem().and_then(|stem| stem.to_str()).unwrap_or("data");
-        let mut base: String = stem.chars().map(|ch| if ch.is_alphanumeric() || ch == '_' { ch } else { '_' }).collect();
+        let stem = std::path::Path::new(path)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or("data");
+        let mut base: String = stem
+            .chars()
+            .map(|ch| {
+                if ch.is_alphanumeric() || ch == '_' {
+                    ch
+                } else {
+                    '_'
+                }
+            })
+            .collect();
         // A name starts with a letter and must not read as a cell.
-        if !base.chars().next().is_some_and(char::is_alphabetic) || crate::refs::parse_cell_name(&base).is_some() {
+        if !base.chars().next().is_some_and(char::is_alphabetic)
+            || crate::refs::parse_cell_name(&base).is_some()
+        {
             base.insert(0, '_');
         }
         let taken = |name: &str| {
             let key = name.to_uppercase();
             self.names.contains_key(&key)
-                || self.sheets.iter().any(|sh| sh.names.contains_key(&key) || sh.text_imports.iter().any(|import| import.name.to_uppercase() == key))
+                || self.sheets.iter().any(|sh| {
+                    sh.names.contains_key(&key)
+                        || sh
+                            .text_imports
+                            .iter()
+                            .any(|import| import.name.to_uppercase() == key)
+                })
         };
         let mut name = base.clone();
         let mut n = 1;
@@ -544,14 +640,25 @@ impl Workbook {
 
     /// Where the text of a file would land from `dest` with the settings
     /// of `import`.
-    pub fn text_import_extent(&self, dest: (u32, u32), text: &str, import: &TextImport) -> Result<Rect, TextColumnsError> {
+    pub fn text_import_extent(
+        &self,
+        dest: (u32, u32),
+        text: &str,
+        import: &TextImport,
+    ) -> Result<Rect, TextColumnsError> {
         self.text_columns_extent(dest, &import.lines(text), &import.spec)
     }
 
     /// Import the text of a file into `sheet` from `dest`, and remember
     /// the import there. `import.range` and an empty `import.name` are
     /// filled in. Returns the rectangle written. The caller commits.
-    pub fn import_text(&mut self, sheet: usize, dest: (u32, u32), text: &str, mut import: TextImport) -> Result<Rect, TextColumnsError> {
+    pub fn import_text(
+        &mut self,
+        sheet: usize,
+        dest: (u32, u32),
+        text: &str,
+        mut import: TextImport,
+    ) -> Result<Rect, TextColumnsError> {
         if sheet >= self.sheets.len() {
             return Err(TextColumnsError::NoData);
         }
@@ -572,8 +679,18 @@ impl Workbook {
     /// Refresh an import with the text its file holds now: the old data
     /// is cleared and the new written from the same corner. Returns the
     /// rectangle written. The caller commits.
-    pub fn refresh_text_import(&mut self, sheet: usize, index: usize, text: &str) -> Result<Rect, TextColumnsError> {
-        let import = self.sheets.get(sheet).and_then(|sh| sh.text_imports.get(index)).cloned().ok_or(TextColumnsError::NoData)?;
+    pub fn refresh_text_import(
+        &mut self,
+        sheet: usize,
+        index: usize,
+        text: &str,
+    ) -> Result<Rect, TextColumnsError> {
+        let import = self
+            .sheets
+            .get(sheet)
+            .and_then(|sh| sh.text_imports.get(index))
+            .cloned()
+            .ok_or(TextColumnsError::NoData)?;
         let lines = import.lines(text);
         let dest = (import.range.r0, import.range.c0);
         let extent = self.text_columns_extent(dest, &lines, &import.spec)?;
@@ -586,7 +703,11 @@ impl Workbook {
 
     /// The import whose data a cell belongs to: its index on the sheet.
     pub fn text_import_at(&self, sheet: usize, row: u32, col: u32) -> Option<usize> {
-        self.sheets.get(sheet)?.text_imports.iter().position(|import| import.range.contains(row, col))
+        self.sheets
+            .get(sheet)?
+            .text_imports
+            .iter()
+            .position(|import| import.range.contains(row, col))
     }
 }
 
@@ -643,8 +764,14 @@ mod tests {
     #[test]
     fn text_qualifier() {
         let comma = Delimiters::only(',');
-        assert_eq!(delimited("\"Dupont, Jean\",42", &comma), ["Dupont, Jean", "42"]);
-        assert_eq!(delimited("\"say \"\"hi\"\"\",x", &comma), ["say \"hi\"", "x"]);
+        assert_eq!(
+            delimited("\"Dupont, Jean\",42", &comma),
+            ["Dupont, Jean", "42"]
+        );
+        assert_eq!(
+            delimited("\"say \"\"hi\"\"\",x", &comma),
+            ["say \"hi\"", "x"]
+        );
         // A quote inside a field is data.
         assert_eq!(delimited("5\" disk,x", &comma), ["5\" disk", "x"]);
         // Text after the closing qualifier stays in the field.
@@ -669,7 +796,11 @@ mod tests {
 
     #[test]
     fn guesses() {
-        let lines = ["Jean     12  Paris", "Martine   7  Lyon", "Zoé     100  Nice"];
+        let lines = [
+            "Jean     12  Paris",
+            "Martine   7  Lyon",
+            "Zoé     100  Nice",
+        ];
         assert_eq!(guess_breaks(&lines), vec![8, 13]);
         assert!(!looks_delimited(&lines));
         assert!(looks_delimited(&["a;b", "c;d"]));
@@ -682,18 +813,39 @@ mod tests {
         assert!(guess_delimiters(&["a;b,5", "c;d,5"]).semicolon);
         let tab = guess_delimiters(&["a\tb c", "d\te"]);
         assert!(tab.tab && !tab.space);
-        assert_eq!(field_count(&["a;b", "c;d;e"], &Layout::Delimited(Delimiters::only(';'))), 3);
+        assert_eq!(
+            field_count(&["a;b", "c;d;e"], &Layout::Delimited(Delimiters::only(';'))),
+            3
+        );
     }
 
     #[test]
     fn dates_in_every_order() {
         let serial = |y, m, d| date_to_serial(y, m, d);
-        assert_eq!(parse_date("31/01/2024", DateOrder::DMY), serial(2024, 1, 31));
-        assert_eq!(parse_date("01/31/2024", DateOrder::MDY), serial(2024, 1, 31));
-        assert_eq!(parse_date("2024-01-31", DateOrder::YMD), serial(2024, 1, 31));
-        assert_eq!(parse_date("01.2024.31", DateOrder::MYD), serial(2024, 1, 31));
-        assert_eq!(parse_date("31 2024 01", DateOrder::DYM), serial(2024, 1, 31));
-        assert_eq!(parse_date("2024/31/01", DateOrder::YDM), serial(2024, 1, 31));
+        assert_eq!(
+            parse_date("31/01/2024", DateOrder::DMY),
+            serial(2024, 1, 31)
+        );
+        assert_eq!(
+            parse_date("01/31/2024", DateOrder::MDY),
+            serial(2024, 1, 31)
+        );
+        assert_eq!(
+            parse_date("2024-01-31", DateOrder::YMD),
+            serial(2024, 1, 31)
+        );
+        assert_eq!(
+            parse_date("01.2024.31", DateOrder::MYD),
+            serial(2024, 1, 31)
+        );
+        assert_eq!(
+            parse_date("31 2024 01", DateOrder::DYM),
+            serial(2024, 1, 31)
+        );
+        assert_eq!(
+            parse_date("2024/31/01", DateOrder::YDM),
+            serial(2024, 1, 31)
+        );
         assert_eq!(parse_date("20240131", DateOrder::YMD), serial(2024, 1, 31));
         assert_eq!(parse_date("31012024", DateOrder::DMY), serial(2024, 1, 31));
         assert_eq!(parse_date("310124", DateOrder::DMY), serial(2024, 1, 31));
@@ -706,7 +858,11 @@ mod tests {
 
     #[test]
     fn converts_a_column_in_place() {
-        let mut w = wb(&[("A1", "Jean,Dupont,42"), ("A2", "Marie,Curie,1.5"), ("A4", "Zoé")]);
+        let mut w = wb(&[
+            ("A1", "Jean,Dupont,42"),
+            ("A2", "Marie,Curie,1.5"),
+            ("A4", "Zoé"),
+        ]);
         let spec = Spec::new(Layout::Delimited(Delimiters::only(',')));
         let source = Rect::new(0, 0, 9, 0);
         let lines = w.text_column_lines(0, source).unwrap();
@@ -731,7 +887,11 @@ mod tests {
     fn column_formats_and_destination() {
         let mut w = wb(&[("A1", "007;31/01/2024;x;1,5"), ("D1", "busy")]);
         let mut spec = Spec::new(Layout::Delimited(Delimiters::only(';')));
-        spec.formats = vec![ColumnFormat::Text, ColumnFormat::Date(DateOrder::DMY), ColumnFormat::Skip];
+        spec.formats = vec![
+            ColumnFormat::Text,
+            ColumnFormat::Date(DateOrder::DMY),
+            ColumnFormat::Skip,
+        ];
         let source = Rect::cell(0, 0);
         let lines = w.text_column_lines(0, source).unwrap();
         // C1:E1 would be written: D1 is in the way.
@@ -743,7 +903,10 @@ mod tests {
         assert_eq!(val(&w, "A1"), Value::text("007;31/01/2024;x;1,5"));
         assert_eq!(val(&w, "A2"), Value::text("007"));
         assert_eq!(w.style_at(0, 1, 0).num_fmt.as_ref(), "@");
-        assert_eq!(Some(val(&w, "B2")), date_to_serial(2024, 1, 31).map(Value::Number));
+        assert_eq!(
+            Some(val(&w, "B2")),
+            date_to_serial(2024, 1, 31).map(Value::Number)
+        );
         assert_eq!(w.style_at(0, 1, 1).num_fmt.as_ref(), "m/d/yyyy");
         // The skipped column leaves no gap; "1,5" is 15 when typed in English.
         assert_eq!(val(&w, "C2"), Value::Number(15.0));
@@ -753,13 +916,18 @@ mod tests {
     #[test]
     fn general_follows_the_locale() {
         let mut w = Workbook::new(Locale::fr());
-        w.set_cell_text(0, 0, 0, "'1,5 31/01/2024 VRAI =1+1").unwrap();
+        w.set_cell_text(0, 0, 0, "'1,5 31/01/2024 VRAI =1+1")
+            .unwrap();
         w.commit("setup");
         let spec = Spec::new(Layout::Delimited(Delimiters::only(' ')));
-        w.text_to_columns(0, Rect::cell(0, 0), (0, 1), &spec).unwrap();
+        w.text_to_columns(0, Rect::cell(0, 0), (0, 1), &spec)
+            .unwrap();
         w.commit("Text to Columns");
         assert_eq!(w.value_at(0, 0, 1), Value::Number(1.5));
-        assert_eq!(Some(w.value_at(0, 0, 2)), date_to_serial(2024, 1, 31).map(Value::Number));
+        assert_eq!(
+            Some(w.value_at(0, 0, 2)),
+            date_to_serial(2024, 1, 31).map(Value::Number)
+        );
         assert_eq!(w.value_at(0, 0, 3), Value::Bool(true));
         assert_eq!(w.value_at(0, 0, 4), Value::Number(2.0));
     }
@@ -768,8 +936,14 @@ mod tests {
     fn refusals() {
         let mut w = wb(&[("A1", "a b"), ("B1", "c")]);
         let spec = Spec::new(Layout::Delimited(Delimiters::only(' ')));
-        assert_eq!(w.text_column_lines(0, Rect::new(0, 0, 0, 1)), Err(TextColumnsError::SeveralColumns));
-        assert_eq!(w.text_column_lines(0, Rect::cell(5, 5)), Err(TextColumnsError::NoData));
+        assert_eq!(
+            w.text_column_lines(0, Rect::new(0, 0, 0, 1)),
+            Err(TextColumnsError::SeveralColumns)
+        );
+        assert_eq!(
+            w.text_column_lines(0, Rect::cell(5, 5)),
+            Err(TextColumnsError::NoData)
+        );
         assert_eq!(
             w.text_to_columns(0, Rect::cell(0, 0), (0, MAX_COLS - 1), &spec),
             Err(TextColumnsError::OffSheet)
@@ -794,8 +968,14 @@ mod tests {
 
     #[test]
     fn lines_of_a_file() {
-        assert_eq!(text_lines("a\nb\r\nc\rd\n", Some('"')), ["a", "b", "c", "d"]);
-        assert_eq!(text_lines("a,\"x\ny\",b\nc", Some('"')), ["a,\"x\ny\",b", "c"]);
+        assert_eq!(
+            text_lines("a\nb\r\nc\rd\n", Some('"')),
+            ["a", "b", "c", "d"]
+        );
+        assert_eq!(
+            text_lines("a,\"x\ny\",b\nc", Some('"')),
+            ["a,\"x\ny\",b", "c"]
+        );
         assert_eq!(text_lines("a,\"x\ny", None), ["a,\"x", "y"]);
         assert_eq!(text_lines("a\n\nb", None), ["a", "", "b"]);
         assert!(text_lines("", None).is_empty());
@@ -806,7 +986,9 @@ mod tests {
         let mut w = wb(&[("E1", "keep")]);
         let mut import = csv_import("/tmp/sales 2024.csv");
         import.first_row = 2;
-        let extent = w.import_text(0, (1, 1), "skipped\nName,Qty\nAnn,3\nBob,4\n", import).unwrap();
+        let extent = w
+            .import_text(0, (1, 1), "skipped\nName,Qty\nAnn,3\nBob,4\n", import)
+            .unwrap();
         w.commit("Import Data");
         assert_eq!(extent, Rect::parse("B2:C4").unwrap());
         assert_eq!(val(&w, "B3"), Value::text("Ann"));
@@ -816,7 +998,9 @@ mod tests {
         assert_eq!(w.text_import_at(0, 2, 2), Some(0));
         assert_eq!(w.text_import_at(0, 0, 0), None);
         // The file changed: fewer rows, one more column.
-        let extent = w.refresh_text_import(0, 0, "skipped\nName,Qty,City\nCid,5,Paris\n").unwrap();
+        let extent = w
+            .refresh_text_import(0, 0, "skipped\nName,Qty,City\nCid,5,Paris\n")
+            .unwrap();
         w.commit("Refresh All");
         assert_eq!(extent, Rect::parse("B2:D3").unwrap());
         assert_eq!(val(&w, "B3"), Value::text("Cid"));
@@ -827,7 +1011,10 @@ mod tests {
         // One step back each.
         w.undo();
         assert_eq!(val(&w, "B4"), Value::text("Bob"));
-        assert_eq!(w.sheets[0].text_imports[0].range, Rect::parse("B2:C4").unwrap());
+        assert_eq!(
+            w.sheets[0].text_imports[0].range,
+            Rect::parse("B2:C4").unwrap()
+        );
         w.undo();
         assert!(w.sheets[0].text_imports.is_empty());
         assert_eq!(val(&w, "B3"), Value::Empty);
@@ -836,21 +1023,49 @@ mod tests {
     #[test]
     fn import_names_and_refusals() {
         let mut w = wb(&[]);
-        w.import_text(0, (0, 0), "a,b", csv_import("/x/data.csv")).unwrap();
-        w.import_text(0, (5, 0), "a,b", csv_import("/y/data.csv")).unwrap();
-        w.import_text(0, (9, 0), "a,b", csv_import("/y/2024 q1.txt")).unwrap();
-        w.import_text(0, (12, 0), "a,b", csv_import("/y/A1.csv")).unwrap();
+        w.import_text(0, (0, 0), "a,b", csv_import("/x/data.csv"))
+            .unwrap();
+        w.import_text(0, (5, 0), "a,b", csv_import("/y/data.csv"))
+            .unwrap();
+        w.import_text(0, (9, 0), "a,b", csv_import("/y/2024 q1.txt"))
+            .unwrap();
+        w.import_text(0, (12, 0), "a,b", csv_import("/y/A1.csv"))
+            .unwrap();
         w.commit("Import Data");
-        let names: Vec<&str> = w.sheets[0].text_imports.iter().map(|import| import.name.as_str()).collect();
+        let names: Vec<&str> = w.sheets[0]
+            .text_imports
+            .iter()
+            .map(|import| import.name.as_str())
+            .collect();
         assert_eq!(names, ["data", "data_1", "_2024_q1", "_A1"]);
-        assert_eq!(w.import_text(0, (0, 0), "", csv_import("/x/empty.csv")), Err(TextColumnsError::NoData));
-        assert_eq!(w.import_text(0, (0, MAX_COLS - 1), "a,b", csv_import("/x/wide.csv")), Err(TextColumnsError::OffSheet));
-        assert_eq!(w.refresh_text_import(0, 9, "a"), Err(TextColumnsError::NoData));
+        assert_eq!(
+            w.import_text(0, (0, 0), "", csv_import("/x/empty.csv")),
+            Err(TextColumnsError::NoData)
+        );
+        assert_eq!(
+            w.import_text(0, (0, MAX_COLS - 1), "a,b", csv_import("/x/wide.csv")),
+            Err(TextColumnsError::OffSheet)
+        );
+        assert_eq!(
+            w.refresh_text_import(0, 9, "a"),
+            Err(TextColumnsError::NoData)
+        );
         // The ranges follow the rows; an import whose first row goes is forgotten.
         w.insert_rows(0, 0, 1);
         w.delete_rows(0, 6, 1);
         w.commit("rows");
-        let ranges: Vec<Rect> = w.sheets[0].text_imports.iter().map(|import| import.range).collect();
-        assert_eq!(ranges, [Rect::parse("A2:B2").unwrap(), Rect::parse("A10:B10").unwrap(), Rect::parse("A13:B13").unwrap()]);
+        let ranges: Vec<Rect> = w.sheets[0]
+            .text_imports
+            .iter()
+            .map(|import| import.range)
+            .collect();
+        assert_eq!(
+            ranges,
+            [
+                Rect::parse("A2:B2").unwrap(),
+                Rect::parse("A10:B10").unwrap(),
+                Rect::parse("A13:B13").unwrap()
+            ]
+        );
     }
 }

@@ -30,7 +30,9 @@ use super::read::{Package, relationships};
 use super::write::NS_DOC_REL;
 use super::xml::{Event, Reader, XML_DECL, push_attr, push_text};
 use opensheet_engine::ast::{Expr, RefExpr};
-use opensheet_engine::control::{CheckState, ControlKind, ControlSource, FormControl, SelectionType};
+use opensheet_engine::control::{
+    CheckState, ControlKind, ControlSource, FormControl, SelectionType,
+};
 use opensheet_engine::parser::parse_formula;
 use opensheet_engine::{Locale, Sheet, Workbook};
 use std::collections::HashMap;
@@ -62,7 +64,9 @@ fn type_names(kind: ControlKind) -> (&'static str, &'static str) {
 }
 
 fn kind_of(object_type: &str) -> Option<ControlKind> {
-    ControlKind::ALL.into_iter().find(|kind| type_names(*kind).0.eq_ignore_ascii_case(object_type))
+    ControlKind::ALL
+        .into_iter()
+        .find(|kind| type_names(*kind).0.eq_ignore_ascii_case(object_type))
 }
 
 /// How many blocks of shape ids `shapes` shapes take.
@@ -79,7 +83,11 @@ fn shape_count(sheet: &Sheet) -> usize {
 /// drawings take their blocks of ids in the order of the sheets, and in
 /// each the notes come first.
 fn first_shape_id(wb: &Workbook, index: usize) -> usize {
-    let block: usize = 1 + wb.sheets[..index].iter().filter(|sheet| shape_count(sheet) > 0).map(|sheet| blocks(shape_count(sheet))).sum::<usize>();
+    let block: usize = 1 + wb.sheets[..index]
+        .iter()
+        .filter(|sheet| shape_count(sheet) > 0)
+        .map(|sheet| blocks(shape_count(sheet)))
+        .sum::<usize>();
     block * SHAPE_ID_BLOCK + wb.sheets[index].comments.len() + 1
 }
 
@@ -112,7 +120,10 @@ fn push_points(x: &mut String, px: f64) {
 fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
     let (left, top, width, height) = sheet.control_frame(now);
     let mut x = String::new();
-    w!(x, "<v:shape id=\"_x0000_s{id}\" type=\"#_x0000_t201\" style=\"position:absolute;margin-left:");
+    w!(
+        x,
+        "<v:shape id=\"_x0000_s{id}\" type=\"#_x0000_t201\" style=\"position:absolute;margin-left:"
+    );
     push_points(&mut x, left.round());
     x.push_str(";margin-top:");
     push_points(&mut x, top.round());
@@ -123,18 +134,32 @@ fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
     w!(x, ";z-index:{z};mso-wrap-style:tight\"");
     // What the shape looks like to an application that draws the VML.
     let caption = |x: &mut String, align: &str, font: &str| {
-        w!(x, "<v:textbox style=\"mso-direction-alt:auto\" o:singleclick=\"f\"><div style=\"text-align:{align}\">{font}");
+        w!(
+            x,
+            "<v:textbox style=\"mso-direction-alt:auto\" o:singleclick=\"f\"><div style=\"text-align:{align}\">{font}"
+        );
         push_text(x, &now.text);
         x.push_str("</font></div></v:textbox>");
     };
     match now.kind {
         ControlKind::Button => {
             x.push_str(" o:button=\"t\" fillcolor=\"buttonFace [67]\" strokecolor=\"windowText [64]\" o:insetmode=\"auto\"><v:fill color2=\"buttonFace [67]\" o:detectmouseclick=\"t\"/><o:lock v:ext=\"edit\" rotation=\"t\"/>");
-            caption(&mut x, "center", "<font face=\"Calibri\" size=\"220\" color=\"#000000\">");
+            caption(
+                &mut x,
+                "center",
+                "<font face=\"Calibri\" size=\"220\" color=\"#000000\">",
+            );
         }
-        ControlKind::CheckBox | ControlKind::OptionButton | ControlKind::GroupBox | ControlKind::Label => {
+        ControlKind::CheckBox
+        | ControlKind::OptionButton
+        | ControlKind::GroupBox
+        | ControlKind::Label => {
             x.push_str(" filled=\"f\" fillcolor=\"window [65]\" stroked=\"f\" strokecolor=\"windowText [64]\" o:insetmode=\"auto\"><v:path shadowok=\"t\" strokeok=\"t\" fillok=\"t\"/><o:lock v:ext=\"edit\" rotation=\"t\"/>");
-            caption(&mut x, "left", "<font face=\"Segoe UI\" size=\"160\" color=\"auto\">");
+            caption(
+                &mut x,
+                "left",
+                "<font face=\"Segoe UI\" size=\"160\" color=\"auto\">",
+            );
         }
         ControlKind::ListBox => {
             x.push_str(" fillcolor=\"window [65]\" strokecolor=\"windowText [64]\" o:insetmode=\"auto\"><v:fill color2=\"window [65]\"/><o:lock v:ext=\"edit\" rotation=\"t\" text=\"t\"/>");
@@ -143,7 +168,11 @@ fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
             x.push_str(" stroked=\"f\" strokecolor=\"windowText [64]\" o:insetmode=\"auto\"><o:lock v:ext=\"edit\" rotation=\"t\" text=\"t\"/>");
         }
     }
-    w!(x, "<x:ClientData ObjectType=\"{}\">", type_names(now.kind).0);
+    w!(
+        x,
+        "<x:ClientData ObjectType=\"{}\">",
+        type_names(now.kind).0
+    );
     // Present, these two say that the object does *not* follow its cells.
     if !now.move_with_cells {
         x.push_str("<x:MoveWithCells/>");
@@ -155,7 +184,14 @@ fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
     w!(
         x,
         "<x:Anchor>{}, {}, {}, {}, {}, {}, {}, {}</x:Anchor>",
-        from.1, from.2, from.0, from.3, to.1, to.2, to.0, to.3
+        from.1,
+        from.2,
+        from.0,
+        from.3,
+        to.1,
+        to.2,
+        to.0,
+        to.3
     );
     if !now.locked {
         x.push_str("<x:Locked>False</x:Locked>");
@@ -167,7 +203,10 @@ fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
     if captioned {
         x.push_str("<x:AutoFill>False</x:AutoFill>");
     }
-    if now.kind != ControlKind::Button && now.kind != ControlKind::SpinButton && now.kind != ControlKind::ScrollBar {
+    if now.kind != ControlKind::Button
+        && now.kind != ControlKind::SpinButton
+        && now.kind != ControlKind::ScrollBar
+    {
         x.push_str("<x:AutoLine>False</x:AutoLine>");
     }
     if let Some(name) = &now.macro_name {
@@ -176,8 +215,12 @@ fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
         x.push_str("</x:FmlaMacro>");
     }
     match now.kind {
-        ControlKind::Button => x.push_str("<x:TextHAlign>Center</x:TextHAlign><x:TextVAlign>Center</x:TextVAlign>"),
-        ControlKind::CheckBox | ControlKind::OptionButton => x.push_str("<x:TextVAlign>Center</x:TextVAlign>"),
+        ControlKind::Button => {
+            x.push_str("<x:TextHAlign>Center</x:TextHAlign><x:TextVAlign>Center</x:TextVAlign>")
+        }
+        ControlKind::CheckBox | ControlKind::OptionButton => {
+            x.push_str("<x:TextVAlign>Center</x:TextVAlign>")
+        }
         _ => {}
     }
     if captioned && !now.lock_text {
@@ -209,7 +252,11 @@ fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
             reference(&mut x, "FmlaRange", &now.input);
             reference(&mut x, "FmlaLink", &now.link);
             // The scroll bar of the list: the lines it can reach.
-            w!(x, "<x:Val>0</x:Val><x:Min>0</x:Min><x:Max>0</x:Max><x:Inc>1</x:Inc><x:Page>{}</x:Page><x:Dx>22</x:Dx>", now.drop_lines.max(1));
+            w!(
+                x,
+                "<x:Val>0</x:Val><x:Min>0</x:Min><x:Max>0</x:Max><x:Inc>1</x:Inc><x:Page>{}</x:Page><x:Dx>22</x:Dx>",
+                now.drop_lines.max(1)
+            );
             w!(x, "<x:Sel>{}</x:Sel>", now.selected);
             if !now.shaded {
                 x.push_str("<x:NoThreeD2/>");
@@ -221,7 +268,11 @@ fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
             });
             x.push_str("<x:LCT>Normal</x:LCT>");
             if now.kind == ControlKind::ComboBox {
-                w!(x, "<x:DropStyle>Combo</x:DropStyle><x:DropLines>{}</x:DropLines>", now.drop_lines);
+                w!(
+                    x,
+                    "<x:DropStyle>Combo</x:DropStyle><x:DropLines>{}</x:DropLines>",
+                    now.drop_lines
+                );
             }
         }
         ControlKind::SpinButton | ControlKind::ScrollBar => {
@@ -229,7 +280,11 @@ fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
             w!(
                 x,
                 "<x:Val>{}</x:Val><x:Min>{}</x:Min><x:Max>{}</x:Max><x:Inc>{}</x:Inc><x:Page>{}</x:Page>",
-                now.value, now.min, now.max, now.inc, now.page
+                now.value,
+                now.min,
+                now.max,
+                now.inc,
+                now.page
             );
             if now.horizontal {
                 x.push_str("<x:Horiz/>");
@@ -254,7 +309,11 @@ fn shape_xml(sheet: &Sheet, now: &FormControl, id: usize, z: usize) -> String {
 /// schema, the defaults left out, as Excel writes it.
 fn properties_xml(now: &FormControl) -> String {
     let mut x = String::from(XML_DECL);
-    w!(x, "<formControlPr xmlns=\"{NS_X14}\" objectType=\"{}\"", type_names(now.kind).1);
+    w!(
+        x,
+        "<formControlPr xmlns=\"{NS_X14}\" objectType=\"{}\"",
+        type_names(now.kind).1
+    );
     let listed = now.kind.has_list();
     let ticked = matches!(now.kind, ControlKind::CheckBox | ControlKind::OptionButton);
     if ticked {
@@ -339,7 +398,10 @@ fn control_pr_xml(sheet: &Sheet, now: &FormControl) -> String {
     if now.kind.has_text() {
         x.push_str(" autoFill=\"0\"");
     }
-    if now.kind != ControlKind::Button && now.kind != ControlKind::SpinButton && now.kind != ControlKind::ScrollBar {
+    if now.kind != ControlKind::Button
+        && now.kind != ControlKind::SpinButton
+        && now.kind != ControlKind::ScrollBar
+    {
         x.push_str(" autoLine=\"0\"");
     }
     x.push_str(" autoPict=\"0\"");
@@ -392,19 +454,37 @@ fn written(wb: &Workbook, index: usize) -> Vec<Written> {
             let (shape, properties, inside) = match FormControl::unchanged_source(&now) {
                 Some(source) => (
                     // The shape under the number it has in this file.
-                    source.shape.replace(&format!("_x0000_s{}\"", source.shape_id), &format!("_x0000_s{id}\"")).replace(
-                        &format!("_x0000_s{}'", source.shape_id),
-                        &format!("_x0000_s{id}'"),
-                    ),
+                    source
+                        .shape
+                        .replace(
+                            &format!("_x0000_s{}\"", source.shape_id),
+                            &format!("_x0000_s{id}\""),
+                        )
+                        .replace(
+                            &format!("_x0000_s{}'", source.shape_id),
+                            &format!("_x0000_s{id}'"),
+                        ),
                     source.properties.clone(),
                     source.control.clone(),
                 ),
-                None => (shape_xml(sheet, &now, id, sheet.comments.len() + k + 1), properties_xml(&now), control_pr_xml(sheet, &now)),
+                None => (
+                    shape_xml(sheet, &now, id, sheet.comments.len() + k + 1),
+                    properties_xml(&now),
+                    control_pr_xml(sheet, &now),
+                ),
             };
             Written {
                 shape,
-                properties: if properties.is_empty() { properties_xml(&now) } else { properties },
-                control: if inside.is_empty() { control_pr_xml(sheet, &now) } else { inside },
+                properties: if properties.is_empty() {
+                    properties_xml(&now)
+                } else {
+                    properties
+                },
+                control: if inside.is_empty() {
+                    control_pr_xml(sheet, &now)
+                } else {
+                    inside
+                },
                 name: now.name.clone(),
                 id,
             }
@@ -448,7 +528,11 @@ pub(crate) fn sheet_xml(wb: &Workbook, index: usize, links: &SheetLinks) -> Stri
             control.id
         );
         push_attr(&mut x, &control.name);
-        w!(x, "\">{}</control></mc:Choice></mc:AlternateContent>", control.control);
+        w!(
+            x,
+            "\">{}</control></mc:Choice></mc:AlternateContent>",
+            control.control
+        );
     }
     x.push_str("</controls></mc:Choice></mc:AlternateContent>");
     x
@@ -464,8 +548,17 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
         let links = SheetLinks::of(sheet);
         for (control, rel) in written(wb, index).into_iter().zip(&links.controls) {
             number += 1;
-            extras.add_part(format!("xl/ctrlProps/ctrlProp{number}.xml"), Some(CT_CTRL_PROP), control.properties);
-            extras.relate_sheet(index, *rel, &format!("{NS_DOC_REL}/ctrlProp"), &format!("../ctrlProps/ctrlProp{number}.xml"));
+            extras.add_part(
+                format!("xl/ctrlProps/ctrlProp{number}.xml"),
+                Some(CT_CTRL_PROP),
+                control.properties,
+            );
+            extras.relate_sheet(
+                index,
+                *rel,
+                &format!("{NS_DOC_REL}/ctrlProp"),
+                &format!("../ctrlProps/ctrlProp{number}.xml"),
+            );
         }
     }
 }
@@ -505,11 +598,14 @@ fn listed_controls(sheet_xml: &str) -> HashMap<u32, Listed> {
                 if let (Some(id), Some(rel)) = (id, rel)
                     && !out.contains_key(&id)
                 {
-                    out.insert(id, Listed {
-                        name: name.unwrap_or_default().into_owned(),
-                        rel: rel.into_owned(),
-                        inside,
-                    });
+                    out.insert(
+                        id,
+                        Listed {
+                            name: name.unwrap_or_default().into_owned(),
+                            rel: rel.into_owned(),
+                            inside,
+                        },
+                    );
                 }
             }
             Event::Close("controls") | Event::Eof => break,
@@ -536,12 +632,19 @@ fn parse_shape(raw: &str, sheet: &Sheet) -> Option<(u32, FormControl)> {
         return None;
     };
     let id = shape.attr("id")?;
-    let shape_id: u32 = id.rsplit_once("_s").and_then(|(_, digits)| digits.parse().ok())?;
+    let shape_id: u32 = id
+        .rsplit_once("_s")
+        .and_then(|(_, digits)| digits.parse().ok())?;
     let mut control: Option<FormControl> = None;
     let mut text = String::new();
     let mut anchor: Option<Vec<f64>> = None;
     // Present and empty, or "True", says yes.
-    let yes = |text: &str| !matches!(text.trim().to_ascii_lowercase().as_str(), "false" | "f" | "0");
+    let yes = |text: &str| {
+        !matches!(
+            text.trim().to_ascii_lowercase().as_str(),
+            "false" | "f" | "0"
+        )
+    };
     let (mut moves, mut sizes, mut flat, mut list_lines) = (true, true, false, None);
     loop {
         match r.next() {
@@ -559,11 +662,21 @@ fn parse_shape(raw: &str, sheet: &Sheet) -> Option<(u32, FormControl)> {
                     match name {
                         "MoveWithCells" => moves = !yes(&value),
                         "SizeWithCells" => sizes = !yes(&value),
-                        "Anchor" => anchor = Some(value.split(',').map(|n| n.trim().parse::<f64>().unwrap_or(0.0)).collect()),
+                        "Anchor" => {
+                            anchor = Some(
+                                value
+                                    .split(',')
+                                    .map(|n| n.trim().parse::<f64>().unwrap_or(0.0))
+                                    .collect(),
+                            )
+                        }
                         "Locked" => c.locked = yes(&value),
                         "PrintObject" => c.print = yes(&value),
                         "LockText" => c.lock_text = yes(&value),
-                        "FmlaMacro" => c.macro_name = Some(value.trim().to_string()).filter(|name| !name.is_empty()),
+                        "FmlaMacro" => {
+                            c.macro_name =
+                                Some(value.trim().to_string()).filter(|name| !name.is_empty())
+                        }
                         "FmlaLink" => c.link = parse_reference(&value),
                         "FmlaRange" => c.input = parse_reference(&value),
                         "Checked" => {
@@ -612,7 +725,12 @@ fn parse_shape(raw: &str, sheet: &Sheet) -> Option<(u32, FormControl)> {
     }
     // col, dx, row, dy of the two corners, in pixels.
     let a = anchor.filter(|a| a.len() == 8)?;
-    let corner = |k: usize| sheet.corner_point(((a[k + 2] as u32, a[k] as u32), (a[k + 1] as f32, a[k + 3] as f32)));
+    let corner = |k: usize| {
+        sheet.corner_point((
+            (a[k + 2] as u32, a[k] as u32),
+            (a[k + 1] as f32, a[k + 3] as f32),
+        ))
+    };
     let ((x0, y0), (x1, y1)) = (corner(0), corner(4));
     let (anchor, offset) = sheet.corner_at(x0, y0);
     control.anchor = anchor;
@@ -626,7 +744,13 @@ fn parse_shape(raw: &str, sheet: &Sheet) -> Option<(u32, FormControl)> {
 /// `<control>` element when the file has them (a file of Excel 2007 has
 /// the shapes alone). The sheet must already have its columns and rows.
 /// `next_id` is the id the next control of the workbook gets.
-pub(crate) fn read_sheet<R: Read + Seek>(pkg: &mut Package<R>, sheet_part: &str, sheet_xml: &str, sheet: &mut Sheet, next_id: &mut u32) {
+pub(crate) fn read_sheet<R: Read + Seek>(
+    pkg: &mut Package<R>,
+    sheet_part: &str,
+    sheet_xml: &str,
+    sheet: &mut Sheet,
+    next_id: &mut u32,
+) {
     let rels = relationships(pkg, sheet_part);
     let listed = listed_controls(sheet_xml);
     for rel in rels.iter().filter(|rel| rel.kind == "vmlDrawing") {
@@ -650,7 +774,9 @@ pub(crate) fn read_sheet<R: Read + Seek>(pkg: &mut Package<R>, sheet_part: &str,
             // control (an ActiveX control) is not one.
             let properties = match entry {
                 Some(entry) => match rels.iter().find(|rel| rel.id == entry.rel) {
-                    Some(rel) if rel.kind == "ctrlProp" => pkg.read(&rel.target).ok().flatten().unwrap_or_default(),
+                    Some(rel) if rel.kind == "ctrlProp" => {
+                        pkg.read(&rel.target).ok().flatten().unwrap_or_default()
+                    }
                     _ => continue,
                 },
                 None => String::new(),

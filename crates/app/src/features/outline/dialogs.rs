@@ -13,7 +13,12 @@ use opensheet_engine::outline::Axis;
 // ---------------------------------------------------------- Group / Ungroup
 
 /// Ask whether the rows or the columns of the selected cells are meant.
-pub(super) fn open_group(app: &mut ExcelApp, ungroup: bool, window: &mut Window, cx: &mut Cx) -> Entity<GroupDialog> {
+pub(super) fn open_group(
+    app: &mut ExcelApp,
+    ungroup: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<GroupDialog> {
     app.open_modal(window, cx, move |modal, _, _| GroupDialog {
         modal,
         ungroup,
@@ -36,22 +41,29 @@ impl GroupDialog {
     pub(super) fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         let (axis, ungroup) = (self.axis, self.ungroup);
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| apply_group(app, axis, ungroup, cx));
+        self.modal
+            .update_app(cx, |app, cx| apply_group(app, axis, ungroup, cx));
     }
 }
 
 impl Render for GroupDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let title = if self.ungroup { Cmd::UngroupMenu.label() } else { Cmd::GroupMenu.label() };
+        let title = if self.ungroup {
+            Cmd::UngroupMenu.label()
+        } else {
+            Cmd::GroupMenu.label()
+        };
         let options = vec![t("Rows", "Lignes").into(), t("Columns", "Colonnes").into()];
         let selected = if self.axis == Axis::Rows { 0 } else { 1 };
         dialog(&self.modal, title)
             .width(230.0)
             .on_ok(cx.listener(Self::ok))
             .child(
-                RadioGroup::new("outline-axis", options, Some(selected)).on_change(cx.listener(|this, index: &usize, _, cx| {
-                    this.choose(if *index == 0 { Axis::Rows } else { Axis::Cols }, cx)
-                })),
+                RadioGroup::new("outline-axis", options, Some(selected)).on_change(cx.listener(
+                    |this, index: &usize, _, cx| {
+                        this.choose(if *index == 0 { Axis::Rows } else { Axis::Cols }, cx)
+                    },
+                )),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
@@ -59,10 +71,18 @@ impl Render for GroupDialog {
 
 // ----------------------------------------------------------------- Settings
 
-pub(super) fn open_settings(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Entity<SettingsDialog> {
+pub(super) fn open_settings(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Entity<SettingsDialog> {
     let outline = &app.wb.sheets[app.sheet].outline;
     let (below, right) = (outline.summary_below, outline.summary_right);
-    app.open_modal(window, cx, move |modal, _, _| SettingsDialog { modal, below, right })
+    app.open_modal(window, cx, move |modal, _, _| SettingsDialog {
+        modal,
+        below,
+        right,
+    })
 }
 
 pub(super) struct SettingsDialog {
@@ -124,10 +144,17 @@ impl Render for SettingsDialog {
                     .child(
                         Checkbox::new(
                             "summary-below",
-                            t("Summary rows below detail", "Lignes de synthèse sous les lignes de détail"),
+                            t(
+                                "Summary rows below detail",
+                                "Lignes de synthèse sous les lignes de détail",
+                            ),
                             below,
                         )
-                        .on_change(cx.listener(move |this, on: &bool, _, cx| this.set(*on, this.right, cx))),
+                        .on_change(
+                            cx.listener(move |this, on: &bool, _, cx| {
+                                this.set(*on, this.right, cx)
+                            }),
+                        ),
                     )
                     .child(
                         Checkbox::new(
@@ -138,7 +165,11 @@ impl Render for SettingsDialog {
                             ),
                             right,
                         )
-                        .on_change(cx.listener(move |this, on: &bool, _, cx| this.set(this.below, *on, cx))),
+                        .on_change(
+                            cx.listener(move |this, on: &bool, _, cx| {
+                                this.set(this.below, *on, cx)
+                            }),
+                        ),
                     ),
             )
             .footer(

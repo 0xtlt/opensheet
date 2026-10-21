@@ -11,12 +11,12 @@ use crate::shell::Modal;
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
 use crate::widgets::{
-    self, Button, CheckItem, CheckList, Checkbox, ListBox, NumberField, RadioGroup, Select, TextField, dialog, icon,
-    label, ok_cancel,
+    self, Button, CheckItem, CheckList, Checkbox, ListBox, NumberField, RadioGroup, Select,
+    TextField, dialog, icon, label, ok_cancel,
 };
 use gpui::{
-    AnyElement, Bounds, Context, Entity, Focusable, MouseButton, Pixels, Point, SharedString, WeakEntity, Window, canvas,
-    div, prelude::*, px,
+    AnyElement, Bounds, Context, Entity, Focusable, MouseButton, Pixels, Point, SharedString,
+    WeakEntity, Window, canvas, div, prelude::*, px,
 };
 use opensheet_engine::pivot::{Area, FilterKind, PivotTable, SortOrder, Top10By};
 use opensheet_engine::{Locale, Rect};
@@ -70,7 +70,11 @@ impl FieldState {
                 .any(|it| it.x == item && it.hidden)
         };
         let page = pivot.axis_of(field) == Some(Area::Filters);
-        let page_item = pivot.page_fields.iter().find(|pf| pf.field == field).and_then(|pf| pf.item);
+        let page_item = pivot
+            .page_fields
+            .iter()
+            .find(|pf| pf.field == field)
+            .and_then(|pf| pf.item);
         let checks: Vec<CheckItem> = items
             .iter()
             .map(|item| CheckItem::new(pivot.item_text(field, *item, locale), !hidden(*item)))
@@ -126,11 +130,25 @@ pub(super) fn toggle_drop_down(
     window: &mut Window,
     cx: &mut Cx,
 ) {
-    let Some(fields) = app.wb.pivot(id).and_then(|(_, pivot)| pivot.cell(row, col)).map(|cell| cell.fields.clone()) else {
+    let Some(fields) = app
+        .wb
+        .pivot(id)
+        .and_then(|(_, pivot)| pivot.cell(row, col))
+        .map(|cell| cell.fields.clone())
+    else {
         return;
     };
     let anchor = app.cell_anchor(Rect::cell(row, col));
-    toggle_drop_down_at(app, id, &fields, FilterButton::Cell(row, col), anchor, press, window, cx);
+    toggle_drop_down_at(
+        app,
+        id,
+        &fields,
+        FilterButton::Cell(row, col),
+        anchor,
+        press,
+        window,
+        cx,
+    );
 }
 
 /// What a drop-down hangs from: a cell of the report, or a field button
@@ -184,7 +202,9 @@ pub(super) fn toggle_drop_down_at(
     let weak = cx.weak_entity();
     let view = cx.new(|cx| {
         let search = widgets::input(cx, "");
-        search.update(cx, |field, _| field.placeholder = t("Search", "Rechercher").into());
+        search.update(cx, |field, _| {
+            field.placeholder = t("Search", "Rechercher").into()
+        });
         DropDown {
             app: weak,
             pivot: id,
@@ -212,7 +232,12 @@ impl DropDown {
     }
 
     /// Tick only the items with these labels, then OK.
-    pub(super) fn keep_only(&mut self, labels: &[&str], window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn keep_only(
+        &mut self,
+        labels: &[&str],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         for item in &mut self.state.checks {
             item.checked = labels.contains(&item.label.as_ref());
         }
@@ -226,7 +251,12 @@ impl DropDown {
 
 impl DropDown {
     /// Close the drop-down, then do something to the application.
-    fn act(&self, window: &mut Window, cx: &mut Context<Self>, f: impl FnOnce(&mut ExcelApp, &mut Window, &mut Cx)) {
+    fn act(
+        &self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        f: impl FnOnce(&mut ExcelApp, &mut Window, &mut Cx),
+    ) {
         self.app
             .update(cx, |app, cx| {
                 app.close_popup(window, cx);
@@ -267,7 +297,9 @@ impl DropDown {
         if self.state.page && !self.state.multi {
             let item = self.state.page_item;
             self.act(window, cx, move |app, window, cx| {
-                update(app, id, label, window, cx, move |p| p.set_page_item(field, item));
+                update(app, id, label, window, cx, move |p| {
+                    p.set_page_item(field, item)
+                });
             });
             return;
         }
@@ -292,7 +324,9 @@ impl DropDown {
 
     fn sort(&mut self, order: SortOrder, window: &mut Window, cx: &mut Context<Self>) {
         let (id, field) = (self.pivot, self.state.field);
-        self.act(window, cx, move |app, window, cx| actions::sort(app, id, field, order, None, window, cx));
+        self.act(window, cx, move |app, window, cx| {
+            actions::sort(app, id, field, order, None, window, cx)
+        });
     }
 
     /// Show another of the fields the cell serves.
@@ -302,7 +336,9 @@ impl DropDown {
         };
         let state = self.app.upgrade().and_then(|app| {
             let app = app.read(cx);
-            app.wb.pivot(self.pivot).map(|(_, pivot)| FieldState::of(pivot, field, app.wb.locale))
+            app.wb
+                .pivot(self.pivot)
+                .map(|(_, pivot)| FieldState::of(pivot, field, app.wb.locale))
         });
         if let Some(state) = state {
             self.state = state;
@@ -324,7 +360,11 @@ impl DropDown {
         cx: &mut Context<Self>,
         on_click: impl Fn(&mut Self, &mut Window, &mut Context<Self>) + 'static,
     ) -> AnyElement {
-        let fg = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
+        let fg = if enabled {
+            theme::TEXT
+        } else {
+            theme::TEXT_DISABLED
+        };
         let open = sub.is_some() && self.sub == sub;
         div()
             .id(id)
@@ -387,7 +427,11 @@ impl DropDown {
         ticked: bool,
         on_press: impl Fn(&mut ExcelApp, &mut Window, &mut Cx) + 'static,
     ) -> AnyElement {
-        let fg = if enabled { theme::TEXT } else { theme::TEXT_DISABLED };
+        let fg = if enabled {
+            theme::TEXT
+        } else {
+            theme::TEXT_DISABLED
+        };
         let app = self.app.clone();
         div()
             .id(id)
@@ -443,9 +487,14 @@ impl DropDown {
                     self.state.label_test.is_some(),
                     false,
                     move |app, window, cx| {
-                        update(app, id, t("Clear Filter", "Effacer le filtre"), window, cx, move |p| {
-                            p.set_label_filter(field, None)
-                        });
+                        update(
+                            app,
+                            id,
+                            t("Clear Filter", "Effacer le filtre"),
+                            window,
+                            cx,
+                            move |p| p.set_label_filter(field, None),
+                        );
                     },
                 ));
                 for (g, tests) in LabelTest::MENU.iter().enumerate() {
@@ -457,7 +506,9 @@ impl DropDown {
                             test.menu_label(),
                             true,
                             self.state.label_test == Some(test),
-                            move |app, window, cx| open_label_filter(app, id, field, Some(test), window, cx),
+                            move |app, window, cx| {
+                                open_label_filter(app, id, field, Some(test), window, cx)
+                            },
                         ));
                     }
                 }
@@ -469,9 +520,14 @@ impl DropDown {
                     self.state.value_filter.is_some(),
                     false,
                     move |app, window, cx| {
-                        update(app, id, t("Clear Filter", "Effacer le filtre"), window, cx, move |p| {
-                            p.set_value_filter(field, None)
-                        });
+                        update(
+                            app,
+                            id,
+                            t("Clear Filter", "Effacer le filtre"),
+                            window,
+                            cx,
+                            move |p| p.set_value_filter(field, None),
+                        );
                     },
                 ));
                 rows.push(Self::separator());
@@ -485,7 +541,9 @@ impl DropDown {
                         test.menu_label(),
                         true,
                         self.state.value_filter == Some(Some(test)),
-                        move |app, window, cx| open_value_filter(app, id, field, Some(test), window, cx),
+                        move |app, window, cx| {
+                            open_value_filter(app, id, field, Some(test), window, cx)
+                        },
                     ));
                 }
                 rows.push(Self::separator());
@@ -553,18 +611,29 @@ impl DropDown {
                 Some(i) => self.state.checks[*i].label.clone(),
             })
             .collect();
-        let current = self.state.page_item.and_then(|item| self.state.items.iter().position(|x| *x == item));
+        let current = self
+            .state
+            .page_item
+            .and_then(|item| self.state.items.iter().position(|x| *x == item));
         let selected = rows.iter().position(|row| *row == current);
         let pick = Rc::new(rows);
         let activate = pick.clone();
         ListBox::new("page-items", labels, selected)
             .height(widgets::ROW_H * 9.0)
             .on_change(cx.listener(move |this, ix: &usize, _, cx| {
-                this.state.page_item = pick.get(*ix).copied().flatten().map(|i| this.state.items[i]);
+                this.state.page_item = pick
+                    .get(*ix)
+                    .copied()
+                    .flatten()
+                    .map(|i| this.state.items[i]);
                 cx.notify();
             }))
             .on_activate(cx.listener(move |this, ix: &usize, window, cx| {
-                this.state.page_item = activate.get(*ix).copied().flatten().map(|i| this.state.items[i]);
+                this.state.page_item = activate
+                    .get(*ix)
+                    .copied()
+                    .flatten()
+                    .map(|i| this.state.items[i]);
                 this.ok(&(), window, cx);
             }))
             .into_any_element()
@@ -581,8 +650,15 @@ impl Render for DropDown {
         let mut sub_top = [0.0f32; 2];
 
         if self.fields.len() > 1 {
-            let captions: Vec<SharedString> = self.fields.iter().map(|(_, caption)| caption.clone()).collect();
-            let current = self.fields.iter().position(|(field, _)| *field == state.field);
+            let captions: Vec<SharedString> = self
+                .fields
+                .iter()
+                .map(|(_, caption)| caption.clone())
+                .collect();
+            let current = self
+                .fields
+                .iter()
+                .position(|(field, _)| *field == state.field);
             top.push(
                 div()
                     .h(px(ROW + 22.0))
@@ -595,7 +671,9 @@ impl Render for DropDown {
                     .child(
                         Select::new("field", captions, current)
                             .width(WIDTH - 20.0)
-                            .on_change(cx.listener(|this, ix: &usize, _, cx| this.pick_field(*ix, cx))),
+                            .on_change(
+                                cx.listener(|this, ix: &usize, _, cx| this.pick_field(*ix, cx)),
+                            ),
                     )
                     .into_any_element(),
             );
@@ -634,13 +712,19 @@ impl Render for DropDown {
                 cx,
                 |this, window, cx| {
                     let (id, field) = (this.pivot, this.state.field);
-                    this.act(window, cx, move |app, window, cx| open_sort(app, id, field, window, cx))
+                    this.act(window, cx, move |app, window, cx| {
+                        open_sort(app, id, field, window, cx)
+                    })
                 },
             ));
             top.push(Self::separator());
             y += 3.0 * ROW + SEPARATOR;
 
-            let clear = t("Clear Filter From \"{}\"", "Effacer le filtre de «\u{a0}{}\u{a0}»").replace("{}", &state.caption);
+            let clear = t(
+                "Clear Filter From \"{}\"",
+                "Effacer le filtre de «\u{a0}{}\u{a0}»",
+            )
+            .replace("{}", &state.caption);
             top.push(self.menu_row(
                 "clear",
                 Some("filter"),
@@ -687,9 +771,15 @@ impl Render for DropDown {
                 .flex()
                 .flex_col()
                 .gap(px(4.))
-                .child(div().h(px(widgets::CONTROL_H)).flex().child(
-                    TextField::new(&self.search).trailing(div().pr(px(4.)).child(icon("search", 12.0, theme::TEXT_MUTED))),
-                ))
+                .child(
+                    div().h(px(widgets::CONTROL_H)).flex().child(
+                        TextField::new(&self.search).trailing(div().pr(px(4.)).child(icon(
+                            "search",
+                            12.0,
+                            theme::TEXT_MUTED,
+                        ))),
+                    ),
+                )
                 .child(div().flex().child(self.page_list(cx)))
                 .into_any_element()
         } else {
@@ -703,12 +793,14 @@ impl Render for DropDown {
                             this.state.checks[*ix].checked = *on;
                             cx.notify();
                         }))
-                        .on_toggle_all(cx.listener(|this, (shown, on): &(Vec<usize>, bool), _, cx| {
-                            for ix in shown {
-                                this.state.checks[*ix].checked = *on;
-                            }
-                            cx.notify();
-                        })),
+                        .on_toggle_all(cx.listener(
+                            |this, (shown, on): &(Vec<usize>, bool), _, cx| {
+                                for ix in shown {
+                                    this.state.checks[*ix].checked = *on;
+                                }
+                                cx.notify();
+                            },
+                        )),
                 )
                 .into_any_element()
         };
@@ -751,8 +843,14 @@ impl Render for DropDown {
             // A press outside closes the drop-down; when it lands on the
             // button it hangs from, that button must not open it again.
             .on_mouse_down_out(move |ev, _, _| closed.set(Some(ev.position)))
-            .on_action(cx.listener(|this, _: &widgets::Accept, window, cx| this.ok(&(), window, cx)))
-            .on_action(cx.listener(|this, _: &crate::text_input::Enter, window, cx| this.ok(&(), window, cx)))
+            .on_action(
+                cx.listener(|this, _: &widgets::Accept, window, cx| this.ok(&(), window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &crate::text_input::Enter, window, cx| {
+                    this.ok(&(), window, cx)
+                }),
+            )
             .child(
                 canvas(move |painted, _, _| bounds.set(painted), |_, _, _, _| {})
                     .absolute()
@@ -791,14 +889,25 @@ fn field_title(pattern: &'static str, caption: &str) -> SharedString {
 }
 
 /// "More Sort Options": manual order, or by label or by a value field.
-pub(super) fn open_sort(app: &mut ExcelApp, id: u32, field: usize, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_sort(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let Some((_, pivot)) = app.wb.pivot(id) else {
         return;
     };
     let caption = pivot.field_caption(field).to_string();
     let sort = pivot.fields[field].sort;
     let mut keys: Vec<SharedString> = vec![caption.clone().into()];
-    keys.extend(pivot.data_fields.iter().map(|d| SharedString::from(d.name.clone())));
+    keys.extend(
+        pivot
+            .data_fields
+            .iter()
+            .map(|d| SharedString::from(d.name.clone())),
+    );
     app.open_modal(window, cx, move |modal, _, _| SortDialog {
         modal,
         pivot: id,
@@ -826,17 +935,24 @@ impl SortDialog {
         let (id, field, order) = (self.pivot, self.field, self.order);
         let by_value = (order != SortOrder::Manual && self.key > 0).then(|| self.key - 1);
         self.modal.close(window, cx);
-        self.modal
-            .update_app(cx, |app, cx| actions::sort(app, id, field, order, by_value, window, cx));
+        self.modal.update_app(cx, |app, cx| {
+            actions::sort(app, id, field, order, by_value, window, cx)
+        });
     }
 
-    fn option(&self, id: &'static str, text: &'static str, order: SortOrder, cx: &mut Context<Self>) -> RadioGroup {
-        RadioGroup::new(id, vec![text.into()], (self.order == order).then_some(0)).on_change(cx.listener(
-            move |this, _: &usize, _, cx| {
+    fn option(
+        &self,
+        id: &'static str,
+        text: &'static str,
+        order: SortOrder,
+        cx: &mut Context<Self>,
+    ) -> RadioGroup {
+        RadioGroup::new(id, vec![text.into()], (self.order == order).then_some(0)).on_change(
+            cx.listener(move |this, _: &usize, _, cx| {
                 this.order = order;
                 cx.notify();
-            },
-        ))
+            }),
+        )
     }
 
     fn keys(&self, id: &'static str, order: SortOrder, cx: &mut Context<Self>) -> AnyElement {
@@ -859,40 +975,43 @@ impl Render for SortDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let by_value = (self.key > 0).then(|| self.keys[self.key].to_string());
         let summary = logic::sort_summary(&self.caption, self.order, by_value.as_deref());
-        dialog(&self.modal, field_title(t("Sort ({})", "Trier ({})"), &self.caption))
-            .width(500.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(
-                widgets::GroupBox::new(t("Sort options", "Options de tri"))
-                    .child(self.option(
-                        "manual",
-                        t(
-                            "Manual (you can drag items to rearrange them)",
-                            "Manuel (vous pouvez faire glisser des éléments pour les réorganiser)",
-                        ),
-                        SortOrder::Manual,
-                        cx,
-                    ))
-                    .child(self.option(
-                        "ascending",
-                        t("Ascending (A to Z) by:", "Croissant (de A à Z) par :"),
-                        SortOrder::Ascending,
-                        cx,
-                    ))
-                    .child(self.keys("ascending-key", SortOrder::Ascending, cx))
-                    .child(self.option(
-                        "descending",
-                        t("Descending (Z to A) by:", "Décroissant (de Z à A) par :"),
-                        SortOrder::Descending,
-                        cx,
-                    ))
-                    .child(self.keys("descending-key", SortOrder::Descending, cx)),
-            )
-            .child(
-                widgets::GroupBox::new(t("Summary", "Synthèse"))
-                    .child(div().min_h(px(34.)).line_height(px(17.)).child(summary)),
-            )
-            .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
+        dialog(
+            &self.modal,
+            field_title(t("Sort ({})", "Trier ({})"), &self.caption),
+        )
+        .width(500.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(
+            widgets::GroupBox::new(t("Sort options", "Options de tri"))
+                .child(self.option(
+                    "manual",
+                    t(
+                        "Manual (you can drag items to rearrange them)",
+                        "Manuel (vous pouvez faire glisser des éléments pour les réorganiser)",
+                    ),
+                    SortOrder::Manual,
+                    cx,
+                ))
+                .child(self.option(
+                    "ascending",
+                    t("Ascending (A to Z) by:", "Croissant (de A à Z) par :"),
+                    SortOrder::Ascending,
+                    cx,
+                ))
+                .child(self.keys("ascending-key", SortOrder::Ascending, cx))
+                .child(self.option(
+                    "descending",
+                    t("Descending (Z to A) by:", "Décroissant (de Z à A) par :"),
+                    SortOrder::Descending,
+                    cx,
+                ))
+                .child(self.keys("descending-key", SortOrder::Descending, cx)),
+        )
+        .child(
+            widgets::GroupBox::new(t("Summary", "Synthèse"))
+                .child(div().min_h(px(34.)).line_height(px(17.)).child(summary)),
+        )
+        .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
 
@@ -941,23 +1060,39 @@ struct LabelFilterDialog {
 impl LabelFilterDialog {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         let (id, field) = (self.pivot, self.field);
-        let filter = self.test.build(self.first.read(cx).text(), self.second.read(cx).text());
+        let filter = self
+            .test
+            .build(self.first.read(cx).text(), self.second.read(cx).text());
         self.modal.close(window, cx);
         self.modal.update_app(cx, |app, cx| {
-            update(app, id, t("Label Filter", "Filtre s'appliquant aux étiquettes"), window, cx, move |p| {
-                p.set_label_filter(field, Some(filter.clone()))
-            })
+            update(
+                app,
+                id,
+                t("Label Filter", "Filtre s'appliquant aux étiquettes"),
+                window,
+                cx,
+                move |p| p.set_label_filter(field, Some(filter.clone())),
+            )
         });
     }
 }
 
 impl Render for LabelFilterDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let tests: Vec<SharedString> = LabelTest::ALL.iter().map(|test| test.label().into()).collect();
+        let tests: Vec<SharedString> = LabelTest::ALL
+            .iter()
+            .map(|test| test.label().into())
+            .collect();
         let selected = LabelTest::ALL.iter().position(|test| *test == self.test);
         dialog(
             &self.modal,
-            field_title(t("Label Filter ({})", "Filtre s'appliquant aux étiquettes ({})"), &self.caption),
+            field_title(
+                t(
+                    "Label Filter ({})",
+                    "Filtre s'appliquant aux étiquettes ({})",
+                ),
+                &self.caption,
+            ),
         )
         .width(if self.test.two() { 560.0 } else { 470.0 })
         .on_ok(cx.listener(Self::ok))
@@ -980,7 +1115,8 @@ impl Render for LabelFilterDialog {
                 )
                 .child(TextField::new(&self.first))
                 .when(self.test.two(), |d| {
-                    d.child(label(t("and", "et"))).child(TextField::new(&self.second))
+                    d.child(label(t("and", "et")))
+                        .child(TextField::new(&self.second))
                 }),
         )
         .child(
@@ -1001,7 +1137,11 @@ impl Render for LabelFilterDialog {
 
 /// The value fields of a PivotTable, for the lists of the dialogs.
 fn value_names(pivot: &PivotTable) -> Vec<SharedString> {
-    pivot.data_fields.iter().map(|d| SharedString::from(d.name.clone())).collect()
+    pivot
+        .data_fields
+        .iter()
+        .map(|d| SharedString::from(d.name.clone()))
+        .collect()
 }
 
 /// The Value Filter dialog, opened on `test` or on the filter the field
@@ -1068,36 +1208,56 @@ impl ValueFilterDialog {
         let b = logic::parse_number(self.second.read(cx).text(), self.locale);
         let (Some(a), Some(b)) = (a, b.or(Some(0.0).filter(|_| !test.two()))) else {
             self.modal.update_app(cx, |app, cx| {
-                actions::warn(app, t("Value must be a number.", "La valeur doit être un nombre."), cx)
+                actions::warn(
+                    app,
+                    t("Value must be a number.", "La valeur doit être un nombre."),
+                    cx,
+                )
             });
             return;
         };
         self.modal.close(window, cx);
         self.modal.update_app(cx, |app, cx| {
-            update(app, id, t("Value Filter", "Filtre s'appliquant aux valeurs"), window, cx, move |p| {
-                p.set_value_filter(
-                    field,
-                    Some(FilterKind::Value {
-                        data_field: data,
-                        test: test.build(a, b),
-                    }),
-                )
-            })
+            update(
+                app,
+                id,
+                t("Value Filter", "Filtre s'appliquant aux valeurs"),
+                window,
+                cx,
+                move |p| {
+                    p.set_value_filter(
+                        field,
+                        Some(FilterKind::Value {
+                            data_field: data,
+                            test: test.build(a, b),
+                        }),
+                    )
+                },
+            )
         });
     }
 }
 
 impl Render for ValueFilterDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let tests: Vec<SharedString> = ValueTest::ALL.iter().map(|test| test.label().into()).collect();
+        let tests: Vec<SharedString> = ValueTest::ALL
+            .iter()
+            .map(|test| test.label().into())
+            .collect();
         let selected = ValueTest::ALL.iter().position(|test| *test == self.test);
         dialog(
             &self.modal,
-            field_title(t("Value Filter ({})", "Filtre s'appliquant aux valeurs ({})"), &self.caption),
+            field_title(
+                t("Value Filter ({})", "Filtre s'appliquant aux valeurs ({})"),
+                &self.caption,
+            ),
         )
         .width(if self.test.two() { 660.0 } else { 570.0 })
         .on_ok(cx.listener(Self::ok))
-        .child(label(t("Show items for which", "Afficher les éléments pour lesquels")))
+        .child(label(t(
+            "Show items for which",
+            "Afficher les éléments pour lesquels",
+        )))
         .child(
             div()
                 .flex()
@@ -1121,7 +1281,8 @@ impl Render for ValueFilterDialog {
                 )
                 .child(TextField::new(&self.first))
                 .when(self.test.two(), |d| {
-                    d.child(label(t("and", "et"))).child(TextField::new(&self.second))
+                    d.child(label(t("and", "et")))
+                        .child(TextField::new(&self.second))
                 }),
         )
         .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
@@ -1129,7 +1290,13 @@ impl Render for ValueFilterDialog {
 }
 
 /// The Top 10 Filter dialog.
-pub(super) fn open_top10(app: &mut ExcelApp, id: u32, field: usize, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_top10(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let Some((_, pivot)) = app.wb.pivot(id) else {
         return;
     };
@@ -1179,34 +1346,54 @@ impl Top10Dialog {
         let (id, field, data, top, by) = (self.pivot, self.field, self.data, self.top, self.by);
         let Some(count) = self.count.read(cx).number().filter(|n| *n > 0.0) else {
             self.modal.update_app(cx, |app, cx| {
-                actions::warn(app, t("Value must be a number.", "La valeur doit être un nombre."), cx)
+                actions::warn(
+                    app,
+                    t("Value must be a number.", "La valeur doit être un nombre."),
+                    cx,
+                )
             });
             return;
         };
         self.modal.close(window, cx);
         self.modal.update_app(cx, |app, cx| {
-            update(app, id, t("Top 10 Filter", "Filtre des 10 premiers"), window, cx, move |p| {
-                p.set_value_filter(
-                    field,
-                    Some(FilterKind::Top10 {
-                        data_field: data,
-                        top,
-                        count,
-                        by,
-                    }),
-                )
-            })
+            update(
+                app,
+                id,
+                t("Top 10 Filter", "Filtre des 10 premiers"),
+                window,
+                cx,
+                move |p| {
+                    p.set_value_filter(
+                        field,
+                        Some(FilterKind::Top10 {
+                            data_field: data,
+                            top,
+                            count,
+                            by,
+                        }),
+                    )
+                },
+            )
         });
     }
 }
 
 impl Render for Top10Dialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let ends: Vec<SharedString> = vec![crate::i18n::t_ctx("top10", "Top", "Haut").into(), crate::i18n::t_ctx("top10", "Bottom", "Bas").into()];
-        let kinds: Vec<SharedString> = TOP10_BY.iter().map(|by| logic::top10_by_label(*by).into()).collect();
+        let ends: Vec<SharedString> = vec![
+            crate::i18n::t_ctx("top10", "Top", "Haut").into(),
+            crate::i18n::t_ctx("top10", "Bottom", "Bas").into(),
+        ];
+        let kinds: Vec<SharedString> = TOP10_BY
+            .iter()
+            .map(|by| logic::top10_by_label(*by).into())
+            .collect();
         dialog(
             &self.modal,
-            field_title(t("Top 10 Filter ({})", "Filtre des 10 premiers ({})"), &self.caption),
+            field_title(
+                t("Top 10 Filter ({})", "Filtre des 10 premiers ({})"),
+                &self.caption,
+            ),
         )
         .width(560.0)
         .on_ok(cx.listener(Self::ok))
@@ -1276,7 +1463,9 @@ mod tests {
             sheet: wb.sheets[0].name.clone(),
             range: Rect::new(0, 0, 3, 2),
         };
-        let id = wb.pivot_create(source, PivotDestination::NewSheet { index: 1 }, false).unwrap();
+        let id = wb
+            .pivot_create(source, PivotDestination::NewSheet { index: 1 }, false)
+            .unwrap();
         let locale = wb.locale;
         wb.pivot_update(id, false, |p| {
             p.add_field(REGION, Area::Rows, None, locale);
@@ -1293,7 +1482,11 @@ mod tests {
     }
 
     fn labels(state: &FieldState) -> Vec<(String, bool)> {
-        state.checks.iter().map(|item| (item.label.to_string(), item.checked)).collect()
+        state
+            .checks
+            .iter()
+            .map(|item| (item.label.to_string(), item.checked))
+            .collect()
     }
 
     #[test]
@@ -1306,14 +1499,19 @@ mod tests {
         // The items come in the order of the report, all ticked.
         assert_eq!(
             labels(&region),
-            [("East".to_string(), true), ("North".to_string(), true), ("West".to_string(), true)]
+            [
+                ("East".to_string(), true),
+                ("North".to_string(), true),
+                ("West".to_string(), true)
+            ]
         );
         assert_eq!((region.label_test, region.value_filter), (None, None));
 
         // Unticking "North" and pressing OK hides it.
         let checked = [true, false, true];
         let visible = logic::items_to_show(&region.items, &checked, None);
-        wb.pivot_update(id, false, |p| p.set_visible_items(REGION, &visible)).unwrap();
+        wb.pivot_update(id, false, |p| p.set_visible_items(REGION, &visible))
+            .unwrap();
         let region = state(&wb, id, REGION);
         assert!(region.filtered);
         assert_eq!(labels(&region)[1], ("North".to_string(), false));
@@ -1324,7 +1522,10 @@ mod tests {
             p.set_label_filter(REGION, Some(LabelFilter::BeginsWith("E".into())));
         })
         .unwrap();
-        assert_eq!(state(&wb, id, REGION).label_test, Some(LabelTest::BeginsWith));
+        assert_eq!(
+            state(&wb, id, REGION).label_test,
+            Some(LabelTest::BeginsWith)
+        );
         wb.pivot_update(id, false, |p| {
             p.set_value_filter(
                 REGION,
@@ -1335,7 +1536,10 @@ mod tests {
             )
         })
         .unwrap();
-        assert_eq!(state(&wb, id, REGION).value_filter, Some(Some(ValueTest::GreaterThan)));
+        assert_eq!(
+            state(&wb, id, REGION).value_filter,
+            Some(Some(ValueTest::GreaterThan))
+        );
         wb.pivot_update(id, false, |p| {
             p.set_value_filter(
                 REGION,
@@ -1360,16 +1564,21 @@ mod tests {
         // "(All)": one item is picked at a time until several are ticked.
         assert!(product.page && !product.multi && !product.filtered);
         assert_eq!(product.page_item, None);
-        assert_eq!(labels(&product), [("Apples".to_string(), true), ("Pears".to_string(), true)]);
+        assert_eq!(
+            labels(&product),
+            [("Apples".to_string(), true), ("Pears".to_string(), true)]
+        );
 
         let pears = product.items[1];
-        wb.pivot_update(id, false, |p| p.set_page_item(PRODUCT, Some(pears))).unwrap();
+        wb.pivot_update(id, false, |p| p.set_page_item(PRODUCT, Some(pears)))
+            .unwrap();
         let product = state(&wb, id, PRODUCT);
         assert_eq!(product.page_item, Some(pears));
         assert!(product.filtered && !product.multi);
 
         // Several items ticked, one of them not: "(Multiple Items)".
-        wb.pivot_update(id, false, |p| p.set_item_hidden(PRODUCT, pears, true)).unwrap();
+        wb.pivot_update(id, false, |p| p.set_item_hidden(PRODUCT, pears, true))
+            .unwrap();
         let product = state(&wb, id, PRODUCT);
         assert!(product.multi && product.filtered);
         assert_eq!(product.page_item, None);

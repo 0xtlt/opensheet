@@ -163,7 +163,9 @@ fn decode_png(data: &[u8]) -> Option<Image> {
     // Bytes between a pixel and the one before it, for the filters.
     let step = bits_per_pixel.div_ceil(8);
     let mut raw = Vec::with_capacity((stride + 1) * height as usize);
-    ZlibDecoder::new(&compressed[..]).read_to_end(&mut raw).ok()?;
+    ZlibDecoder::new(&compressed[..])
+        .read_to_end(&mut raw)
+        .ok()?;
     if raw.len() < (stride + 1) * height as usize {
         return None;
     }
@@ -221,7 +223,8 @@ fn decode_png(data: &[u8]) -> Option<Image> {
         }
     };
     let has_alpha = matches!(color_type, 4 | 6) || !transparency.is_empty();
-    let mut out: Vec<u8> = Vec::with_capacity(width as usize * height as usize * if has_alpha { 4 } else { 3 });
+    let mut out: Vec<u8> =
+        Vec::with_capacity(width as usize * height as usize * if has_alpha { 4 } else { 3 });
     for y in 0..height as usize {
         let row = &rows[y * stride..(y + 1) * stride];
         for x in 0..width as usize {
@@ -245,7 +248,12 @@ fn decode_png(data: &[u8]) -> Option<Image> {
                 3 => {
                     let i = s(0) as usize;
                     let rgb = palette.get(i * 3..i * 3 + 3)?;
-                    (rgb[0], rgb[1], rgb[2], transparency.get(i).copied().unwrap_or(255))
+                    (
+                        rgb[0],
+                        rgb[1],
+                        rgb[2],
+                        transparency.get(i).copied().unwrap_or(255),
+                    )
                 }
                 4 => {
                     let v = s(0);
@@ -262,7 +270,11 @@ fn decode_png(data: &[u8]) -> Option<Image> {
     Some(Image {
         width,
         height,
-        pixels: if has_alpha { Pixels::Rgba(out) } else { Pixels::Rgb(out) },
+        pixels: if has_alpha {
+            Pixels::Rgba(out)
+        } else {
+            Pixels::Rgb(out)
+        },
     })
 }
 
@@ -308,10 +320,20 @@ pub(crate) mod tests {
     #[test]
     fn png_colour_types() {
         // RGB, 2 × 2, the second row filtered "up".
-        let file = png(2, 2, 8, 2, &[0, 255, 0, 0, 0, 255, 0, 2, 0, 0, 10, 0, 1, 0], &[]);
+        let file = png(
+            2,
+            2,
+            8,
+            2,
+            &[0, 255, 0, 0, 0, 255, 0, 2, 0, 0, 10, 0, 1, 0],
+            &[],
+        );
         let img = Image::from_file_bytes(&file).unwrap();
         assert_eq!((img.width, img.height), (2, 2));
-        assert_eq!(img.pixels, Pixels::Rgb(vec![255, 0, 0, 0, 255, 0, 255, 0, 10, 0, 0, 0]));
+        assert_eq!(
+            img.pixels,
+            Pixels::Rgb(vec![255, 0, 0, 0, 255, 0, 255, 0, 10, 0, 0, 0])
+        );
         // RGBA with the "sub" filter.
         let file = png(2, 1, 8, 6, &[1, 10, 20, 30, 128, 1, 1, 1, 1], &[]);
         assert_eq!(

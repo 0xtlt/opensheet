@@ -33,12 +33,18 @@ fn error_text(error: AdvancedFilterError) -> &'static str {
             "This command requires at least two rows of source data. You cannot use the command on a selection in only one row. Try the following:\n\n• If you're using an advanced filter, select a range of cells that contains at least two rows of data. Then click the Advanced Filter command again.\n• If you're creating a PivotTable report or PivotChart report, type a cell reference or select a range that includes at least two rows of data.",
             "Cette commande requiert au moins deux lignes de données sources. Vous ne pouvez pas l'utiliser sur une seule ligne de données. Essayez la méthode suivante :\n\n• Si vous utilisez un filtre avancé, sélectionnez une plage de cellules qui contient au moins deux lignes de données. Puis cliquez à nouveau sur la commande Filtre élaboré.\n• Si vous créez un rapport de tableau croisé dynamique ou de graphique croisé dynamique, tapez une référence de cellule ou sélectionnez une plage de cellule contenant au moins deux lignes de données.",
         ),
-        AdvancedFilterError::BadCriteria => t("Criteria range is not valid.", "Zone de critères non valide."),
+        AdvancedFilterError::BadCriteria => t(
+            "Criteria range is not valid.",
+            "Zone de critères non valide.",
+        ),
         AdvancedFilterError::BadExtract => t(
             "The extract range has a missing or invalid field name.",
             "Le nom de champ est incorrect ou manquant dans la zone d’extraction.",
         ),
-        AdvancedFilterError::BadDestination => t("Destination reference is not valid.", "Référence de destination non valide."),
+        AdvancedFilterError::BadDestination => t(
+            "Destination reference is not valid.",
+            "Référence de destination non valide.",
+        ),
     }
 }
 
@@ -47,7 +53,11 @@ fn error_text(error: AdvancedFilterError) -> &'static str {
 pub(super) fn apply(app: &mut ExcelApp, request: &Request, cx: &mut Cx) -> bool {
     let sheet = app.sheet;
     let Some(list) = typed_range(app, &request.list) else {
-        warn(app, t("Reference isn't valid.", "La référence n’est pas valide."), cx);
+        warn(
+            app,
+            t("Reference isn't valid.", "La référence n’est pas valide."),
+            cx,
+        );
         return false;
     };
     let criteria = match request.criteria.trim() {
@@ -79,26 +89,35 @@ pub(super) fn apply(app: &mut ExcelApp, request: &Request, cx: &mut Cx) -> bool 
                 return false;
             }
         };
-        app.wb.advanced_filter_extent(list, criteria, request.unique, sheet, dest).and_then(|extent| {
-            if !app.may(Intent::EditCells(extent), cx) {
-                return Ok(None);
-            }
-            let written = app.wb.advanced_filter_copy(list, criteria, request.unique, sheet, dest)?;
-            app.commit_cells(label_text(), &[written], ChangeCause::Fill, cx);
-            Ok(Some(()))
-        })
+        app.wb
+            .advanced_filter_extent(list, criteria, request.unique, sheet, dest)
+            .and_then(|extent| {
+                if !app.may(Intent::EditCells(extent), cx) {
+                    return Ok(None);
+                }
+                let written =
+                    app.wb
+                        .advanced_filter_copy(list, criteria, request.unique, sheet, dest)?;
+                app.commit_cells(label_text(), &[written], ChangeCause::Fill, cx);
+                Ok(Some(()))
+            })
     } else if list.0 != sheet {
         // A list is filtered in place on the sheet it is on.
         Err(AdvancedFilterError::NoList)
     } else if !app.may(Intent::ToggleAutoFilter, cx) {
         Ok(None)
     } else {
-        app.wb.advanced_filter_in_place(sheet, list.1, criteria, request.unique).map(|found| {
-            let total = app.wb.sheets[sheet].advanced_filter.as_ref().map_or(found, |filter| filter.range.rows() as usize - 1);
-            app.commit(label_text(), cx);
-            app.set_status(records_found(found, total), cx);
-            Some(())
-        })
+        app.wb
+            .advanced_filter_in_place(sheet, list.1, criteria, request.unique)
+            .map(|found| {
+                let total = app.wb.sheets[sheet]
+                    .advanced_filter
+                    .as_ref()
+                    .map_or(found, |filter| filter.range.rows() as usize - 1);
+                app.commit(label_text(), cx);
+                app.set_status(records_found(found, total), cx);
+                Some(())
+            })
     };
     match outcome {
         Ok(done) => done.is_some(),
@@ -117,7 +136,11 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Enti
     let sheet = &app.wb.sheets[app.sheet];
     let style = RefStyle::absolute();
     let selection = app.sel().current();
-    let list = if selection.is_single() { app.wb.current_region(app.sheet, row, col) } else { selection };
+    let list = if selection.is_single() {
+        app.wb.current_region(app.sheet, row, col)
+    } else {
+        selection
+    };
     let list = style.format(list, &sheet.name);
     let criteria = sheet
         .advanced_filter
@@ -150,7 +173,11 @@ impl AdvancedDialog {
     pub(super) fn set(&mut self, request: &Request, cx: &mut Context<Self>) {
         self.copy = request.copy;
         self.unique = request.unique;
-        for (field, text) in [(&self.list, &request.list), (&self.criteria, &request.criteria), (&self.copy_to, &request.copy_to)] {
+        for (field, text) in [
+            (&self.list, &request.list),
+            (&self.criteria, &request.criteria),
+            (&self.copy_to, &request.copy_to),
+        ] {
             field.update(cx, |field, cx| field.set_text(text.clone(), cx));
         }
         cx.notify();
@@ -170,7 +197,11 @@ impl AdvancedDialog {
             copy_to: self.copy_to.read(cx).text().to_string(),
             unique: self.unique,
         };
-        if self.modal.update_app(cx, |app, cx| apply(app, &request, cx)) == Some(true) {
+        if self
+            .modal
+            .update_app(cx, |app, cx| apply(app, &request, cx))
+            == Some(true)
+        {
             self.modal.close(window, cx);
         }
     }
@@ -207,16 +238,36 @@ impl Render for AdvancedDialog {
                     })),
                 ),
             )
-            .child(field(t("List range:", "Plage :"), &self.list, &self.modal, false))
-            .child(field(t("Criteria range:", "Zone de critères :"), &self.criteria, &self.modal, false))
+            .child(field(
+                t("List range:", "Plage :"),
+                &self.list,
+                &self.modal,
+                false,
+            ))
+            .child(field(
+                t("Criteria range:", "Zone de critères :"),
+                &self.criteria,
+                &self.modal,
+                false,
+            ))
             // "Copy to" only counts when the copy is asked for.
-            .child(field(t("Copy to:", "Copier dans :"), &self.copy_to, &self.modal, !self.copy))
-            .child(Checkbox::new("unique", t("Unique records only", "Extraction sans doublon"), self.unique).on_change(
-                cx.listener(|this, on: &bool, _, cx| {
+            .child(field(
+                t("Copy to:", "Copier dans :"),
+                &self.copy_to,
+                &self.modal,
+                !self.copy,
+            ))
+            .child(
+                Checkbox::new(
+                    "unique",
+                    t("Unique records only", "Extraction sans doublon"),
+                    self.unique,
+                )
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
                     this.unique = *on;
                     cx.notify();
-                }),
-            ))
+                })),
+            )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }

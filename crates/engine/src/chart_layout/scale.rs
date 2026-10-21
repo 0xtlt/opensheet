@@ -37,7 +37,11 @@ impl Fit {
     /// The fit of an axis `length` pixels long whose labels need `spacing`
     /// pixels each. Excel never shows more than about ten intervals.
     pub fn along(length: f32, spacing: f32) -> Fit {
-        let room = if spacing > 0.0 && length.is_finite() { (length / spacing).floor() } else { 1.0 };
+        let room = if spacing > 0.0 && length.is_finite() {
+            (length / spacing).floor()
+        } else {
+            1.0
+        };
         Fit {
             percent: false,
             room: (room.max(1.0) as usize).min(10),
@@ -90,10 +94,18 @@ fn targets(lo: f64, hi: f64, snug: bool) -> (f64, f64) {
     let margin = if snug { 0.0 } else { (hi - lo) * 0.05 };
     if lo >= 0.0 {
         // From zero, unless the values are packed far away from it.
-        let bottom = if (hi - lo) / hi > 1.0 / 6.0 { 0.0 } else { (lo - (hi - lo) / 2.0).max(0.0) };
+        let bottom = if (hi - lo) / hi > 1.0 / 6.0 {
+            0.0
+        } else {
+            (lo - (hi - lo) / 2.0).max(0.0)
+        };
         (bottom, hi + margin)
     } else if hi <= 0.0 {
-        let top = if (hi - lo) / -lo > 1.0 / 6.0 { 0.0 } else { (hi + (hi - lo) / 2.0).min(0.0) };
+        let top = if (hi - lo) / -lo > 1.0 / 6.0 {
+            0.0
+        } else {
+            (hi + (hi - lo) / 2.0).min(0.0)
+        };
         (lo - margin, top)
     } else {
         (lo - margin, hi + margin)
@@ -103,7 +115,11 @@ fn targets(lo: f64, hi: f64, snug: bool) -> (f64, f64) {
 impl Scale {
     /// The scale of `axis` for data between `lo` and `hi`.
     pub fn new(axis: &Axis, lo: f64, hi: f64, fit: Fit) -> Scale {
-        let (lo, hi) = if lo.is_finite() && hi.is_finite() && lo <= hi { (lo, hi) } else { (0.0, 1.0) };
+        let (lo, hi) = if lo.is_finite() && hi.is_finite() && lo <= hi {
+            (lo, hi)
+        } else {
+            (0.0, 1.0)
+        };
         if let Some(base) = axis.log_base.filter(|b| b.is_finite() && *b >= 2.0) {
             return Scale::logarithmic(axis, lo, hi, base);
         }
@@ -115,7 +131,10 @@ impl Scale {
             let mut step = nice_at_most((top - bottom) / room);
             loop {
                 let (min, max) = if snap {
-                    ((bottom / step + 1e-9).floor() * step, (top / step - 1e-9).ceil() * step)
+                    (
+                        (bottom / step + 1e-9).floor() * step,
+                        (top / step - 1e-9).ceil() * step,
+                    )
                 } else {
                     (bottom, top)
                 };
@@ -126,11 +145,18 @@ impl Scale {
             }
         };
         let (min, max, step) = if fit.percent {
-            unit(if lo < 0.0 { -1.0 } else { 0.0 }, if hi > 0.0 { 1.0 } else { 0.0 }, false)
+            unit(
+                if lo < 0.0 { -1.0 } else { 0.0 },
+                if hi > 0.0 { 1.0 } else { 0.0 },
+                false,
+            )
         } else {
             // The automatic end is chosen for the data and the end that was set.
-            let (bottom, top) =
-                targets(fixed(axis.min).map_or(lo, |m| m.min(hi)), fixed(axis.max).map_or(hi, |m| m.max(lo)), fit.snug);
+            let (bottom, top) = targets(
+                fixed(axis.min).map_or(lo, |m| m.min(hi)),
+                fixed(axis.max).map_or(hi, |m| m.max(lo)),
+                fit.snug,
+            );
             unit(bottom, top, true)
         };
         let mut min = fixed(axis.min).unwrap_or(min);
@@ -143,16 +169,32 @@ impl Scale {
                 _ => max = min + 1.0,
             }
         }
-        let auto_step = if axis.min.is_none() && axis.max.is_none() { step } else { unit(min, max, false).2 };
-        let major = fixed(axis.major_unit).filter(|u| *u > 0.0).unwrap_or(auto_step);
+        let auto_step = if axis.min.is_none() && axis.max.is_none() {
+            step
+        } else {
+            unit(min, max, false).2
+        };
+        let major = fixed(axis.major_unit)
+            .filter(|u| *u > 0.0)
+            .unwrap_or(auto_step);
         // Never more gridlines than anyone could count.
-        let major = if (max - min) / major > 200.0 { (max - min) / 200.0 } else { major };
-        let minor = fixed(axis.minor_unit).filter(|u| *u > 0.0).unwrap_or(major / 5.0);
+        let major = if (max - min) / major > 200.0 {
+            (max - min) / 200.0
+        } else {
+            major
+        };
+        let minor = fixed(axis.minor_unit)
+            .filter(|u| *u > 0.0)
+            .unwrap_or(major / 5.0);
         Scale {
             min,
             max,
             major,
-            minor: if (max - min) / minor > 1000.0 { major } else { minor },
+            minor: if (max - min) / minor > 1000.0 {
+                major
+            } else {
+                minor
+            },
             log_base: None,
             reversed: axis.reversed,
         }
@@ -163,8 +205,10 @@ impl Scale {
         // Only what is above zero can be shown.
         let hi = if hi > 0.0 { hi } else { base };
         let lo = if lo > 0.0 { lo.min(hi) } else { hi.min(1.0) };
-        let min = positive(axis.min).unwrap_or_else(|| base.powf((lo.ln() / base.ln() + 1e-9).floor()));
-        let mut max = positive(axis.max).unwrap_or_else(|| base.powf((hi.ln() / base.ln() - 1e-9).ceil()));
+        let min =
+            positive(axis.min).unwrap_or_else(|| base.powf((lo.ln() / base.ln() + 1e-9).floor()));
+        let mut max =
+            positive(axis.max).unwrap_or_else(|| base.powf((hi.ln() / base.ln() - 1e-9).ceil()));
         if max <= min {
             max = min * base;
         }
@@ -226,7 +270,11 @@ impl Scale {
             let v = self.min + self.major * i as f64;
             // Remove float noise (0.30000000000000004).
             let rounded = (v / self.major).round() * self.major;
-            out.push(if (rounded - v).abs() < self.major * 1e-9 { rounded } else { v });
+            out.push(if (rounded - v).abs() < self.major * 1e-9 {
+                rounded
+            } else {
+                v
+            });
         }
         out
     }
@@ -331,7 +379,10 @@ mod tests {
         assert_eq!(s.minor_ticks().len(), 20);
         assert_eq!(s.fraction(25.0), 0.5);
         // Bubbles bring their own room: the scale ends on the first unit.
-        let snug = Fit { snug: true, ..fit(10) };
+        let snug = Fit {
+            snug: true,
+            ..fit(10)
+        };
         let s = Scale::new(&Axis::new(), 0.56, 15.94, snug);
         assert_eq!((s.min, s.max, s.major), (0.0, 16.0, 2.0));
     }
@@ -355,23 +406,68 @@ mod tests {
         assert_eq!(s.crossing(AxisCrossing::At(25.0)), 25.0);
 
         // One end set: the other stays automatic, the unit fits what is left.
-        let s = Scale::new(&Axis { min: Some(20.0), ..Axis::new() }, 5.0, 45.0, fit(5));
+        let s = Scale::new(
+            &Axis {
+                min: Some(20.0),
+                ..Axis::new()
+            },
+            5.0,
+            45.0,
+            fit(5),
+        );
         assert_eq!((s.min, s.max, s.major), (20.0, 50.0, 10.0));
-        let s = Scale::new(&Axis { min: Some(1.0), max: Some(24.0), ..Axis::new() }, 5.0, 21.0, fit(3));
+        let s = Scale::new(
+            &Axis {
+                min: Some(1.0),
+                max: Some(24.0),
+                ..Axis::new()
+            },
+            5.0,
+            21.0,
+            fit(3),
+        );
         assert_eq!((s.min, s.max, s.major), (1.0, 24.0, 10.0));
         // A unit that was set stays, whatever the room.
-        let s = Scale::new(&Axis { major_unit: Some(5.0), ..Axis::new() }, 0.0, 21.0, fit(2));
+        let s = Scale::new(
+            &Axis {
+                major_unit: Some(5.0),
+                ..Axis::new()
+            },
+            0.0,
+            21.0,
+            fit(2),
+        );
         assert_eq!(s.major, 5.0);
         // Bounds the wrong way round still make a scale.
-        let s = Scale::new(&Axis { min: Some(60.0), ..Axis::new() }, 5.0, 45.0, fit(5));
+        let s = Scale::new(
+            &Axis {
+                min: Some(60.0),
+                ..Axis::new()
+            },
+            5.0,
+            45.0,
+            fit(5),
+        );
         assert!(s.max > s.min);
-        let s = Scale::new(&Axis { min: Some(3.0), max: Some(3.0), ..Axis::new() }, 0.0, 1.0, fit(5));
+        let s = Scale::new(
+            &Axis {
+                min: Some(3.0),
+                max: Some(3.0),
+                ..Axis::new()
+            },
+            0.0,
+            1.0,
+            fit(5),
+        );
         assert!(s.max > s.min);
     }
 
     #[test]
     fn percent_and_logarithmic() {
-        let percent = |room: usize| Fit { percent: true, ..fit(room) };
+        let percent = |room: usize| Fit {
+            percent: true,
+            ..fit(room)
+        };
         let s = Scale::new(&Axis::new(), 0.0, 1.0, percent(10));
         assert_eq!((s.min, s.max, s.major), (0.0, 1.0, 0.1));
         assert_eq!(s.major_ticks().len(), 11);
@@ -380,7 +476,10 @@ mod tests {
         let s = Scale::new(&Axis::new(), -0.4, 0.6, percent(10));
         assert_eq!((s.min, s.max, s.major), (-1.0, 1.0, 0.2));
 
-        let log = Axis { log_base: Some(10.0), ..Axis::new() };
+        let log = Axis {
+            log_base: Some(10.0),
+            ..Axis::new()
+        };
         let s = Scale::new(&log, 3.0, 4200.0, fit(5));
         assert_eq!((s.min, s.max), (1.0, 10000.0));
         assert_eq!(s.major_ticks(), vec![1.0, 10.0, 100.0, 1000.0, 10000.0]);
@@ -394,7 +493,15 @@ mod tests {
         // Nothing positive to show.
         let s = Scale::new(&log, -5.0, 0.0, fit(5));
         assert!(s.min > 0.0 && s.max > s.min);
-        let s = Scale::new(&Axis { log_base: Some(2.0), ..Axis::new() }, 1.0, 30.0, fit(5));
+        let s = Scale::new(
+            &Axis {
+                log_base: Some(2.0),
+                ..Axis::new()
+            },
+            1.0,
+            30.0,
+            fit(5),
+        );
         assert_eq!(s.major_ticks(), vec![1.0, 2.0, 4.0, 8.0, 16.0, 32.0]);
     }
 }

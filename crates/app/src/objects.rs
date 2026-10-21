@@ -16,7 +16,8 @@
 
 use crate::app::{Drag, ExcelApp, Hit};
 use crate::features::{
-    self, Intent, ObjectId, ObjectInfo, ObjectVerb, PaintLayer, Painter, Placement, ZMove, Zone, ZoneEvent, ZoneResponse,
+    self, Intent, ObjectId, ObjectInfo, ObjectVerb, PaintLayer, Painter, Placement, ZMove, Zone,
+    ZoneEvent, ZoneResponse,
 };
 use crate::grid::GridLayout;
 use crate::i18n::t;
@@ -42,7 +43,16 @@ pub fn object_rect(layout: &GridLayout, place: &Placement) -> (f32, f32, f32, f3
 pub fn handle_points(rect: (f32, f32, f32, f32)) -> [(f32, f32); 8] {
     let (x0, y0, x1, y1) = rect;
     let (mx, my) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
-    [(x0, y0), (mx, y0), (x1, y0), (x1, my), (x1, y1), (mx, y1), (x0, y1), (x0, my)]
+    [
+        (x0, y0),
+        (mx, y0),
+        (x1, y0),
+        (x1, my),
+        (x1, y1),
+        (mx, y1),
+        (x0, y1),
+        (x0, my),
+    ]
 }
 
 /// The frame and the handles of the selected object.
@@ -138,8 +148,14 @@ pub fn aligned(frames: &[Box4], how: Align) -> Vec<(f64, f64)> {
     }
     let left = frames.iter().map(|f| f.0).fold(f64::INFINITY, f64::min);
     let top = frames.iter().map(|f| f.1).fold(f64::INFINITY, f64::min);
-    let right = frames.iter().map(|f| f.0 + f.2).fold(f64::NEG_INFINITY, f64::max);
-    let bottom = frames.iter().map(|f| f.1 + f.3).fold(f64::NEG_INFINITY, f64::max);
+    let right = frames
+        .iter()
+        .map(|f| f.0 + f.2)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let bottom = frames
+        .iter()
+        .map(|f| f.1 + f.3)
+        .fold(f64::NEG_INFINITY, f64::max);
     // The positions along one axis that put equal gaps between objects
     // given as (start, length).
     let distribute = |spans: Vec<(f64, f64)>| -> Vec<f64> {
@@ -150,7 +166,10 @@ pub fn aligned(frames: &[Box4], how: Align) -> Vec<(f64, f64)> {
             return out;
         }
         let start = spans[order[0]].0;
-        let end = spans.iter().map(|s| s.0 + s.1).fold(f64::NEG_INFINITY, f64::max);
+        let end = spans
+            .iter()
+            .map(|s| s.0 + s.1)
+            .fold(f64::NEG_INFINITY, f64::max);
         let taken: f64 = spans.iter().map(|s| s.1).sum();
         let gap = (end - start - taken) / (spans.len() - 1) as f64;
         let mut at = start;
@@ -162,10 +181,16 @@ pub fn aligned(frames: &[Box4], how: Align) -> Vec<(f64, f64)> {
     };
     match how {
         Align::Left => frames.iter().map(|f| (left, f.1)).collect(),
-        Align::Center => frames.iter().map(|f| ((left + right - f.2) / 2.0, f.1)).collect(),
+        Align::Center => frames
+            .iter()
+            .map(|f| ((left + right - f.2) / 2.0, f.1))
+            .collect(),
         Align::Right => frames.iter().map(|f| (right - f.2, f.1)).collect(),
         Align::Top => frames.iter().map(|f| (f.0, top)).collect(),
-        Align::Middle => frames.iter().map(|f| (f.0, (top + bottom - f.3) / 2.0)).collect(),
+        Align::Middle => frames
+            .iter()
+            .map(|f| (f.0, (top + bottom - f.3) / 2.0))
+            .collect(),
         Align::Bottom => frames.iter().map(|f| (f.0, bottom - f.3)).collect(),
         Align::DistributeHorizontally => {
             let xs = distribute(frames.iter().map(|f| (f.0, f.2)).collect());
@@ -256,7 +281,12 @@ pub(crate) fn paint_pointer(p: &mut Painter) {
 
 /// A press on the cells while "Select Objects" is on starts a rectangle.
 /// `None` when the zone is not the pointer's.
-pub(crate) fn pointer_mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, cx: &mut Context<ExcelApp>) -> Option<ZoneResponse> {
+pub(crate) fn pointer_mouse_down(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    cx: &mut Context<ExcelApp>,
+) -> Option<ZoneResponse> {
     zone.payload::<PointerZone>()?;
     if ev.button != MouseButton::Left {
         return Some(ZoneResponse::Handled);
@@ -268,7 +298,12 @@ pub(crate) fn pointer_mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent
     Some(ZoneResponse::Capture)
 }
 
-pub(crate) fn pointer_drag(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, cx: &mut Context<ExcelApp>) -> bool {
+pub(crate) fn pointer_drag(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    cx: &mut Context<ExcelApp>,
+) -> bool {
     if zone.payload::<PointerZone>().is_none() {
         return false;
     }
@@ -281,7 +316,12 @@ pub(crate) fn pointer_drag(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, cx: 
 
 /// The release selects the objects that lie wholly in the rectangle,
 /// with those that were selected when Shift or ⌘ is held.
-pub(crate) fn pointer_up(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, cx: &mut Context<ExcelApp>) -> bool {
+pub(crate) fn pointer_up(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    cx: &mut Context<ExcelApp>,
+) -> bool {
     if zone.payload::<PointerZone>().is_none() {
         return false;
     }
@@ -315,12 +355,17 @@ impl ExcelApp {
     /// selected last.
     pub fn selected_object(&self) -> Option<(ObjectId, ObjectInfo)> {
         let sel = self.object_sel?;
-        features::objects(self, self.sheet).into_iter().find(|(id, _)| *id == sel)
+        features::objects(self, self.sheet)
+            .into_iter()
+            .find(|(id, _)| *id == sel)
     }
 
     /// Every selected object, the one selected last first.
     pub fn selected_objects(&self) -> Vec<ObjectId> {
-        self.object_sel.into_iter().chain(self.object_more.iter().copied()).collect()
+        self.object_sel
+            .into_iter()
+            .chain(self.object_more.iter().copied())
+            .collect()
     }
 
     /// Every selected object with where it is, bottom-most first.
@@ -353,7 +398,12 @@ impl ExcelApp {
         self.set_object_selection(ids.first().copied(), rest, cx);
     }
 
-    fn set_object_selection(&mut self, lead: Option<ObjectId>, more: Vec<ObjectId>, cx: &mut Context<Self>) {
+    fn set_object_selection(
+        &mut self,
+        lead: Option<ObjectId>,
+        more: Vec<ObjectId>,
+        cx: &mut Context<Self>,
+    ) {
         if self.object_sel == lead && self.object_more == more {
             return;
         }
@@ -377,8 +427,15 @@ impl ExcelApp {
         if selected.is_empty() {
             return;
         }
-        let there: Vec<ObjectId> = features::objects(self, self.sheet).into_iter().map(|(id, _)| id).collect();
-        let kept: Vec<ObjectId> = selected.iter().copied().filter(|id| there.contains(id)).collect();
+        let there: Vec<ObjectId> = features::objects(self, self.sheet)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        let kept: Vec<ObjectId> = selected
+            .iter()
+            .copied()
+            .filter(|id| there.contains(id))
+            .collect();
         if kept.len() != selected.len() {
             self.select_objects(&kept, cx);
         }
@@ -392,11 +449,17 @@ impl ExcelApp {
     /// (`extend`) joins or leaves it. A click on one of several selected
     /// objects keeps them all, so that they can be dragged together.
     /// Returns false when the object is not selected afterwards.
-    pub(crate) fn click_object(&mut self, id: ObjectId, extend: bool, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn click_object(
+        &mut self,
+        id: ObjectId,
+        extend: bool,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let selected = self.selected_objects();
         if extend {
             if selected.contains(&id) {
-                let rest: Vec<ObjectId> = selected.into_iter().filter(|other| *other != id).collect();
+                let rest: Vec<ObjectId> =
+                    selected.into_iter().filter(|other| *other != id).collect();
                 self.select_objects(&rest, cx);
                 return false;
             }
@@ -417,7 +480,10 @@ impl ExcelApp {
     /// Select every object of the sheet (⌘A with an object selected, Go
     /// To Special ▸ Objects). False when the sheet has none.
     pub fn select_all_objects(&mut self, cx: &mut Context<Self>) -> bool {
-        let mut ids: Vec<ObjectId> = features::objects(self, self.sheet).into_iter().map(|(id, _)| id).collect();
+        let mut ids: Vec<ObjectId> = features::objects(self, self.sheet)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
         // The one that leads stays; else the topmost does.
         ids.reverse();
         if let Some(lead) = self.object_sel.filter(|lead| ids.contains(lead)) {
@@ -507,15 +573,29 @@ impl ExcelApp {
         let (x0, y0) = sheet.corner_point(((row, col), (0.0, 0.0)));
         let (x1, y1) = sheet.corner_point(((row + 1, col + 1), (0.0, 0.0)));
         let on_grid = (
-            if (dx as f64) < (x1 - x0) / 2.0 { x0 } else { x1 },
-            if (dy as f64) < (y1 - y0) / 2.0 { y0 } else { y1 },
+            if (dx as f64) < (x1 - x0) / 2.0 {
+                x0
+            } else {
+                x1
+            },
+            if (dy as f64) < (y1 - y0) / 2.0 {
+                y0
+            } else {
+                y1
+            },
         );
         if !self.snap_to_shape() {
             return on_grid;
         }
         let (across, down) = self.shape_lines();
         let nearest = |to: f64, grid: f64, lines: &[f64]| {
-            lines.iter().copied().fold(grid, |best, line| if (line - to).abs() < (best - to).abs() { line } else { best })
+            lines.iter().copied().fold(grid, |best, line| {
+                if (line - to).abs() < (best - to).abs() {
+                    line
+                } else {
+                    best
+                }
+            })
         };
         (nearest(x, on_grid.0, &across), nearest(y, on_grid.1, &down))
     }
@@ -580,8 +660,18 @@ impl ExcelApp {
     /// While a handle of the object `lead` is dragged: give the other
     /// selected objects the same proportions (`sx`, `sy`: how many times
     /// wider and higher `lead` became since the drag began).
-    pub(crate) fn scale_other_objects(&mut self, layout: &GridLayout, lead: ObjectId, handle: u8, sx: f64, sy: f64) {
-        let origins = self.ext::<ObjectsUi>().map(|ui| ui.origins.clone()).unwrap_or_default();
+    pub(crate) fn scale_other_objects(
+        &mut self,
+        layout: &GridLayout,
+        lead: ObjectId,
+        handle: u8,
+        sx: f64,
+        sy: f64,
+    ) {
+        let origins = self
+            .ext::<ObjectsUi>()
+            .map(|ui| ui.origins.clone())
+            .unwrap_or_default();
         let sizes: Vec<(ObjectId, (f32, f32))> = self
             .selected_object_infos()
             .into_iter()
@@ -601,7 +691,13 @@ impl ExcelApp {
 
     /// Start moving (or resizing, by a handle) the object under the
     /// pointer, and the other selected objects with it.
-    pub(crate) fn begin_object_drag(&mut self, layout: &GridLayout, id: ObjectId, handle: Option<u8>, start: (f32, f32)) {
+    pub(crate) fn begin_object_drag(
+        &mut self,
+        layout: &GridLayout,
+        id: ObjectId,
+        handle: Option<u8>,
+        start: (f32, f32),
+    ) {
         let Some((_, object)) = features::objects(self, self.sheet)
             .into_iter()
             .find(|(other, _)| *other == id && self.is_object_selected(id))
@@ -610,7 +706,11 @@ impl ExcelApp {
         };
         // An object the sheet's protection holds stays where it is, and
         // so do the others.
-        if self.selected_objects().iter().any(|other| features::guard(self, &Intent::EditObject(Some(*other))).is_some()) {
+        if self
+            .selected_objects()
+            .iter()
+            .any(|other| features::guard(self, &Intent::EditObject(Some(*other))).is_some())
+        {
             return;
         }
         self.remember_object_boxes(layout);
@@ -632,7 +732,15 @@ impl ExcelApp {
         });
     }
 
-    pub(crate) fn drag_object_move(&mut self, layout: &GridLayout, id: ObjectId, start: (f32, f32), origin: (f64, f64), size: (f32, f32), at: (f32, f32)) {
+    pub(crate) fn drag_object_move(
+        &mut self,
+        layout: &GridLayout,
+        id: ObjectId,
+        start: (f32, f32),
+        origin: (f64, f64),
+        size: (f32, f32),
+        at: (f32, f32),
+    ) {
         let z = self.zoom as f64;
         let x = origin.0 + (at.0 - start.0) as f64 / z;
         let y = origin.1 + (at.1 - start.1) as f64 / z;
@@ -652,7 +760,13 @@ impl ExcelApp {
         }
         let others: Vec<(ObjectId, Box4)> = self
             .ext::<ObjectsUi>()
-            .map(|ui| ui.origins.iter().filter(|(other, _)| *other != id).cloned().collect())
+            .map(|ui| {
+                ui.origins
+                    .iter()
+                    .filter(|(other, _)| *other != id)
+                    .cloned()
+                    .collect()
+            })
             .unwrap_or_default();
         // No object leaves the sheet: the others would close up on it.
         let (mut dx, mut dy) = (x - origin.0, y - origin.1);
@@ -662,9 +776,17 @@ impl ExcelApp {
         }
         dx = dx.max(-origin.0);
         dy = dy.max(-origin.1);
-        self.place_object_box(layout, id, (origin.0 + dx, origin.1 + dy, size.0 as f64, size.1 as f64));
+        self.place_object_box(
+            layout,
+            id,
+            (origin.0 + dx, origin.1 + dy, size.0 as f64, size.1 as f64),
+        );
         for (other, frame) in others {
-            self.place_object_box(layout, other, (frame.0 + dx, frame.1 + dy, frame.2, frame.3));
+            self.place_object_box(
+                layout,
+                other,
+                (frame.0 + dx, frame.1 + dy, frame.2, frame.3),
+            );
         }
     }
 
@@ -677,7 +799,11 @@ impl ExcelApp {
         origin: (f64, f64, f64, f64),
         at: (f32, f32),
     ) {
-        let Some((_, object)) = self.selected_object_infos().into_iter().find(|(sel, _)| *sel == id) else {
+        let Some((_, object)) = self
+            .selected_object_infos()
+            .into_iter()
+            .find(|(sel, _)| *sel == id)
+        else {
             return;
         };
         let z = self.zoom as f64;
@@ -687,8 +813,16 @@ impl ExcelApp {
         if self.snap_to_grid() {
             // The edge being dragged goes from cell edge to cell edge.
             let (ex, ey) = (
-                if matches!(handle, 0 | 6 | 7) { x } else { x + w },
-                if matches!(handle, 0 | 1 | 2) { y } else { y + h },
+                if matches!(handle, 0 | 6 | 7) {
+                    x
+                } else {
+                    x + w
+                },
+                if matches!(handle, 0 | 1 | 2) {
+                    y
+                } else {
+                    y + h
+                },
             );
             let (sx, sy) = self.snapped(ex + dx, ey + dy);
             (dx, dy) = (sx - ex, sy - ey);
@@ -701,8 +835,16 @@ impl ExcelApp {
             let sx = if matches!(handle, 0 | 6) { -dx } else { dx };
             let sy = if matches!(handle, 0 | 2) { -dy } else { dy };
             let grow = (sx / w).max(sy / h);
-            dx = if matches!(handle, 0 | 6) { -grow * w } else { grow * w };
-            dy = if matches!(handle, 0 | 2) { -grow * h } else { grow * h };
+            dx = if matches!(handle, 0 | 6) {
+                -grow * w
+            } else {
+                grow * w
+            };
+            dy = if matches!(handle, 0 | 2) {
+                -grow * h
+            } else {
+                grow * h
+            };
         }
         if matches!(handle, 0 | 6 | 7) {
             let d = dx.min(w - min_w);
@@ -735,7 +877,9 @@ impl ExcelApp {
     /// Whether every selected object may be changed; the first refusal
     /// is shown.
     pub(crate) fn may_edit_selected_objects(&mut self, cx: &mut Context<Self>) -> bool {
-        self.selected_objects().into_iter().all(|id| self.may(Intent::EditObject(Some(id)), cx))
+        self.selected_objects()
+            .into_iter()
+            .all(|id| self.may(Intent::EditObject(Some(id)), cx))
     }
 
     /// Delete the selected objects (Delete / Backspace).
@@ -793,7 +937,11 @@ impl ExcelApp {
         let objects = features::objects(self, self.sheet);
         if let Some(i) = objects.iter().position(|(id, _)| *id == sel) {
             let n = objects.len();
-            let next = if forward { (i + 1) % n } else { (i + n - 1) % n };
+            let next = if forward {
+                (i + 1) % n
+            } else {
+                (i + n - 1) % n
+            };
             self.select_object(Some(objects[next].0), cx);
         }
         true
@@ -808,7 +956,10 @@ impl ExcelApp {
             return;
         };
         let infos = self.selected_object_infos();
-        let boxes: Vec<Box4> = infos.iter().map(|(_, object)| self.object_box(&layout, object)).collect();
+        let boxes: Vec<Box4> = infos
+            .iter()
+            .map(|(_, object)| self.object_box(&layout, object))
+            .collect();
         let left = boxes.iter().map(|b| b.0).fold(f64::INFINITY, f64::min);
         let top = boxes.iter().map(|b| b.1).fold(f64::INFINITY, f64::min);
         let mut clips = Vec::new();
@@ -848,8 +999,14 @@ impl ExcelApp {
             return;
         }
         // What Copy put aside, when it is still what `object_clip` says.
-        let mut clips = self.ext::<ObjectsUi>().map(|ui| ui.clips.clone()).unwrap_or_default();
-        if !clips.first().is_some_and(|first| Rc::ptr_eq(&first.data, &data)) {
+        let mut clips = self
+            .ext::<ObjectsUi>()
+            .map(|ui| ui.clips.clone())
+            .unwrap_or_default();
+        if !clips
+            .first()
+            .is_some_and(|first| Rc::ptr_eq(&first.data, &data))
+        {
             clips = vec![Clip {
                 owner,
                 data,
@@ -862,9 +1019,19 @@ impl ExcelApp {
         let selected = self.selected_object_infos();
         let (x, y) = if selected.is_empty() {
             let (anchor, offset) = (self.active(), (0.0, 0.0));
-            corner(&layout, &Placement { anchor, offset, size: (0.0, 0.0) })
+            corner(
+                &layout,
+                &Placement {
+                    anchor,
+                    offset,
+                    size: (0.0, 0.0),
+                },
+            )
         } else {
-            let boxes: Vec<Box4> = selected.iter().map(|(_, object)| self.object_box(&layout, object)).collect();
+            let boxes: Vec<Box4> = selected
+                .iter()
+                .map(|(_, object)| self.object_box(&layout, object))
+                .collect();
             (
                 boxes.iter().map(|b| b.0).fold(f64::INFINITY, f64::min) + 16.0,
                 boxes.iter().map(|b| b.1).fold(f64::INFINITY, f64::min) + 16.0,
@@ -873,8 +1040,13 @@ impl ExcelApp {
         let mut pasted = Vec::new();
         for clip in clips {
             let at = anchor_at(&layout, x + clip.offset.0, y + clip.offset.1);
-            if let Some(new) = features::all()[clip.owner].paste_object(self, clip.data.as_ref(), at) {
-                pasted.push(ObjectId { owner: clip.owner, id: new });
+            if let Some(new) =
+                features::all()[clip.owner].paste_object(self, clip.data.as_ref(), at)
+            {
+                pasted.push(ObjectId {
+                    owner: clip.owner,
+                    id: new,
+                });
             }
         }
         // The topmost of the copies leads.
@@ -928,7 +1100,10 @@ impl ExcelApp {
             return;
         };
         let infos = self.selected_object_infos();
-        let boxes: Vec<Box4> = infos.iter().map(|(_, object)| self.object_box(&layout, object)).collect();
+        let boxes: Vec<Box4> = infos
+            .iter()
+            .map(|(_, object)| self.object_box(&layout, object))
+            .collect();
         for (((id, _), frame), (x, y)) in infos.iter().zip(&boxes).zip(aligned(&boxes, how)) {
             if (x, y) != (frame.0, frame.1) {
                 self.place_object_box(&layout, *id, (x.max(0.0), y.max(0.0), frame.2, frame.3));
@@ -948,12 +1123,19 @@ impl ExcelApp {
             };
         };
         let z = layout.zoom;
-        let lx = layout.header_w + layout.frozen_w + ((layout.view_w() - layout.frozen_w - size.0 * z) / 2.0).max(8.0);
-        let ly = layout.header_h + layout.frozen_h + ((layout.view_h() - layout.frozen_h - size.1 * z) / 2.0).max(8.0);
+        let lx = layout.header_w
+            + layout.frozen_w
+            + ((layout.view_w() - layout.frozen_w - size.0 * z) / 2.0).max(8.0);
+        let ly = layout.header_h
+            + layout.frozen_h
+            + ((layout.view_h() - layout.frozen_h - size.1 * z) / 2.0).max(8.0);
         let (col, row) = (layout.col_at(lx), layout.row_at(ly));
         Placement {
             anchor: (row, col),
-            offset: (((lx - layout.col_x(col)) / z).max(0.0), ((ly - layout.row_y(row)) / z).max(0.0)),
+            offset: (
+                ((lx - layout.col_x(col)) / z).max(0.0),
+                ((ly - layout.row_y(row)) / z).max(0.0),
+            ),
             size,
         }
     }
@@ -965,9 +1147,23 @@ mod tests {
 
     #[test]
     fn aligning_and_distributing() {
-        let frames = [(10.0, 10.0, 20.0, 10.0), (50.0, 40.0, 40.0, 20.0), (200.0, 100.0, 10.0, 50.0)];
-        let xs = |how| aligned(&frames, how).iter().map(|p| p.0).collect::<Vec<_>>();
-        let ys = |how| aligned(&frames, how).iter().map(|p| p.1).collect::<Vec<_>>();
+        let frames = [
+            (10.0, 10.0, 20.0, 10.0),
+            (50.0, 40.0, 40.0, 20.0),
+            (200.0, 100.0, 10.0, 50.0),
+        ];
+        let xs = |how| {
+            aligned(&frames, how)
+                .iter()
+                .map(|p| p.0)
+                .collect::<Vec<_>>()
+        };
+        let ys = |how| {
+            aligned(&frames, how)
+                .iter()
+                .map(|p| p.1)
+                .collect::<Vec<_>>()
+        };
         assert_eq!(xs(Align::Left), [10.0, 10.0, 10.0]);
         assert_eq!(xs(Align::Right), [190.0, 170.0, 200.0]);
         // The middle of the box around them all: 10 to 210.
@@ -982,10 +1178,16 @@ mod tests {
         // 140 high, 80 taken: two gaps of 30.
         assert_eq!(ys(Align::DistributeVertically), [10.0, 50.0, 100.0]);
         // Two objects have nothing between them to space out.
-        assert_eq!(aligned(&frames[..2], Align::DistributeHorizontally), [(10.0, 10.0), (50.0, 40.0)]);
+        assert_eq!(
+            aligned(&frames[..2], Align::DistributeHorizontally),
+            [(10.0, 10.0), (50.0, 40.0)]
+        );
         // Given in another order, each still gets its own place.
         let shuffled = [frames[2], frames[0], frames[1]];
-        let got: Vec<f64> = aligned(&shuffled, Align::DistributeHorizontally).iter().map(|p| p.0).collect();
+        let got: Vec<f64> = aligned(&shuffled, Align::DistributeHorizontally)
+            .iter()
+            .map(|p| p.0)
+            .collect();
         assert_eq!(got, [200.0, 10.0, 95.0]);
     }
 
@@ -993,13 +1195,28 @@ mod tests {
     fn objects_resized_together_keep_their_proportions() {
         let frame = (100.0, 100.0, 80.0, 40.0);
         // From the bottom-right corner the top-left one stays.
-        assert_eq!(scaled(frame, 4, 1.5, 2.0, (8.0, 8.0)), (100.0, 100.0, 120.0, 80.0));
+        assert_eq!(
+            scaled(frame, 4, 1.5, 2.0, (8.0, 8.0)),
+            (100.0, 100.0, 120.0, 80.0)
+        );
         // From the top-left corner the bottom-right one does.
-        assert_eq!(scaled(frame, 0, 0.5, 0.5, (8.0, 8.0)), (140.0, 120.0, 40.0, 20.0));
+        assert_eq!(
+            scaled(frame, 0, 0.5, 0.5, (8.0, 8.0)),
+            (140.0, 120.0, 40.0, 20.0)
+        );
         // A side: one direction only.
-        assert_eq!(scaled(frame, 7, 2.0, 1.0, (8.0, 8.0)), (20.0, 100.0, 160.0, 40.0));
-        assert_eq!(scaled(frame, 1, 1.0, 0.5, (8.0, 8.0)), (100.0, 120.0, 80.0, 20.0));
+        assert_eq!(
+            scaled(frame, 7, 2.0, 1.0, (8.0, 8.0)),
+            (20.0, 100.0, 160.0, 40.0)
+        );
+        assert_eq!(
+            scaled(frame, 1, 1.0, 0.5, (8.0, 8.0)),
+            (100.0, 120.0, 80.0, 20.0)
+        );
         // Never smaller than the object allows.
-        assert_eq!(scaled(frame, 4, 0.01, 0.01, (8.0, 8.0)), (100.0, 100.0, 8.0, 8.0));
+        assert_eq!(
+            scaled(frame, 4, 0.01, 0.01, (8.0, 8.0)),
+            (100.0, 100.0, 8.0, 8.0)
+        );
     }
 }

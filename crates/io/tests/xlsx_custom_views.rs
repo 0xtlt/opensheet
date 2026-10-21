@@ -13,7 +13,9 @@ use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -25,9 +27,17 @@ fn load(bytes: &[u8]) -> Workbook {
 fn workbook() -> Workbook {
     let mut wb = Workbook::new(Locale::en());
     wb.add_sheet(1);
-    for (i, text) in ["Fruit", "apple", "pear", "apple", "fig", "pear"].into_iter().enumerate() {
+    for (i, text) in ["Fruit", "apple", "pear", "apple", "fig", "pear"]
+        .into_iter()
+        .enumerate()
+    {
         enter(&mut wb, 0, &format!("A{}", i + 1), text);
-        enter(&mut wb, 0, &format!("B{}", i + 1), if i == 0 { "Count" } else { "3" });
+        enter(
+            &mut wb,
+            0,
+            &format!("B{}", i + 1),
+            if i == 0 { "Count" } else { "3" },
+        );
     }
     wb.set_auto_filter(0, Rect::new(0, 0, 5, 1)).unwrap();
     let apples = Criteria::Values(ValueFilter {
@@ -72,8 +82,10 @@ fn windows() -> Vec<WindowState> {
 #[test]
 fn views_come_back_whole() {
     let mut wb = workbook();
-    wb.add_custom_view("Apples, landscape", true, true, &windows()).unwrap();
-    wb.add_custom_view("Window only", false, false, &windows()).unwrap();
+    wb.add_custom_view("Apples, landscape", true, true, &windows())
+        .unwrap();
+    wb.add_custom_view("Window only", false, false, &windows())
+        .unwrap();
     wb.commit("Custom View");
 
     let bytes = to_bytes(&wb);
@@ -83,8 +95,16 @@ fn views_come_back_whole() {
     assert_well_formed("workbook.xml", &book);
     assert_well_formed("sheet1.xml", &sheet1);
     // The workbook part lists the views after the calculation properties.
-    assert!(book.contains("<customWorkbookViews><customWorkbookView name=\"Apples, landscape\" guid=\"{"), "{book}");
-    assert!(book.contains("includePrintSettings=\"0\" includeHiddenRowCol=\"0\""), "{book}");
+    assert!(
+        book.contains(
+            "<customWorkbookViews><customWorkbookView name=\"Apples, landscape\" guid=\"{"
+        ),
+        "{book}"
+    );
+    assert!(
+        book.contains("includePrintSettings=\"0\" includeHiddenRowCol=\"0\""),
+        "{book}"
+    );
     assert!(book.contains("activeSheetId=\"2\"/>"), "{book}");
     assert!(book.find("<calcPr").unwrap() < book.find("<customWorkbookViews>").unwrap());
     // The hidden names of the first view, on the first sheet.
@@ -95,16 +115,22 @@ fn views_come_back_whole() {
         ("PrintArea", "Sheet1!$A$1:$B$6"),
         ("PrintTitles", "Sheet1!$1:$1"),
     ] {
-        let wanted = format!("_.wvu.{suffix}\" localSheetId=\"0\" hidden=\"1\">{text}</definedName>");
+        let wanted =
+            format!("_.wvu.{suffix}\" localSheetId=\"0\" hidden=\"1\">{text}</definedName>");
         assert!(book.contains(&wanted), "{wanted} in {book}");
     }
     // The sheet's part: after the filter, before the page setup.
-    let views = sheet1.find("<customSheetViews>").expect("custom sheet views");
+    let views = sheet1
+        .find("<customSheetViews>")
+        .expect("custom sheet views");
     assert!(sheet1.find("<autoFilter").unwrap() < views);
     assert!(views < sheet1.find("<pageMargins").unwrap());
     assert!(sheet1.contains(" scale=\"85\" showGridLines=\"0\" filter=\"1\" showAutoFilter=\"1\" hiddenRows=\"1\" hiddenColumns=\"1\" view=\"pageBreakPreview\">"), "{sheet1}");
     assert!(sheet1.contains("<pane xSplit=\"1\" ySplit=\"1\" topLeftCell=\"C4\" activePane=\"bottomRight\" state=\"frozen\"/><selection pane=\"bottomRight\" activeCell=\"B3\" sqref=\"A2 B3:B5\"/>"), "{sheet1}");
-    assert!(part(&bytes, "xl/worksheets/sheet2.xml").contains(" topLeftCell=\"D41\"><selection activeCell=\"E42\" sqref=\"E42\"/>"));
+    assert!(
+        part(&bytes, "xl/worksheets/sheet2.xml")
+            .contains(" topLeftCell=\"D41\"><selection activeCell=\"E42\" sqref=\"E42\"/>")
+    );
 
     let back = load(&bytes);
     assert_eq!(back.custom_views(), wb.custom_views());
@@ -122,7 +148,8 @@ fn views_come_back_whole() {
 #[test]
 fn a_view_read_from_a_file_can_be_shown() {
     let mut wb = workbook();
-    wb.add_custom_view("Apples", true, true, &windows()).unwrap();
+    wb.add_custom_view("Apples", true, true, &windows())
+        .unwrap();
     // Since the view was made: no filter, nothing hidden, portrait.
     wb.remove_auto_filter(0);
     wb.snapshot();
@@ -138,20 +165,33 @@ fn a_view_read_from_a_file_can_be_shown() {
     let shown = back.show_custom_view("apples").expect("the view");
     back.commit("Custom View");
     let sheet = &back.sheets[0];
-    assert_eq!(sheet.hidden_rows.iter().copied().collect::<Vec<_>>(), vec![9, 10, 11, 20]);
-    assert_eq!(sheet.hidden_cols.iter().copied().collect::<Vec<_>>(), vec![3, 4]);
+    assert_eq!(
+        sheet.hidden_rows.iter().copied().collect::<Vec<_>>(),
+        vec![9, 10, 11, 20]
+    );
+    assert_eq!(
+        sheet.hidden_cols.iter().copied().collect::<Vec<_>>(),
+        vec![3, 4]
+    );
     // The filter is back and hides the rows that are not apples.
-    assert_eq!(sheet.filtered_rows.iter().copied().collect::<Vec<_>>(), vec![2, 4, 5]);
+    assert_eq!(
+        sheet.filtered_rows.iter().copied().collect::<Vec<_>>(),
+        vec![2, 4, 5]
+    );
     assert_eq!(sheet.page.orientation, Orientation::Landscape);
     assert_eq!(sheet.page.print_area, vec![Rect::new(0, 0, 5, 1)]);
     assert_eq!(shown.len(), 2);
-    assert_eq!((shown[0].1.zoom, shown[0].1.mode, shown[1].1.selected), (85, ViewKind::PageBreakPreview, true));
+    assert_eq!(
+        (shown[0].1.zoom, shown[0].1.mode, shown[1].1.selected),
+        (85, ViewKind::PageBreakPreview, true)
+    );
 }
 
 #[test]
 fn parts_without_a_view_are_dropped() {
     let mut wb = workbook();
-    wb.add_custom_view("Kept", false, false, &windows()).unwrap();
+    wb.add_custom_view("Kept", false, false, &windows())
+        .unwrap();
     wb.commit("Custom View");
     let bytes = to_bytes(&wb);
     // The same package without the list of the workbook part.
@@ -159,14 +199,24 @@ fn parts_without_a_view_are_dropped() {
     let start = book.find("<customWorkbookViews>").unwrap();
     let end = book.find("</customWorkbookViews>").unwrap() + "</customWorkbookViews>".len();
     let stripped = format!("{}{}", &book[..start], &book[end..]);
-    let mut parts: Vec<(String, String)> = common::part_names(&bytes).into_iter().map(|name| (name.clone(), part(&bytes, &name))).collect();
+    let mut parts: Vec<(String, String)> = common::part_names(&bytes)
+        .into_iter()
+        .map(|name| (name.clone(), part(&bytes, &name)))
+        .collect();
     for (name, text) in &mut parts {
         if name == "xl/workbook.xml" {
             *text = stripped.clone();
         }
     }
-    let borrowed: Vec<(&str, &str)> = parts.iter().map(|(name, text)| (name.as_str(), text.as_str())).collect();
+    let borrowed: Vec<(&str, &str)> = parts
+        .iter()
+        .map(|(name, text)| (name.as_str(), text.as_str()))
+        .collect();
     let back = load(&common::package(&borrowed));
     assert!(back.custom_views().is_empty());
-    assert!(back.sheets.iter().all(|sheet| sheet.custom_views.is_empty()));
+    assert!(
+        back.sheets
+            .iter()
+            .all(|sheet| sheet.custom_views.is_empty())
+    );
 }

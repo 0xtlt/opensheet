@@ -92,7 +92,11 @@ impl CodeBuffer {
     }
 
     pub fn caret(&self) -> usize {
-        if self.reversed { self.selected.start } else { self.selected.end }
+        if self.reversed {
+            self.selected.start
+        } else {
+            self.selected.end
+        }
     }
 
     pub fn selected_text(&self) -> &str {
@@ -166,11 +170,17 @@ impl CodeBuffer {
     }
 
     pub fn previous_boundary(&self, offset: usize) -> usize {
-        self.text[..offset].grapheme_indices(true).next_back().map_or(0, |(index, _)| index)
+        self.text[..offset]
+            .grapheme_indices(true)
+            .next_back()
+            .map_or(0, |(index, _)| index)
     }
 
     pub fn next_boundary(&self, offset: usize) -> usize {
-        self.text[offset..].graphemes(true).next().map_or(self.text.len(), |g| offset + g.len())
+        self.text[offset..]
+            .graphemes(true)
+            .next()
+            .map_or(self.text.len(), |g| offset + g.len())
     }
 
     pub fn previous_word(&self, offset: usize) -> usize {
@@ -256,7 +266,9 @@ impl CodeBuffer {
         let range = self.line_range(line);
         let offset = match column {
             Some(column) => self.offset_of(line, column.max(1) as usize - 1),
-            None => range.start + (self.text[range.clone()].len() - self.text[range].trim_start().len()),
+            None => {
+                range.start + (self.text[range.clone()].len() - self.text[range].trim_start().len())
+            }
         };
         self.move_to(offset);
     }
@@ -272,7 +284,13 @@ impl CodeBuffer {
 
     /// Replace a range and leave the selection as asked; one undo step,
     /// or part of the one before when both are typing.
-    fn apply(&mut self, range: Range<usize>, new: &str, selection_after: (Range<usize>, bool), typing: bool) {
+    fn apply(
+        &mut self,
+        range: Range<usize>,
+        new: &str,
+        selection_after: (Range<usize>, bool),
+        typing: bool,
+    ) {
         let range = self.clamp(range.start)..self.clamp(range.end.max(range.start));
         if range.is_empty() && new.is_empty() {
             self.selected = selection_after.0;
@@ -287,7 +305,11 @@ impl CodeBuffer {
         self.redo.clear();
         // Typing goes on where the last typed character ended.
         if let Some(last) = self.undo.last_mut() {
-            if typing && last.typing && removed.is_empty() && last.at + last.inserted.len() == range.start {
+            if typing
+                && last.typing
+                && removed.is_empty()
+                && last.at + last.inserted.len() == range.start
+            {
                 last.inserted.push_str(new);
                 last.selection_after = selection_after;
                 return;
@@ -312,17 +334,24 @@ impl CodeBuffer {
 
     /// Replace the selection (a paste, a cut, a composed character).
     pub fn insert(&mut self, new: &str) {
-        self.replace(self.selected.clone(), &new.replace("\r\n", "\n").replace('\r', "\n"));
+        self.replace(
+            self.selected.clone(),
+            &new.replace("\r\n", "\n").replace('\r', "\n"),
+        );
     }
 
     pub fn undo(&mut self) -> bool {
         let Some(edit) = self.undo.pop() else {
             return false;
         };
-        self.text.replace_range(edit.at..edit.at + edit.inserted.len(), &edit.removed);
+        self.text
+            .replace_range(edit.at..edit.at + edit.inserted.len(), &edit.removed);
         self.selected = edit.selection_before.0.clone();
         self.reversed = edit.selection_before.1;
-        self.redo.push(Edit { typing: false, ..edit });
+        self.redo.push(Edit {
+            typing: false,
+            ..edit
+        });
         true
     }
 
@@ -330,7 +359,8 @@ impl CodeBuffer {
         let Some(edit) = self.redo.pop() else {
             return false;
         };
-        self.text.replace_range(edit.at..edit.at + edit.removed.len(), &edit.inserted);
+        self.text
+            .replace_range(edit.at..edit.at + edit.removed.len(), &edit.inserted);
         self.selected = edit.selection_after.0.clone();
         self.reversed = edit.selection_after.1;
         self.undo.push(edit);
@@ -372,7 +402,12 @@ impl CodeBuffer {
                 let inside = self.selected_text().to_string();
                 let wrapped = format!("{ch}{inside}{close}");
                 let inner = caret + ch.len_utf8()..caret + ch.len_utf8() + inside.len();
-                self.apply(self.selected.clone(), &wrapped, (inner, self.reversed), false);
+                self.apply(
+                    self.selected.clone(),
+                    &wrapped,
+                    (inner, self.reversed),
+                    false,
+                );
                 return;
             }
             let end = caret + typed.len();
@@ -388,18 +423,27 @@ impl CodeBuffer {
             self.break_typing();
             return;
         }
-        let room = after.is_none_or(|next| next.is_whitespace() || is_closer(next) || matches!(next, ';' | ',' | '.'));
+        let room = after.is_none_or(|next| {
+            next.is_whitespace() || is_closer(next) || matches!(next, ';' | ',' | '.')
+        });
         if let Some(close) = closer_of(ch) {
             if room {
                 let end = caret + ch.len_utf8();
-                self.apply(caret..caret, &format!("{ch}{close}"), (end..end, false), false);
+                self.apply(
+                    caret..caret,
+                    &format!("{ch}{close}"),
+                    (end..end, false),
+                    false,
+                );
                 return;
             }
         }
         if QUOTES.contains(&ch) {
             // Not inside a word ("don't"), not right after another quote.
             let before = self.char_before(caret);
-            let apart = before.is_none_or(|prev| !prev.is_alphanumeric() && prev != '_' && !QUOTES.contains(&prev) && prev != '\\');
+            let apart = before.is_none_or(|prev| {
+                !prev.is_alphanumeric() && prev != '_' && !QUOTES.contains(&prev) && prev != '\\'
+            });
             if room && apart {
                 let end = caret + ch.len_utf8();
                 self.apply(caret..caret, &format!("{ch}{ch}"), (end..end, false), false);
@@ -411,7 +455,11 @@ impl CodeBuffer {
             let line = self.line_range(self.line_of(caret));
             let lead = &self.text[line.start..caret];
             let unit = self.indent_unit();
-            if !lead.is_empty() && lead.trim().is_empty() && lead.ends_with(unit.as_str()) && self.text[caret..line.end].trim().is_empty() {
+            if !lead.is_empty()
+                && lead.trim().is_empty()
+                && lead.ends_with(unit.as_str())
+                && self.text[caret..line.end].trim().is_empty()
+            {
                 let start = caret - unit.len();
                 let end = start + 1;
                 self.apply(start..caret, "}", (end..end, false), false);
@@ -421,7 +469,10 @@ impl CodeBuffer {
         let end = caret + typed.len();
         // A word and the blank after it are one step; the next word is
         // another.
-        let new_word = ch.is_whitespace() && self.char_before(caret).is_some_and(|prev| !prev.is_whitespace());
+        let new_word = ch.is_whitespace()
+            && self
+                .char_before(caret)
+                .is_some_and(|prev| !prev.is_whitespace());
         self.apply(caret..caret, typed, (end..end, false), true);
         if new_word {
             self.break_typing();
@@ -434,7 +485,10 @@ impl CodeBuffer {
     pub fn newline(&mut self) {
         let caret = self.selected.start;
         let line = self.line_range(self.line_of(caret));
-        let lead: String = self.text[line.start..caret.max(line.start)].chars().take_while(|c| *c == ' ' || *c == '\t').collect();
+        let lead: String = self.text[line.start..caret.max(line.start)]
+            .chars()
+            .take_while(|c| *c == ' ' || *c == '\t')
+            .collect();
         let before = self.text[line.start..caret].trim_end().chars().next_back();
         let opens = before.is_some_and(|ch| closer_of(ch).is_some());
         let unit = self.indent_unit();
@@ -443,11 +497,20 @@ impl CodeBuffer {
             new.push_str(&unit);
         }
         let caret_after = caret + new.len();
-        let closes = before.and_then(closer_of).is_some_and(|close| self.text[self.selected.end..].trim_start_matches(' ').starts_with(close));
+        let closes = before.and_then(closer_of).is_some_and(|close| {
+            self.text[self.selected.end..]
+                .trim_start_matches(' ')
+                .starts_with(close)
+        });
         if opens && closes {
             new.push_str(&format!("\n{lead}"));
         }
-        self.apply(self.selected.clone(), &new, (caret_after..caret_after, false), false);
+        self.apply(
+            self.selected.clone(),
+            &new,
+            (caret_after..caret_after, false),
+            false,
+        );
     }
 
     /// Backspace: the selection, or the character before the caret; an
@@ -523,7 +586,11 @@ impl CodeBuffer {
             let in_line = caret - block.start;
             let delta = new.len() as isize - old.len() as isize;
             let lead_old = old.len() - old.trim_start_matches([' ', '\t']).len();
-            let at = if in_line >= lead_old { (in_line as isize + delta).max(0) as usize } else { in_line.min(new.len() - new.trim_start_matches([' ', '\t']).len()) };
+            let at = if in_line >= lead_old {
+                (in_line as isize + delta).max(0) as usize
+            } else {
+                in_line.min(new.len() - new.trim_start_matches([' ', '\t']).len())
+            };
             let at = block.start + at.min(new.len());
             (at..at, false)
         } else {
@@ -548,7 +615,13 @@ impl CodeBuffer {
             self.apply(caret..caret, &new, (end..end, false), false);
             return;
         }
-        self.change_lines(|line| if line.is_empty() { String::new() } else { format!("{unit}{line}") });
+        self.change_lines(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{unit}{line}")
+            }
+        });
     }
 
     /// ⇧Tab: the selected lines, or the line of the caret, move one step
@@ -571,9 +644,17 @@ impl CodeBuffer {
         let (first, last) = self.selected_lines();
         let block = self.line_range(first).start..self.line_range(last).end;
         let lines: Vec<&str> = self.text[block].split('\n').collect();
-        let all = lines.iter().filter(|line| !line.trim().is_empty()).all(|line| line.trim_start().starts_with(marker));
+        let all = lines
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .all(|line| line.trim_start().starts_with(marker));
         // The marker goes at the depth of the least indented line.
-        let depth = lines.iter().filter(|line| !line.trim().is_empty()).map(|line| line.len() - line.trim_start().len()).min().unwrap_or(0);
+        let depth = lines
+            .iter()
+            .filter(|line| !line.trim().is_empty())
+            .map(|line| line.len() - line.trim_start().len())
+            .min()
+            .unwrap_or(0);
         let marker = marker.to_string();
         self.change_lines(move |line| {
             if line.trim().is_empty() {
@@ -582,7 +663,11 @@ impl CodeBuffer {
             if all {
                 let lead = line.len() - line.trim_start().len();
                 let rest = &line[lead + marker.len()..];
-                format!("{}{}", &line[..lead], rest.strip_prefix(' ').unwrap_or(rest))
+                format!(
+                    "{}{}",
+                    &line[..lead],
+                    rest.strip_prefix(' ').unwrap_or(rest)
+                )
             } else {
                 format!("{}{marker} {}", &line[..depth], &line[depth..])
             }
@@ -626,7 +711,15 @@ mod tests {
         let first = marked.find('|').expect("a caret");
         let rest = &marked[first + 1..];
         let (text, range) = match rest.find('|') {
-            Some(second) => (format!("{}{}{}", &marked[..first], &rest[..second], &rest[second + 1..]), first..first + second),
+            Some(second) => (
+                format!(
+                    "{}{}{}",
+                    &marked[..first],
+                    &rest[..second],
+                    &rest[second + 1..]
+                ),
+                first..first + second,
+            ),
             None => (format!("{}{}", &marked[..first], rest), first..first),
         };
         let mut b = CodeBuffer::new(&text);
@@ -682,20 +775,38 @@ mod tests {
     #[test]
     fn return_keeps_and_deepens_the_indentation() {
         assert_eq!(typed("  let a = 1;|", "\n"), "  let a = 1;\n  |");
-        assert_eq!(typed("function main() {|}", "\n"), "function main() {\n  |\n}");
+        assert_eq!(
+            typed("function main() {|}", "\n"),
+            "function main() {\n  |\n}"
+        );
         assert_eq!(typed("  if (x) {|", "\n"), "  if (x) {\n    |");
         assert_eq!(typed("  call(|)", "\n"), "  call(\n    |\n  )");
         // The step follows the text: four blanks here, a tab there.
-        assert_eq!(typed("function f() {\n    a();\n    if (x) {|", "\n"), "function f() {\n    a();\n    if (x) {\n        |");
-        assert_eq!(typed("function f() {\n\ta();\n\tif (x) {|", "\n"), "function f() {\n\ta();\n\tif (x) {\n\t\t|");
+        assert_eq!(
+            typed("function f() {\n    a();\n    if (x) {|", "\n"),
+            "function f() {\n    a();\n    if (x) {\n        |"
+        );
+        assert_eq!(
+            typed("function f() {\n\ta();\n\tif (x) {|", "\n"),
+            "function f() {\n\ta();\n\tif (x) {\n\t\t|"
+        );
         // Return in the middle of a line carries the rest down.
         assert_eq!(typed("  a();| b();", "\n"), "  a();\n  | b();");
         // A closing brace on a blank line goes back one step.
-        assert_eq!(typed("  if (x) {\n    a();\n    |", "}"), "  if (x) {\n    a();\n  }|");
+        assert_eq!(
+            typed("  if (x) {\n    a();\n    |", "}"),
+            "  if (x) {\n    a();\n  }|"
+        );
         assert_eq!(typed("  x = {|", "}"), "  x = {}|");
         // Backspace in the indentation goes back one step.
-        assert_eq!(typed("  if (x) {\n    |a();", "\u{8}"), "  if (x) {\n  |a();");
-        assert_eq!(typed("  if (x) {\n   |a();", "\u{8}"), "  if (x) {\n  |a();");
+        assert_eq!(
+            typed("  if (x) {\n    |a();", "\u{8}"),
+            "  if (x) {\n  |a();"
+        );
+        assert_eq!(
+            typed("  if (x) {\n   |a();", "\u{8}"),
+            "  if (x) {\n  |a();"
+        );
     }
 
     #[test]

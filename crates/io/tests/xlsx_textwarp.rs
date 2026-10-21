@@ -7,13 +7,17 @@ mod common;
 use common::{assert_well_formed, package, part, part_names};
 use opensheet_engine::drawing::{Drawing, Shape};
 use opensheet_engine::textwarp::{TextWarp, WarpPreset};
-use opensheet_engine::wordart::{GradientKind, GradientStop, TextGradient, TextReflection, WordArtStyle};
+use opensheet_engine::wordart::{
+    GradientKind, GradientStop, TextGradient, TextReflection, WordArtStyle,
+};
 use opensheet_engine::{Color, Locale, Workbook};
 use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -23,13 +27,30 @@ fn load(bytes: &[u8]) -> Workbook {
 /// The package with one part replaced.
 fn with_part(bytes: &[u8], name: &str, text: &str) -> Vec<u8> {
     let names = part_names(bytes);
-    let texts: Vec<String> = names.iter().map(|n| if n == name { text.to_string() } else { part(bytes, n) }).collect();
-    let parts: Vec<(&str, &str)> = names.iter().map(String::as_str).zip(texts.iter().map(String::as_str)).collect();
+    let texts: Vec<String> = names
+        .iter()
+        .map(|n| {
+            if n == name {
+                text.to_string()
+            } else {
+                part(bytes, n)
+            }
+        })
+        .collect();
+    let parts: Vec<(&str, &str)> = names
+        .iter()
+        .map(String::as_str)
+        .zip(texts.iter().map(String::as_str))
+        .collect();
     package(&parts)
 }
 
 fn shapes(wb: &Workbook) -> Vec<Shape> {
-    wb.sheets[0].drawings.iter().filter_map(|drawing| drawing.as_shape().cloned()).collect()
+    wb.sheets[0]
+        .drawings
+        .iter()
+        .filter_map(|drawing| drawing.as_shape().cloned())
+        .collect()
 }
 
 /// One WordArt per preset, four to a row, each named by its preset.
@@ -40,7 +61,10 @@ fn gallery() -> Workbook {
         shape.font.set_size_pt(28.0);
         shape.warp = Some(TextWarp::from(preset));
         // Presets with several places get a line for each.
-        if matches!(preset, WarpPreset::Button | WarpPreset::ButtonPour | WarpPreset::DeflateInflateDeflate) {
+        if matches!(
+            preset,
+            WarpPreset::Button | WarpPreset::ButtonPour | WarpPreset::DeflateInflateDeflate
+        ) {
             shape.text = format!("{}\nsecond line\nthird line", preset.name());
         } else if preset == WarpPreset::DeflateInflate {
             shape.text = format!("{}\nsecond line", preset.name());
@@ -68,7 +92,10 @@ fn every_warp_is_written_as_excel_writes_it_and_read_back() {
         "{xml}"
     );
     for preset in WarpPreset::ALL {
-        assert!(xml.contains(&format!("<a:prstTxWarp prst=\"{}\">", preset.ooxml_name())), "{preset:?}");
+        assert!(
+            xml.contains(&format!("<a:prstTxWarp prst=\"{}\">", preset.ooxml_name())),
+            "{preset:?}"
+        );
     }
     assert!(!xml.contains("<a:spAutoFit/>"));
     let back = load(&bytes);
@@ -115,7 +142,11 @@ fn adjustments_gradients_and_reflections_round_trip() {
     let mut part_of = WordArtStyle(1).shape("From the centre");
     part_of.format_text(9..15, &|font, effects| {
         font.color = Some(Color(0xFFFFFF));
-        effects.gradient = Some(TextGradient::between(Color(0xFFFFFF), Color(0x0070C0), GradientKind::FromCentre));
+        effects.gradient = Some(TextGradient::between(
+            Color(0xFFFFFF),
+            Color(0x0070C0),
+            GradientKind::FromCentre,
+        ));
         effects.reflection = Some(TextReflection::PRESETS[0]);
     });
     for (i, shape) in [wave, triangle, gradient, part_of].into_iter().enumerate() {
@@ -141,7 +172,9 @@ fn adjustments_gradients_and_reflections_round_trip() {
         "<a:effectLst><a:reflection blurRad=\"6350\" stA=\"50000\" endA=\"300\" endPos=\"55500\" dist=\"50800\" dir=\"5400000\" sy=\"-100000\" algn=\"bl\" rotWithShape=\"0\"/></a:effectLst>"
     ));
     // A shadow comes before the reflection, as the schema orders them.
-    let both = xml.find("<a:outerShdw").zip(xml.find("<a:reflection blurRad=\"6350\" stA=\"52000\" endA=\"300\" endPos=\"35000\" dir"));
+    let both = xml.find("<a:outerShdw").zip(
+        xml.find("<a:reflection blurRad=\"6350\" stA=\"52000\" endA=\"300\" endPos=\"35000\" dir"),
+    );
     assert!(both.is_some_and(|(shadow, reflection)| shadow < reflection));
     let back = load(&bytes);
     assert_eq!(shapes(&back), shapes(&wb));
@@ -168,7 +201,11 @@ fn what_excel_writes_is_read() {
     assert_ne!(excel, xml);
     let bytes = with_part(&bytes, "xl/drawings/drawing1.xml", &excel);
     let read = shapes(&load(&bytes));
-    let of = |preset: WarpPreset| read.iter().find(|shape| shape.text.starts_with(preset.name())).and_then(|shape| shape.warp);
+    let of = |preset: WarpPreset| {
+        read.iter()
+            .find(|shape| shape.text.starts_with(preset.name()))
+            .and_then(|shape| shape.warp)
+    };
     assert_eq!(
         of(WarpPreset::ArchUp),
         Some(TextWarp {
@@ -179,5 +216,8 @@ fn what_excel_writes_is_read() {
     // "No shape" and a preset we do not know are no warp.
     assert_eq!(of(WarpPreset::Stop), None);
     assert_eq!(of(WarpPreset::Plain), None);
-    assert_eq!(of(WarpPreset::Triangle), Some(TextWarp::from(WarpPreset::Triangle)));
+    assert_eq!(
+        of(WarpPreset::Triangle),
+        Some(TextWarp::from(WarpPreset::Triangle))
+    );
 }

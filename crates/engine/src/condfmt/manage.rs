@@ -64,7 +64,9 @@ pub(super) fn disjoint(ranges: &[Rect]) -> Vec<Rect> {
 
 /// One rectangle covering exactly the cells of both, when there is one.
 fn joined(a: &Rect, b: &Rect) -> Option<Rect> {
-    let touch = |a0: u32, a1: u32, b0: u32, b1: u32| a0 <= b1.saturating_add(1) && b0 <= a1.saturating_add(1);
+    let touch = |a0: u32, a1: u32, b0: u32, b1: u32| {
+        a0 <= b1.saturating_add(1) && b0 <= a1.saturating_add(1)
+    };
     let inside = |a: &Rect, b: &Rect| a.r0 >= b.r0 && a.r1 <= b.r1 && a.c0 >= b.c0 && a.c1 <= b.c1;
     let stacked = a.c0 == b.c0 && a.c1 == b.c1 && touch(a.r0, a.r1, b.r0, b.r1);
     let side_by_side = a.r0 == b.r0 && a.r1 == b.r1 && touch(a.c0, a.c1, b.c0, b.c1);
@@ -135,7 +137,9 @@ fn tiled(parts: &[Rect], src: &Rect, dest: &Rect) -> Vec<Rect> {
         let list: Vec<(u32, u32)> = if p0 == s0 && p1 == s1 {
             vec![(d0, d1 - d0 + 1)]
         } else {
-            (0..copies).map(|i| (d0 + i * size + (p0 - s0), p1 - p0 + 1)).collect()
+            (0..copies)
+                .map(|i| (d0 + i * size + (p0 - s0), p1 - p0 + 1))
+                .collect()
         };
         list.into_iter()
             .filter(|(at, _)| *at <= d1)
@@ -207,7 +211,10 @@ impl Workbook {
 
     /// Add a rule at a given place in the priority order.
     pub fn insert_cond_format(&mut self, sheet: usize, index: usize, cf: CondFormat) -> bool {
-        if cf.ranges.is_empty() || index > self.cond_formats(sheet).len() || sheet >= self.sheets.len() {
+        if cf.ranges.is_empty()
+            || index > self.cond_formats(sheet).len()
+            || sheet >= self.sheets.len()
+        {
             return false;
         }
         self.edit_cond_formats(sheet, |rules| rules.insert(index, cf));
@@ -217,7 +224,12 @@ impl Workbook {
     /// Edit a rule in place: its test, its format, "Stop If True". To move
     /// a rule to other cells use `CondFormat::set_ranges` rather than
     /// assigning `ranges`: it keeps the formulas pointing at the same cells.
-    pub fn update_cond_format(&mut self, sheet: usize, index: usize, f: impl FnOnce(&mut CondFormat)) -> bool {
+    pub fn update_cond_format(
+        &mut self,
+        sheet: usize,
+        index: usize,
+        f: impl FnOnce(&mut CondFormat),
+    ) -> bool {
         if index >= self.cond_formats(sheet).len() {
             return false;
         }
@@ -261,7 +273,12 @@ impl Workbook {
     }
 
     /// Change the cells a rule applies to, as `CondFormat::set_ranges`.
-    pub fn set_cond_format_ranges(&mut self, sheet: usize, index: usize, ranges: Vec<Rect>) -> bool {
+    pub fn set_cond_format_ranges(
+        &mut self,
+        sheet: usize,
+        index: usize,
+        ranges: Vec<Rect>,
+    ) -> bool {
         if ranges.is_empty() || index >= self.cond_formats(sheet).len() {
             return false;
         }
@@ -299,7 +316,13 @@ impl Workbook {
     /// gain the pasted cells; on another sheet they are added as new rules
     /// of the highest priority, in their own order. False when no rule
     /// touched either block.
-    pub fn copy_cond_formats(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest: Rect) -> bool {
+    pub fn copy_cond_formats(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest: Rect,
+    ) -> bool {
         self.carry_cond_formats(src_sheet, src, dest_sheet, dest, false)
     }
 
@@ -334,15 +357,28 @@ impl Workbook {
     /// they had; each rule of the copied cells is given again for the
     /// turned cells, as a rule of its own of the highest priority, its
     /// relative references turned with them.
-    pub(crate) fn transpose_cond_formats(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, out: Rect) -> bool {
+    pub(crate) fn transpose_cond_formats(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        out: Rect,
+    ) -> bool {
         use crate::paste_special::{transposed, turned};
         if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
             return false;
         }
         let mut copies = Vec::new();
         for cf in self.cond_formats(src_sheet) {
-            let pieces: Vec<Rect> = cf.ranges.iter().filter_map(|r| r.intersection(&src)).collect();
-            let ranges: Vec<Rect> = pieces.iter().filter_map(|piece| turned(piece, &src, &out)).collect();
+            let pieces: Vec<Rect> = cf
+                .ranges
+                .iter()
+                .filter_map(|r| r.intersection(&src))
+                .collect();
+            let ranges: Vec<Rect> = pieces
+                .iter()
+                .filter_map(|piece| turned(piece, &src, &out))
+                .collect();
             let (Some(first), false) = (pieces.first(), ranges.is_empty()) else {
                 continue;
             };
@@ -351,12 +387,18 @@ impl Workbook {
             let mut copy = cf.clone();
             copy.set_ranges(vec![Rect::cell(first.r0, first.c0)]);
             let to = (out.r0 + (first.c0 - src.c0), out.c0 + (first.r0 - src.r0));
-            copy.rule.map_exprs(&mut |e| transposed(e, (first.r0, first.c0), to));
+            copy.rule
+                .map_exprs(&mut |e| transposed(e, (first.r0, first.c0), to));
             copy.ranges = vec![Rect::cell(to.0, to.1)];
             copy.set_ranges(normalize_ranges(ranges));
             copies.push(copy);
         }
-        if copies.is_empty() && !self.cond_formats(dest_sheet).iter().any(|cf| cf.intersects(&out)) {
+        if copies.is_empty()
+            && !self
+                .cond_formats(dest_sheet)
+                .iter()
+                .any(|cf| cf.intersects(&out))
+        {
             return false;
         }
         self.snapshot();
@@ -367,18 +409,38 @@ impl Workbook {
         true
     }
 
-    fn carry_cond_formats(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest: Rect, moved: bool) -> bool {
+    fn carry_cond_formats(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest: Rect,
+        moved: bool,
+    ) -> bool {
         if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
             return false;
         }
         let area = pasted_area(&src, &dest);
-        let from_source = self.cond_formats(src_sheet).iter().any(|cf| cf.intersects(&src));
-        if !from_source && !self.cond_formats(dest_sheet).iter().any(|cf| cf.intersects(&area)) {
+        let from_source = self
+            .cond_formats(src_sheet)
+            .iter()
+            .any(|cf| cf.intersects(&src));
+        if !from_source
+            && !self
+                .cond_formats(dest_sheet)
+                .iter()
+                .any(|cf| cf.intersects(&area))
+        {
             return false;
         }
         self.snapshot();
         let mut source = std::mem::take(&mut self.sheets[src_sheet].cond_formats);
-        let pieces = |cf: &CondFormat| -> Vec<Rect> { cf.ranges.iter().filter_map(|r| r.intersection(&src)).collect() };
+        let pieces = |cf: &CondFormat| -> Vec<Rect> {
+            cf.ranges
+                .iter()
+                .filter_map(|r| r.intersection(&src))
+                .collect()
+        };
         if src_sheet == dest_sheet {
             // Each rule loses the cells written over and gains the copies
             // of its own cells.
@@ -417,7 +479,10 @@ impl Workbook {
             rules.splice(0..0, copies);
         }
         if moved && src_sheet == dest_sheet {
-            let (d_row, d_col) = (dest.r0 as i64 - src.r0 as i64, dest.c0 as i64 - src.c0 as i64);
+            let (d_row, d_col) = (
+                dest.r0 as i64 - src.r0 as i64,
+                dest.c0 as i64 - src.c0 as i64,
+            );
             let moved_sheet = self.sheets[src_sheet].name.clone();
             for sh in &mut self.sheets {
                 let own = sh.name.clone();
@@ -427,7 +492,13 @@ impl Workbook {
                         // reads the rule: only fixed ones name the cells
                         // that moved.
                         e.map_refs(&mut |r| match is_absolute(r) {
-                            true => Expr::Ref(r.clone()).with_moved_range(&moved_sheet, &own, src, d_row, d_col),
+                            true => Expr::Ref(r.clone()).with_moved_range(
+                                &moved_sheet,
+                                &own,
+                                src,
+                                d_row,
+                                d_col,
+                            ),
                             false => Expr::Ref(r.clone()),
                         })
                     });
@@ -481,14 +552,24 @@ impl Workbook {
         if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
             return false;
         }
-        let from_source = self.cond_formats(src_sheet).iter().any(|cf| cf.intersects(&src));
+        let from_source = self
+            .cond_formats(src_sheet)
+            .iter()
+            .any(|cf| cf.intersects(&src));
         if !from_source && self.cond_formats_in(dest_sheet, bands).is_empty() {
             return false;
         }
         self.snapshot();
         let copies = |cf: &CondFormat| -> Vec<Rect> {
-            let pieces: Vec<Rect> = cf.ranges.iter().filter_map(|r| r.intersection(&src)).collect();
-            bands.iter().flat_map(|band| tiled(&pieces, &src, band)).collect()
+            let pieces: Vec<Rect> = cf
+                .ranges
+                .iter()
+                .filter_map(|r| r.intersection(&src))
+                .collect();
+            bands
+                .iter()
+                .flat_map(|band| tiled(&pieces, &src, band))
+                .collect()
         };
         if src_sheet == dest_sheet {
             let rules = std::mem::take(&mut self.sheets[src_sheet].cond_formats);
@@ -546,7 +627,14 @@ fn remove_cells(rules: &mut Vec<CondFormat>, holes: &[Rect]) {
 
 /// Where the lines `lo..=hi` end up after an insertion or a deletion along
 /// their axis; `None` when all of them were deleted.
-fn adjust_span(lo: u32, hi: u32, insert: bool, at: u32, count: u32, max: u32) -> Option<(u32, u32)> {
+fn adjust_span(
+    lo: u32,
+    hi: u32,
+    insert: bool,
+    at: u32,
+    count: u32,
+    max: u32,
+) -> Option<(u32, u32)> {
     // Whole rows stay whole rows whatever happens to the columns, and the
     // other way round.
     if lo == 0 && hi == max - 1 {
@@ -602,7 +690,8 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     };
     sheet.cond_formats.retain_mut(|cf| {
         if !edited {
-            cf.rule.map_exprs(&mut |e| e.adjusted(edit, edited_sheet, &own));
+            cf.rule
+                .map_exprs(&mut |e| e.adjusted(edit, edited_sheet, &own));
             return true;
         }
         let ranges: Vec<Rect> = cf
@@ -635,7 +724,9 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
             let line = line_before(new.1, insert, at, count);
             ((new.0, line), (new.0, line_after(line, insert, at, count)))
         };
-        let offset = |from: (u32, u32), to: (u32, u32)| (to.0 as i64 - from.0 as i64, to.1 as i64 - from.1 as i64);
+        let offset = |from: (u32, u32), to: (u32, u32)| {
+            (to.0 as i64 - from.0 as i64, to.1 as i64 - from.1 as i64)
+        };
         let (to_cell, to_anchor) = (offset(old, before), offset(after, new));
         cf.rule.map_exprs(&mut |e| {
             let adjusted = shifted(e, to_cell.0, to_cell.1).adjusted(edit, edited_sheet, &own);
@@ -661,7 +752,8 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
     };
     let name = sheet.name.clone();
     for cf in &mut sheet.cond_formats {
-        cf.rule.map_exprs(&mut |e| e.with_sheet_renamed(original, &name));
+        cf.rule
+            .map_exprs(&mut |e| e.with_sheet_renamed(original, &name));
     }
 }
 
@@ -669,7 +761,8 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, original: &str
 /// read `#REF!`.
 pub(crate) fn on_sheet_deleted(wb: &mut Workbook, deleted: &Sheet, order: &[&str]) {
     for cf in wb.sheets.iter_mut().flat_map(|sh| &mut sh.cond_formats) {
-        cf.rule.map_exprs(&mut |e| e.with_sheet_deleted(&deleted.name, order));
+        cf.rule
+            .map_exprs(&mut |e| e.with_sheet_deleted(&deleted.name, order));
     }
     // The cache knows sheets by their place, which changed.
     wb.caches.cond.invalidate();
@@ -678,7 +771,8 @@ pub(crate) fn on_sheet_deleted(wb: &mut Workbook, deleted: &Sheet, order: &[&str
 /// See `features::on_sheet_moved`: 3-D references follow their end sheets.
 pub(crate) fn on_sheet_moved(wb: &mut Workbook, moved: &str, before: &[&str], after: &[&str]) {
     for cf in wb.sheets.iter_mut().flat_map(|sh| &mut sh.cond_formats) {
-        cf.rule.map_exprs(&mut |e| e.with_sheet_moved(moved, before, after));
+        cf.rule
+            .map_exprs(&mut |e| e.with_sheet_moved(moved, before, after));
     }
     wb.caches.cond.invalidate();
 }

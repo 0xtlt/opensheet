@@ -13,7 +13,9 @@
 
 use super::{Cmd, HF_TAB, PageUi, change, metric, setup};
 use crate::app::{Drag, ExcelApp, MenuEntry};
-use crate::features::{Cx, Intent, PaintLayer, Painter, StatusItem, ViewMode, Zone, ZoneEvent, ZoneResponse};
+use crate::features::{
+    Cx, Intent, PaintLayer, Painter, StatusItem, ViewMode, Zone, ZoneEvent, ZoneResponse,
+};
 use crate::grid::{Axis, GridLayout};
 use crate::i18n::t;
 use crate::ribbon::{group, row, rows};
@@ -22,15 +24,15 @@ use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c, ca};
 use crate::widgets::{self, Checkbox, NumberField, dialog, labeled, ok_cancel};
 use gpui::{
-    AnyElement, Context, CursorStyle, Entity, Focusable, Font, FontStyle, FontWeight, Hsla, MouseButton,
-    PathPromptOptions, Render, Subscription, Window, div, prelude::*, px,
+    AnyElement, Context, CursorStyle, Entity, Focusable, Font, FontStyle, FontWeight, Hsla,
+    MouseButton, PathPromptOptions, Render, Subscription, Window, div, prelude::*, px,
 };
 use opensheet_engine::datetime;
 use opensheet_engine::drawing::image_info;
 use opensheet_engine::page::{
-    BreakAxis, HeaderFooter, HfContext, HfPicture, HfRun, HfSection, HfSections, HfSlot, HfVariant, PaginateOptions,
-    Pagination, SheetPages, expand, from_dialog_text, lines, paginate, plain_text, presets, sheet_pages,
-    to_dialog_text,
+    BreakAxis, HeaderFooter, HfContext, HfPicture, HfRun, HfSection, HfSections, HfSlot, HfVariant,
+    PaginateOptions, Pagination, SheetPages, expand, from_dialog_text, lines, paginate, plain_text,
+    presets, sheet_pages, to_dialog_text,
 };
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, col_to_letters};
 use opensheet_engine::{Locale, Rect};
@@ -67,8 +69,12 @@ pub(crate) struct Cached {
 fn live_key(app: &ExcelApp) -> u64 {
     let sheet = &app.wb.sheets[app.sheet];
     match &app.drag {
-        Some(Drag::ColResize { col, .. }) => 1 << 62 | (*col as u64) << 32 | sheet.col_width(*col).to_bits() as u64,
-        Some(Drag::RowResize { row, .. }) => 2 << 62 | (*row as u64) << 32 | sheet.row_height(*row).to_bits() as u64,
+        Some(Drag::ColResize { col, .. }) => {
+            1 << 62 | (*col as u64) << 32 | sheet.col_width(*col).to_bits() as u64
+        }
+        Some(Drag::RowResize { row, .. }) => {
+            2 << 62 | (*row as u64) << 32 | sheet.row_height(*row).to_bits() as u64
+        }
         _ => 0,
     }
 }
@@ -183,7 +189,14 @@ fn paint_normal(p: &mut Painter) {
             if b.manual {
                 rule(p, (x0, y), (x1, y), 1.0, color);
             } else {
-                p.dashed((x0.max(p.clip.0), y), (x1.min(p.clip.2), y), 1.0, 4.0, 3.0, color);
+                p.dashed(
+                    (x0.max(p.clip.0), y),
+                    (x1.min(p.clip.2), y),
+                    1.0,
+                    4.0,
+                    3.0,
+                    color,
+                );
             }
         }
         for b in &range.col_breaks {
@@ -194,7 +207,14 @@ fn paint_normal(p: &mut Painter) {
             if b.manual {
                 rule(p, (x, y0), (x, y1), 1.0, color);
             } else {
-                p.dashed((x, y0.max(p.clip.1)), (x, y1.min(p.clip.3)), 1.0, 4.0, 3.0, color);
+                p.dashed(
+                    (x, y0.max(p.clip.1)),
+                    (x, y1.min(p.clip.3)),
+                    1.0,
+                    4.0,
+                    3.0,
+                    color,
+                );
             }
         }
     }
@@ -283,11 +303,19 @@ fn boundary_at(layout: &GridLayout, vertical: bool, x: f32, y: f32) -> u32 {
     if vertical {
         let col = layout.col_at(x.max(layout.header_w + 1.0));
         let middle = layout.col_x(col) + layout.col_w(col) / 2.0;
-        if x > middle { (col + 1).min(MAX_COLS) } else { col }
+        if x > middle {
+            (col + 1).min(MAX_COLS)
+        } else {
+            col
+        }
     } else {
         let row = layout.row_at(y.max(layout.header_h + 1.0));
         let middle = layout.row_y(row) + layout.row_h(row) / 2.0;
-        if y > middle { (row + 1).min(MAX_ROWS) } else { row }
+        if y > middle {
+            (row + 1).min(MAX_ROWS)
+        } else {
+            row
+        }
     }
 }
 
@@ -316,7 +344,12 @@ fn paint_preview(p: &mut Painter) {
                 }
                 let (x0, y0, x1, y1) = p.cell_box(cells);
                 let size = ((x1 - x0).min(y1 - y0) * 0.2).clamp(9.0, 64.0);
-                let line = p.shape(&format!("{word} {}", page.index + 1), size, c(0xA6A6A6), true);
+                let line = p.shape(
+                    &format!("{word} {}", page.index + 1),
+                    size,
+                    c(0xA6A6A6),
+                    true,
+                );
                 let width = f32::from(line.width);
                 p.put(
                     line,
@@ -383,10 +416,22 @@ fn paint_preview(p: &mut Painter) {
                 // The outline: each edge is drawn (and can be dragged) by
                 // the pane that shows it.
                 let edges = [
-                    (Edge::Left, rect.c0 >= visible.c0 && rect.c0 <= visible.c1 + 1),
-                    (Edge::Right, rect.c1 + 1 >= visible.c0 && rect.c1 <= visible.c1),
-                    (Edge::Top, rect.r0 >= visible.r0 && rect.r0 <= visible.r1 + 1),
-                    (Edge::Bottom, rect.r1 + 1 >= visible.r0 && rect.r1 <= visible.r1),
+                    (
+                        Edge::Left,
+                        rect.c0 >= visible.c0 && rect.c0 <= visible.c1 + 1,
+                    ),
+                    (
+                        Edge::Right,
+                        rect.c1 + 1 >= visible.c0 && rect.c1 <= visible.c1,
+                    ),
+                    (
+                        Edge::Top,
+                        rect.r0 >= visible.r0 && rect.r0 <= visible.r1 + 1,
+                    ),
+                    (
+                        Edge::Bottom,
+                        rect.r1 + 1 >= visible.r0 && rect.r1 <= visible.r1,
+                    ),
                 ];
                 for (edge, shown) in edges {
                     if !shown {
@@ -554,8 +599,16 @@ impl Desk {
 
     /// The pages a pane shows, with one more on each side (its margin
     /// may be in view): rows of pages, then columns of pages.
-    fn shown(&self, visible: Rect) -> (std::ops::RangeInclusive<usize>, std::ops::RangeInclusive<usize>) {
-        let around = |first: usize, last: usize, count: usize| first.saturating_sub(1)..=(last + 1).min(count - 1);
+    fn shown(
+        &self,
+        visible: Rect,
+    ) -> (
+        std::ops::RangeInclusive<usize>,
+        std::ops::RangeInclusive<usize>,
+    ) {
+        let around = |first: usize, last: usize, count: usize| {
+            first.saturating_sub(1)..=(last + 1).min(count - 1)
+        };
         (
             around(
                 self.pages.row_page(visible.r0),
@@ -579,7 +632,13 @@ impl Desk {
     }
 
     /// The box of one section of the header or footer of a page.
-    fn section_box(&self, page: &PageBox, hf: &HeaderFooter, footer: bool, section: HfSection) -> (f32, f32, f32, f32) {
+    fn section_box(
+        &self,
+        page: &PageBox,
+        hf: &HeaderFooter,
+        footer: bool,
+        section: HfSection,
+    ) -> (f32, f32, f32, f32) {
         let (left, right) = self.header_span(page, hf);
         let third = (right - left) / 3.0;
         let k = match section {
@@ -588,9 +647,15 @@ impl Desk {
             HfSection::Right => 2.0,
         };
         let (top, bottom) = if footer {
-            (page.cells.3 + 2.0, (page.paper.3 - self.footer).max(page.cells.3 + 6.0))
+            (
+                page.cells.3 + 2.0,
+                (page.paper.3 - self.footer).max(page.cells.3 + 6.0),
+            )
         } else {
-            ((page.paper.1 + self.header).min(page.cells.1 - 6.0), page.cells.1 - 2.0)
+            (
+                (page.paper.1 + self.header).min(page.cells.1 - 6.0),
+                page.cells.1 - 2.0,
+            )
         };
         (left + k * third, top, left + (k + 1.0) * third, bottom)
     }
@@ -623,7 +688,8 @@ fn page_gaps(
 ) -> Vec<(u32, f32)> {
     let (before, after) = margins;
     let room = (paper - before - after).max(0.0);
-    let left_over = |first: u32, next: u32| (room - (axis.start(next) - axis.start(first)) as f32).max(0.0);
+    let left_over =
+        |first: u32, next: u32| (room - (axis.start(next) - axis.start(first)) as f32).max(0.0);
     let mut out = Vec::with_capacity(starts.len() + 1);
     out.push((0, desk + if folded { 0.0 } else { before }));
     for pair in starts.windows(2) {
@@ -699,7 +765,12 @@ struct HfZone {
     page: (usize, usize),
 }
 
-fn hf_context<'a>(app: &'a ExcelApp, names: &'a (String, String), page: i32, pages: u32) -> HfContext<'a> {
+fn hf_context<'a>(
+    app: &'a ExcelApp,
+    names: &'a (String, String),
+    page: i32,
+    pages: u32,
+) -> HfContext<'a> {
     HfContext {
         page,
         pages,
@@ -769,7 +840,11 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
             let between = i > 0 && i < n_rows;
             let zone = p.zone(
                 (clip.0, from, clip.2, to),
-                if between { DeskZone::Between } else { DeskZone::Inert },
+                if between {
+                    DeskZone::Between
+                } else {
+                    DeskZone::Inert
+                },
             );
             if between {
                 zone.tooltip(if desk.folded {
@@ -806,7 +881,11 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
                 // says what to do with it.
                 p.rect(cx0, cy0, cx1, cy1, ca(0xF0F0F0, 0.55));
                 let cells = Rect::new(page.rows.0, page.cols.0, page.rows.1, page.cols.1);
-                if !desk.pagination.ranges.iter().any(|range| range.rect.intersects(&cells))
+                if !desk
+                    .pagination
+                    .ranges
+                    .iter()
+                    .any(|range| range.rect.intersects(&cells))
                     && !sheet
                         .cells
                         .range((cells.r0, 0)..=(cells.r1, u32::MAX))
@@ -838,7 +917,11 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
             let variant = hf.variant(first, number);
             let context = hf_context(app, &names, number, total.max(1));
             for footer in [false, true] {
-                let code = if footer { hf.footer(variant) } else { hf.header(variant) };
+                let code = if footer {
+                    hf.footer(variant)
+                } else {
+                    hf.header(variant)
+                };
                 let sections = HfSections::parse(code);
                 for section in [HfSection::Left, HfSection::Center, HfSection::Right] {
                     let bounds = desk.section_box(&page, hf, footer, section);
@@ -848,8 +931,9 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
                         page: (i, j),
                     };
                     p.zone(bounds, zone).cursor(CursorStyle::IBeam);
-                    let being_typed =
-                        edit.is_some_and(|e| e.footer == footer && e.section == section && e.page == (i, j));
+                    let being_typed = edit.is_some_and(|e| {
+                        e.footer == footer && e.section == section && e.page == (i, j)
+                    });
                     if being_typed {
                         continue;
                     }
@@ -872,7 +956,16 @@ fn paint_desk(p: &mut Painter, desk: &Desk) {
                         }
                         continue;
                     }
-                    paint_section(p, desk, hf, sections.get(section), &context, footer, section, bounds);
+                    paint_section(
+                        p,
+                        desk,
+                        hf,
+                        sections.get(section),
+                        &context,
+                        footer,
+                        section,
+                        bounds,
+                    );
                 }
             }
         }
@@ -896,7 +989,13 @@ fn paint_section(
         return;
     }
     let app = p.app;
-    let default_font = app.wb.styles.get(opensheet_engine::StyleId(0)).font.name.clone();
+    let default_font = app
+        .wb
+        .styles
+        .get(opensheet_engine::StyleId(0))
+        .font
+        .name
+        .clone();
     // Header text keeps its size on paper unless it scales with the sheet.
     let scale = if hf.scale_with_doc {
         desk.pagination.scale() as f32
@@ -1166,14 +1265,16 @@ pub(crate) fn edited_picture(app: &ExcelApp) -> Option<HfSlot> {
 /// uses; pages that do not print show the ordinary one.
 fn variant_of(app: &ExcelApp, page: (usize, usize)) -> HfVariant {
     let hf = &setup(app).header_footer;
-    let printed = all_pages(app).zip(pagination(app)).and_then(|(pages, pagination)| {
-        let (row, col) = (pages.rows(page.0).0, pages.cols(page.1).0);
-        pagination
-            .pages
-            .iter()
-            .find(|p| p.rows.0 == row && p.cols.0 == col)
-            .map(|p| hf.variant(p.index == 0, p.number))
-    });
+    let printed = all_pages(app)
+        .zip(pagination(app))
+        .and_then(|(pages, pagination)| {
+            let (row, col) = (pages.rows(page.0).0, pages.cols(page.1).0);
+            pagination
+                .pages
+                .iter()
+                .find(|p| p.rows.0 == row && p.cols.0 == col)
+                .map(|p| hf.variant(p.index == 0, p.number))
+        });
     printed.unwrap_or_else(|| hf.variant(false, 1))
 }
 
@@ -1187,12 +1288,22 @@ fn code_of(typed: &str, locale: &Locale) -> String {
 }
 
 fn section_code(hf: &HeaderFooter, variant: HfVariant, footer: bool, section: HfSection) -> String {
-    let code = if footer { hf.footer(variant) } else { hf.header(variant) };
+    let code = if footer {
+        hf.footer(variant)
+    } else {
+        hf.header(variant)
+    };
     HfSections::parse(code).get(section).to_string()
 }
 
 /// Replace one section of a header or footer.
-fn set_section(hf: &mut HeaderFooter, variant: HfVariant, footer: bool, section: HfSection, code: &str) {
+fn set_section(
+    hf: &mut HeaderFooter,
+    variant: HfVariant,
+    footer: bool,
+    section: HfSection,
+    code: &str,
+) {
     let target = if footer {
         hf.footer_mut(variant)
     } else {
@@ -1323,7 +1434,9 @@ pub(crate) fn insert_header_footer(app: &mut ExcelApp, window: &mut Window, cx: 
     if let Some(layout) = app.current_layout() {
         let margin = Desk::of(app, layout.zoom).map_or(0.0, |desk| desk.margin.1 + desk.gap);
         let view = &mut app.views[app.sheet];
-        view.scroll_y = (layout.rows.start(top) - margin as f64).max(0.0).min(view.scroll_y);
+        view.scroll_y = (layout.rows.start(top) - margin as f64)
+            .max(0.0)
+            .min(view.scroll_y);
     }
     begin_edit(app, false, HfSection::Center, page, window, cx);
 }
@@ -1417,30 +1530,33 @@ pub(crate) fn preset_menu(app: &ExcelApp, footer: bool) -> Vec<MenuEntry> {
             } else {
                 plain_text(&code, &context)
             };
-            MenuEntry::new(label, move |app: &mut ExcelApp, _: &mut Window, cx: &mut Cx| {
-                let edit = app.ext::<PageUi>().and_then(|ui| ui.hf.as_ref());
-                let variant = edit.map_or(HfVariant::Odd, |e| e.variant);
-                let shown = edit.map(|e| (e.footer, e.section, e.input.clone()));
-                let code = code.clone();
-                change(app, t("Header/Footer", "En-tête/Pied de page"), cx, |s| {
-                    let hf = &mut s.header_footer;
-                    *(if footer {
-                        hf.footer_mut(variant)
-                    } else {
-                        hf.header_mut(variant)
-                    }) = code;
-                });
-                // The section being typed shows its new text.
-                if let Some((edited_footer, section, input)) = shown {
-                    if edited_footer == footer {
-                        let text = typed_text(
-                            &section_code(&setup(app).header_footer, variant, footer, section),
-                            app.wb.locale,
-                        );
-                        input.update(cx, |input, cx| input.set_text(text, cx));
+            MenuEntry::new(
+                label,
+                move |app: &mut ExcelApp, _: &mut Window, cx: &mut Cx| {
+                    let edit = app.ext::<PageUi>().and_then(|ui| ui.hf.as_ref());
+                    let variant = edit.map_or(HfVariant::Odd, |e| e.variant);
+                    let shown = edit.map(|e| (e.footer, e.section, e.input.clone()));
+                    let code = code.clone();
+                    change(app, t("Header/Footer", "En-tête/Pied de page"), cx, |s| {
+                        let hf = &mut s.header_footer;
+                        *(if footer {
+                            hf.footer_mut(variant)
+                        } else {
+                            hf.header_mut(variant)
+                        }) = code;
+                    });
+                    // The section being typed shows its new text.
+                    if let Some((edited_footer, section, input)) = shown {
+                        if edited_footer == footer {
+                            let text = typed_text(
+                                &section_code(&setup(app).header_footer, variant, footer, section),
+                                app.wb.locale,
+                            );
+                            input.update(cx, |input, cx| input.set_text(text, cx));
+                        }
                     }
-                }
-            })
+                },
+            )
         })
         .collect()
 }
@@ -1473,10 +1589,15 @@ pub(crate) fn insert_picture(app: &mut ExcelApp, window: &mut Window, cx: &mut C
         let Ok(Ok(Some(paths))) = paths.await else {
             return;
         };
-        let Some(data) = paths.into_iter().next().and_then(|path| std::fs::read(path).ok()) else {
+        let Some(data) = paths
+            .into_iter()
+            .next()
+            .and_then(|path| std::fs::read(path).ok())
+        else {
             return;
         };
-        this.update_in(cx, |app, _, cx| place_picture(app, slot, data, cx)).ok();
+        this.update_in(cx, |app, _, cx| place_picture(app, slot, data, cx))
+            .ok();
     })
     .detach();
 }
@@ -1514,7 +1635,13 @@ pub(crate) fn place_picture(app: &mut ExcelApp, slot: HfSlot, data: Vec<u8>, cx:
             hf.pictures.push(picture);
             let code = section_code(hf, slot.variant, slot.footer, slot.section);
             if !code.contains("&G") {
-                set_section(hf, slot.variant, slot.footer, slot.section, &format!("{code}&G"));
+                set_section(
+                    hf,
+                    slot.variant,
+                    slot.footer,
+                    slot.section,
+                    &format!("{code}&G"),
+                );
             }
         },
     );
@@ -1533,7 +1660,9 @@ struct PictureDialog {
 
 impl PictureDialog {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let (Some(width), Some(height)) = (self.width.read(cx).number(), self.height.read(cx).number()) else {
+        let (Some(width), Some(height)) =
+            (self.width.read(cx).number(), self.height.read(cx).number())
+        else {
             return;
         };
         let (slot, lock, ratio) = (self.slot, self.lock, self.ratio);
@@ -1542,9 +1671,14 @@ impl PictureDialog {
             let to_pt = |v: f64| (super::from_unit(v, locale) * 72.0) as f32;
             let width = to_pt(width);
             // With the proportions locked the width decides.
-            let height = if lock { width * ratio as f32 } else { to_pt(height) };
+            let height = if lock {
+                width * ratio as f32
+            } else {
+                to_pt(height)
+            };
             change(app, t("Format Picture", "Format de l'image"), cx, |s| {
-                if let Some(picture) = s.header_footer.pictures.iter_mut().find(|p| p.slot == slot) {
+                if let Some(picture) = s.header_footer.pictures.iter_mut().find(|p| p.slot == slot)
+                {
                     picture.size = (width, height);
                 }
             });
@@ -1567,12 +1701,15 @@ impl Render for PictureDialog {
                 NumberField::new("width", &self.width).width(80.0),
             ))
             .child(
-                Checkbox::new("lock", t("Lock aspect ratio", "Garder les proportions"), self.lock).on_change(cx.listener(
-                    |this, on: &bool, _, cx| {
-                        this.lock = *on;
-                        cx.notify();
-                    },
-                )),
+                Checkbox::new(
+                    "lock",
+                    t("Lock aspect ratio", "Garder les proportions"),
+                    self.lock,
+                )
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    this.lock = *on;
+                    cx.notify();
+                })),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
@@ -1589,7 +1726,11 @@ pub(crate) fn format_picture(app: &mut ExcelApp, window: &mut Window, cx: &mut C
     let locale = app.wb.locale;
     let shown = |pt: f32| (super::to_unit(pt as f64 / 72.0, locale) * 100.0).round() / 100.0;
     let (width, height) = (shown(size.0), shown(size.1));
-    let ratio = if size.0 > 0.0 { (size.1 / size.0) as f64 } else { 1.0 };
+    let ratio = if size.0 > 0.0 {
+        (size.1 / size.0) as f64
+    } else {
+        1.0
+    };
     app.open_modal(window, cx, move |modal, _, cx| PictureDialog {
         modal,
         slot,
@@ -1612,7 +1753,10 @@ pub(crate) fn header_footer_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyEleme
         )
         .into_any_element(),
         group(
-            t("Header & Footer Elements", "Éléments en-tête et pied de page"),
+            t(
+                "Header & Footer Elements",
+                "Éléments en-tête et pied de page",
+            ),
             row(vec![
                 app.cmd_large("hf-page", Cmd::HfPageNumber, false, cx),
                 app.cmd_large("hf-pages", Cmd::HfPages, false, cx),
@@ -1728,7 +1872,10 @@ pub(crate) fn zone_mouse_down(
             return ZoneResponse::Handled;
         };
         let to = boundary_at(&layout, handle.vertical(), ev.x, ev.y);
-        app.ext_mut::<PageUi>().drag = Some(BreakDrag { handle: *handle, to });
+        app.ext_mut::<PageUi>().drag = Some(BreakDrag {
+            handle: *handle,
+            to,
+        });
         return ZoneResponse::Capture;
     }
     if let Some(zone) = zone.payload::<HfZone>() {
@@ -1738,7 +1885,9 @@ pub(crate) fn zone_mouse_down(
         let already = app
             .ext::<PageUi>()
             .and_then(|ui| ui.hf.as_ref())
-            .is_some_and(|e| e.footer == zone.footer && e.section == zone.section && e.page == zone.page);
+            .is_some_and(|e| {
+                e.footer == zone.footer && e.section == zone.section && e.page == zone.page
+            });
         if !already {
             begin_edit(app, zone.footer, zone.section, zone.page, window, cx);
         }
@@ -1768,7 +1917,10 @@ pub(crate) fn zone_drag(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, cx: &mu
         return;
     };
     let to = boundary_at(&layout, handle.vertical(), ev.x, ev.y);
-    app.ext_mut::<PageUi>().drag = Some(BreakDrag { handle: *handle, to });
+    app.ext_mut::<PageUi>().drag = Some(BreakDrag {
+        handle: *handle,
+        to,
+    });
     cx.notify();
 }
 
@@ -1794,13 +1946,18 @@ pub(crate) fn status_items(app: &ExcelApp) -> Vec<StatusItem> {
     };
     let (row, col) = app.active();
     let count = pagination.pages.len().max(1);
-    let page = pagination.page_of(row, col).map_or(1, |page| page.index + 1);
+    let page = pagination
+        .page_of(row, col)
+        .map_or(1, |page| page.index + 1);
     vec![StatusItem::new(page_of_text(page, count))]
 }
 
 /// "Page: 2 of 5" / "Page : 2 sur 5".
 pub(crate) fn page_of_text(page: usize, count: usize) -> String {
-    crate::i18n::labelled(t("Page", "Page"), format!("{page} {} {count}", t("of", "sur")))
+    crate::i18n::labelled(
+        t("Page", "Page"),
+        format!("{page} {} {count}", t("of", "sur")),
+    )
 }
 
 #[cfg(test)]
@@ -1811,12 +1968,27 @@ mod tests {
     fn edges_of_the_print_area() {
         let ranges = vec![Rect::new(0, 0, 9, 4), Rect::new(20, 2, 29, 6)];
         // The right edge dropped before column H: the range ends at G.
-        assert_eq!(moved_edge(&ranges, 0, Edge::Right, 7)[0], Rect::new(0, 0, 9, 6));
+        assert_eq!(
+            moved_edge(&ranges, 0, Edge::Right, 7)[0],
+            Rect::new(0, 0, 9, 6)
+        );
         // An edge cannot cross the one facing it.
-        assert_eq!(moved_edge(&ranges, 0, Edge::Right, 0)[0], Rect::new(0, 0, 9, 0));
-        assert_eq!(moved_edge(&ranges, 1, Edge::Top, 40)[1], Rect::new(29, 2, 29, 6));
-        assert_eq!(moved_edge(&ranges, 1, Edge::Left, 0)[1], Rect::new(20, 0, 29, 6));
-        assert_eq!(moved_edge(&ranges, 1, Edge::Bottom, 25)[1], Rect::new(20, 2, 24, 6));
+        assert_eq!(
+            moved_edge(&ranges, 0, Edge::Right, 0)[0],
+            Rect::new(0, 0, 9, 0)
+        );
+        assert_eq!(
+            moved_edge(&ranges, 1, Edge::Top, 40)[1],
+            Rect::new(29, 2, 29, 6)
+        );
+        assert_eq!(
+            moved_edge(&ranges, 1, Edge::Left, 0)[1],
+            Rect::new(20, 0, 29, 6)
+        );
+        assert_eq!(
+            moved_edge(&ranges, 1, Edge::Bottom, 25)[1],
+            Rect::new(20, 2, 24, 6)
+        );
         // The other ranges are left alone, and so is everything when the
         // range does not exist.
         assert_eq!(moved_edge(&ranges, 1, Edge::Bottom, 25)[0], ranges[0]);
@@ -1834,8 +2006,14 @@ mod tests {
         set_section(&mut hf, HfVariant::Odd, true, HfSection::Right, "&D");
         set_section(&mut hf, HfVariant::Odd, true, HfSection::Left, "Brouillon");
         assert_eq!(hf.odd_footer, "&LBrouillon&R&D");
-        assert_eq!(section_code(&hf, HfVariant::Odd, true, HfSection::Right), "&D");
-        assert_eq!(section_code(&hf, HfVariant::Odd, false, HfSection::Center), "");
+        assert_eq!(
+            section_code(&hf, HfVariant::Odd, true, HfSection::Right),
+            "&D"
+        );
+        assert_eq!(
+            section_code(&hf, HfVariant::Odd, false, HfSection::Center),
+            ""
+        );
     }
 
     #[test]
@@ -1858,7 +2036,10 @@ mod tests {
         assert_eq!(gaps[3], (1000, 56.0));
         // Folded: no margins, a thin strip between the pages.
         let folded = page_gaps(&axis, &[0, 10, 20], 1000, 300.0, (30.0, 40.0), 16.0, true);
-        assert_eq!(folded, vec![(0, 16.0), (10, FOLD), (20, FOLD), (1000, 16.0)]);
+        assert_eq!(
+            folded,
+            vec![(0, 16.0), (10, FOLD), (20, FOLD), (1000, 16.0)]
+        );
         // The grid finds the cells again through the gaps.
         let mut axis = axis;
         axis.set_gaps(&gaps);

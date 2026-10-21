@@ -319,7 +319,9 @@ pub fn code_from_locale(code: &str, locale: &Locale) -> String {
                             .rev()
                             .take_while(|t| matches!(t.lex, Lex::Digit(_)))
                             .collect();
-                        after == 3 && !before.is_empty() && before.iter().all(|t| t.lex == Lex::Digit('#'))
+                        after == 3
+                            && !before.is_empty()
+                            && before.iter().all(|t| t.lex == Lex::Digit('#'))
                     }
                 }
                 (None, true) => false,
@@ -371,7 +373,13 @@ pub fn code_to_locale(code: &str, locale: &Locale) -> String {
     let letters = |t: &Token, to: char| -> String {
         code[t.start..t.end]
             .chars()
-            .map(|c| if c.is_ascii_uppercase() { to.to_ascii_uppercase() } else { to })
+            .map(|c| {
+                if c.is_ascii_uppercase() {
+                    to.to_ascii_uppercase()
+                } else {
+                    to
+                }
+            })
             .collect()
     };
     let grouping = if locale.thousands_sep.is_whitespace() {
@@ -383,13 +391,20 @@ pub fn code_to_locale(code: &str, locale: &Locale) -> String {
         if raw_kind(sec) == RawKind::Date {
             for (i, t) in sec.iter().enumerate() {
                 match t.lex {
-                    Lex::Date('d', _) if day != 'd' => edits.push((t.start, t.end, letters(t, day))),
-                    Lex::Date('y', _) if year != 'y' => edits.push((t.start, t.end, letters(t, year))),
+                    Lex::Date('d', _) if day != 'd' => {
+                        edits.push((t.start, t.end, letters(t, day)))
+                    }
+                    Lex::Date('y', _) if year != 'y' => {
+                        edits.push((t.start, t.end, letters(t, year)))
+                    }
                     // Fractional seconds: "ss.00".
                     Lex::Dot
                         if locale.decimal_sep != '.'
                             && i > 0
-                            && matches!(sec[i - 1].lex, Lex::Date('s', _) | Lex::Elapsed('s', _))
+                            && matches!(
+                                sec[i - 1].lex,
+                                Lex::Date('s', _) | Lex::Elapsed('s', _)
+                            )
                             && sec.get(i + 1).is_some_and(|n| n.lex == Lex::Digit('0')) =>
                     {
                         edits.push((t.start, t.end, locale.decimal_sep.to_string()))
@@ -2749,7 +2764,12 @@ mod tests {
                 locale.accounting_format,
             ] {
                 let shown = code_to_locale(code, locale);
-                assert_eq!(code_from_locale(&shown, locale), code, "{code} shown as {shown} in {}", locale.id);
+                assert_eq!(
+                    code_from_locale(&shown, locale),
+                    code,
+                    "{code} shown as {shown} in {}",
+                    locale.id
+                );
             }
         }
     }

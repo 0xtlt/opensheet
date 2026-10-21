@@ -29,20 +29,25 @@ use crate::view::tooltip;
 use crate::widgets::text_area::{AreaEvent, OutlineKey, TextArea};
 use crate::widgets::{self, ListBox};
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, EntityInputHandler, Focusable, MouseButton, Pixels, SharedString, Subscription, WeakEntity, Window,
-    canvas, div, prelude::*, px,
+    AnyElement, App, Bounds, Context, Entity, EntityInputHandler, Focusable, MouseButton, Pixels,
+    SharedString, Subscription, WeakEntity, Window, canvas, div, prelude::*, px,
 };
 use opensheet_engine::Locale;
 use opensheet_engine::drawing::{Drawing, ShapeTool};
-use opensheet_engine::wordart::TextEffects;
-use opensheet_engine::smartart::{Category, ColorScheme, DEFAULT_SIZE, Layout, Line, Piece, QuickStyle, SmartArt, placeholder};
+use opensheet_engine::smartart::{
+    Category, ColorScheme, DEFAULT_SIZE, Layout, Line, Piece, QuickStyle, SmartArt, placeholder,
+};
 use opensheet_engine::theme::Theme;
+use opensheet_engine::wordart::TextEffects;
 use std::sync::Arc;
 
 /// Where a piece of a graphic is drawn, the graphic being drawn in
 /// `placed`: `natural` is the size the pieces were laid out for.
 pub(super) fn placed_piece(piece: &Piece, placed: &Placed, natural: (f32, f32)) -> Placed {
-    let (sx, sy) = (placed.width() / natural.0.max(1.0), placed.height() / natural.1.max(1.0));
+    let (sx, sy) = (
+        placed.width() / natural.0.max(1.0),
+        placed.height() / natural.1.max(1.0),
+    );
     Placed {
         x0: placed.x0 + piece.x * sx,
         y0: placed.y0 + piece.y * sy,
@@ -60,7 +65,17 @@ pub(super) fn placed_piece(piece: &Piece, placed: &Placed, natural: (f32, f32)) 
 /// The text of the shape that shows entry `typed` is left out: the field
 /// it is being typed in lies over it.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw(art: &SmartArt, theme: &Theme, placed: &Placed, natural: (f32, f32), brush: &Brush, fonts: Option<&FontResolver>, locale: &Locale, typed: Option<usize>, out: &mut Vec<Draw>) {
+pub(super) fn draw(
+    art: &SmartArt,
+    theme: &Theme,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    fonts: Option<&FontResolver>,
+    locale: &Locale,
+    typed: Option<usize>,
+    out: &mut Vec<Draw>,
+) {
     let pieces = art.pieces(theme, natural.0, natural.1);
     for piece in &pieces {
         let at = placed_piece(piece, placed, natural);
@@ -76,7 +91,10 @@ pub(super) fn draw(art: &SmartArt, theme: &Theme, placed: &Placed, natural: (f32
         }
         // A fill that lets what is under it show is painted here.
         if let (Some(fill), true) = (shape.fill, piece.opacity < 1.0) {
-            for line in geometry::flatten(&shape.path(size.0, size.1), &at).iter().filter(|line| line.closed) {
+            for line in geometry::flatten(&shape.path(size.0, size.1), &at)
+                .iter()
+                .filter(|line| line.closed)
+            {
                 brush.fill(&line.points, ca(fill.value(), piece.opacity.max(0.0)), out);
             }
             shape.fill = None;
@@ -86,8 +104,13 @@ pub(super) fn draw(art: &SmartArt, theme: &Theme, placed: &Placed, natural: (f32
     let Some(fonts) = fonts else {
         return;
     };
-    let typed = typed.and_then(|line| piece_of(&pieces, line)).and_then(|piece| piece.node);
-    for piece in pieces.iter().filter(|piece| piece.node.is_some() && piece.node != typed) {
+    let typed = typed
+        .and_then(|line| piece_of(&pieces, line))
+        .and_then(|piece| piece.node);
+    for piece in pieces
+        .iter()
+        .filter(|piece| piece.node.is_some() && piece.node != typed)
+    {
         let at = placed_piece(piece, placed, natural);
         let mut shape = piece.shape.clone();
         (shape.fill, shape.outline) = (None, None);
@@ -95,7 +118,14 @@ pub(super) fn draw(art: &SmartArt, theme: &Theme, placed: &Placed, natural: (f32
         if shape.text.is_empty() {
             shape.text = placeholder(locale).to_string();
         }
-        paint::draw_shape(&shape, &at, (piece.width, piece.height), brush, Some(fonts), out);
+        paint::draw_shape(
+            &shape,
+            &at,
+            (piece.width, piece.height),
+            brush,
+            Some(fonts),
+            out,
+        );
     }
 }
 
@@ -130,7 +160,10 @@ struct NodeEdit {
 /// lists it under the entry it belongs to (the pieces of a graphic each
 /// name the first line they show).
 pub(super) fn piece_of(pieces: &[Piece], line: usize) -> Option<&Piece> {
-    pieces.iter().filter(|piece| piece.node.is_some_and(|first| first <= line)).max_by_key(|piece| piece.node)
+    pieces
+        .iter()
+        .filter(|piece| piece.node.is_some_and(|first| first <= line))
+        .max_by_key(|piece| piece.node)
 }
 
 impl SmartUi {
@@ -170,7 +203,11 @@ pub(super) fn chosen_lines(app: &ExcelApp) -> Vec<usize> {
         return Vec::new();
     };
     let mut lines = vec![line];
-    lines.extend(app.ext::<SmartUi>().map(|ui| ui.also.clone()).unwrap_or_default());
+    lines.extend(
+        app.ext::<SmartUi>()
+            .map(|ui| ui.also.clone())
+            .unwrap_or_default(),
+    );
     lines
 }
 
@@ -184,7 +221,12 @@ pub(super) fn flush(app: &mut ExcelApp, cx: &mut Cx) {
 /// Change the selected graphic as one undo step. `change` gets the line
 /// the commands act on and may move it; it answers whether anything
 /// changed.
-pub(super) fn change(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl FnOnce(&mut SmartArt, &mut Option<usize>) -> bool) -> bool {
+pub(super) fn change(
+    app: &mut ExcelApp,
+    label: &str,
+    cx: &mut Cx,
+    change: impl FnOnce(&mut SmartArt, &mut Option<usize>) -> bool,
+) -> bool {
     let Some(id) = selected_art(app).map(|(id, _)| id) else {
         return false;
     };
@@ -195,10 +237,20 @@ pub(super) fn change(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: impl 
     let mut line = current_line(app);
     let sheet = app.sheet;
     // Tried on a copy: a command that changes nothing is no undo step.
-    let Some(mut art) = app.wb.drawing(sheet, id).and_then(Drawing::as_smartart).cloned() else {
+    let Some(mut art) = app
+        .wb
+        .drawing(sheet, id)
+        .and_then(Drawing::as_smartart)
+        .cloned()
+    else {
         return false;
     };
-    let levels = |art: &SmartArt| art.outline().into_iter().map(|(level, _)| level).collect::<Vec<_>>();
+    let levels = |art: &SmartArt| {
+        art.outline()
+            .into_iter()
+            .map(|(level, _)| level)
+            .collect::<Vec<_>>()
+    };
     let before = levels(&art);
     let changed = change(&mut art, &mut line);
     // The lines are not what they were: only the entry the command
@@ -248,18 +300,30 @@ fn type_text(app: &mut ExcelApp, id: u32, line: usize, text: &str, cx: &mut Cx) 
 
 /// The entry being typed in its shape: (graphic, line).
 pub(super) fn editing(app: &ExcelApp) -> Option<(u32, usize)> {
-    app.ext::<SmartUi>()?.edit.as_ref().map(|edit| (edit.id, edit.line))
+    app.ext::<SmartUi>()?
+        .edit
+        .as_ref()
+        .map(|edit| (edit.id, edit.line))
 }
 
 /// The line of a graphic whose text the field over its shape shows.
 pub(super) fn typed_line(app: &ExcelApp, id: u32) -> Option<usize> {
-    editing(app).filter(|(of, _)| *of == id).map(|(_, line)| line)
+    editing(app)
+        .filter(|(of, _)| *of == id)
+        .map(|(_, line)| line)
 }
 
 /// Start typing an entry of a graphic in its shape, with the editor
 /// text boxes use. False when the entry is not there or the sheet's
 /// protection holds the graphic.
-pub(super) fn begin_edit(app: &mut ExcelApp, id: u32, line: usize, start: TextStart, window: &mut Window, cx: &mut Cx) -> bool {
+pub(super) fn begin_edit(
+    app: &mut ExcelApp,
+    id: u32,
+    line: usize,
+    start: TextStart,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> bool {
     let text = app
         .wb
         .drawing(app.sheet, id)
@@ -322,9 +386,16 @@ fn retarget(app: &mut ExcelApp, cx: &mut Cx) {
     let Some((id, _)) = editing(app) else {
         return;
     };
-    let line = app.ext::<SmartUi>().and_then(|ui| ui.node).filter(|(of, _)| *of == id).map(|(_, line)| line);
+    let line = app
+        .ext::<SmartUi>()
+        .and_then(|ui| ui.node)
+        .filter(|(of, _)| *of == id)
+        .map(|(_, line)| line);
     let text = line.and_then(|line| {
-        let art = app.wb.drawing(app.sheet, id).and_then(Drawing::as_smartart)?;
+        let art = app
+            .wb
+            .drawing(app.sheet, id)
+            .and_then(Drawing::as_smartart)?;
         art.outline().get(line).map(|(_, text)| text.clone())
     });
     let (Some(line), Some(text)) = (line, text) else {
@@ -343,7 +414,13 @@ fn retarget(app: &mut ExcelApp, cx: &mut Cx) {
 
 /// What the field over a shape reports: its text as it changes, and the
 /// keys that work on the outline.
-fn on_area(app: &mut ExcelApp, area: &Entity<TextArea>, event: &AreaEvent, window: &mut Window, cx: &mut Cx) {
+fn on_area(
+    app: &mut ExcelApp,
+    area: &Entity<TextArea>,
+    event: &AreaEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let Some((id, line)) = editing(app) else {
         return;
     };
@@ -375,7 +452,11 @@ fn on_area(app: &mut ExcelApp, area: &Entity<TextArea>, event: &AreaEvent, windo
         }
         // Tab and Shift+Tab: one level down or up, where the entry can go.
         AreaEvent::Outline(key) => {
-            let cmd = if *key == OutlineKey::ShiftTab { Cmd::SmartPromote } else { Cmd::SmartDemote };
+            let cmd = if *key == OutlineKey::ShiftTab {
+                Cmd::SmartPromote
+            } else {
+                Cmd::SmartDemote
+            };
             restructure(app, cmd, cx);
             retarget(app, cx);
         }
@@ -386,12 +467,30 @@ fn on_area(app: &mut ExcelApp, area: &Entity<TextArea>, event: &AreaEvent, windo
 /// Typing with a graphic selected goes to the entry that is chosen in
 /// it. True when the selected object is a graphic (the keys are its own,
 /// whether an entry takes them or not).
-pub(super) fn typed(app: &mut ExcelApp, id: u32, text: &str, window: &mut Window, cx: &mut Cx) -> bool {
-    if app.wb.drawing(app.sheet, id).and_then(Drawing::as_smartart).is_none() {
+pub(super) fn typed(
+    app: &mut ExcelApp,
+    id: u32,
+    text: &str,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> bool {
+    if app
+        .wb
+        .drawing(app.sheet, id)
+        .and_then(Drawing::as_smartart)
+        .is_none()
+    {
         return false;
     }
     if let Some(line) = current_line(app) {
-        begin_edit(app, id, line, TextStart::Typed(text.to_string()), window, cx);
+        begin_edit(
+            app,
+            id,
+            line,
+            TextStart::Typed(text.to_string()),
+            window,
+            cx,
+        );
     }
     true
 }
@@ -410,7 +509,11 @@ pub(super) fn leave_node(app: &mut ExcelApp, cx: &mut Cx) -> bool {
 }
 
 /// The field in which an entry is typed, over its shape.
-pub(super) fn overlay(app: &ExcelApp, layout: &crate::grid::GridLayout, cx: &mut Cx) -> Option<AnyElement> {
+pub(super) fn overlay(
+    app: &ExcelApp,
+    layout: &crate::grid::GridLayout,
+    cx: &mut Cx,
+) -> Option<AnyElement> {
     let edit = app.ext::<SmartUi>()?.edit.as_ref()?;
     let sheet = &app.wb.sheets[app.sheet];
     let drawing = app.wb.drawing(app.sheet, edit.id)?;
@@ -422,9 +525,24 @@ pub(super) fn overlay(app: &ExcelApp, layout: &crate::grid::GridLayout, cx: &mut
     // In the pane that shows the middle of the shape.
     paint::panes(layout).into_iter().find_map(|pane| {
         let whole = paint::placed(layout, sheet, drawing, &pane);
-        let at = placed_piece(piece, &Placed::plain(whole.x0, whole.y0, whole.x1, whole.y1), natural);
+        let at = placed_piece(
+            piece,
+            &Placed::plain(whole.x0, whole.y0, whole.x1, whole.y1),
+            natural,
+        );
         let (x, y) = at.centre();
-        pane.contains(x, y).then(|| super::area_overlay(app, &edit.area, &piece.shape, &at, (piece.width, piece.height), &pane, layout.zoom, cx))
+        pane.contains(x, y).then(|| {
+            super::area_overlay(
+                app,
+                &edit.area,
+                &piece.shape,
+                &at,
+                (piece.width, piece.height),
+                &pane,
+                layout.zoom,
+                cx,
+            )
+        })
     })
 }
 
@@ -441,7 +559,12 @@ pub(super) fn can_format(app: &ExcelApp) -> bool {
 /// `change` is given a shape standing for each, and what it changed is
 /// kept with the entry. `None` when the selection is not a graphic; else
 /// whether anything changed.
-pub(super) fn format_nodes(app: &mut ExcelApp, label: &str, cx: &mut Cx, change: &dyn Fn(&mut Drawing)) -> Option<bool> {
+pub(super) fn format_nodes(
+    app: &mut ExcelApp,
+    label: &str,
+    cx: &mut Cx,
+    change: &dyn Fn(&mut Drawing),
+) -> Option<bool> {
     let (id, art) = selected_art(app)?;
     if art.foreign.is_some() {
         return Some(false);
@@ -455,7 +578,10 @@ pub(super) fn format_nodes(app: &mut ExcelApp, label: &str, cx: &mut Cx, change:
         let mut lines: Vec<usize> = if chosen.is_empty() {
             pieces.iter().filter_map(|piece| piece.node).collect()
         } else {
-            chosen.iter().filter_map(|line| piece_of(&pieces, *line)?.node).collect()
+            chosen
+                .iter()
+                .filter_map(|line| piece_of(&pieces, *line)?.node)
+                .collect()
         };
         lines.sort_unstable();
         lines.dedup();
@@ -485,12 +611,18 @@ pub(super) fn format_nodes(app: &mut ExcelApp, label: &str, cx: &mut Cx, change:
                 if stand_in.effects != effects {
                     format.effects = Some(stand_in.effects);
                 }
-                if let Some(color) = now.font.color.filter(|color| Some(*color) != was.font.color) {
+                if let Some(color) = now
+                    .font
+                    .color
+                    .filter(|color| Some(*color) != was.font.color)
+                {
                     format.text_color = Some(color);
                 }
                 // Of what letters can wear, a graphic keeps their
                 // outline and whether they are filled.
-                if (now.effects.hollow, now.effects.outline) != (was.effects.hollow, was.effects.outline) {
+                if (now.effects.hollow, now.effects.outline)
+                    != (was.effects.hollow, was.effects.outline)
+                {
                     format.text_effects = Some(TextEffects {
                         hollow: now.effects.hollow,
                         outline: now.effects.outline,
@@ -516,10 +648,15 @@ fn resize(app: &mut ExcelApp, cmd: Cmd, cx: &mut Cx) -> bool {
     let theme = app.wb.theme_arc();
     change(app, cmd.label(), cx, |art, _| {
         let pieces = art.pieces(&theme, frame.width as f32, frame.height as f32);
-        let mut lines: Vec<usize> = chosen.iter().filter_map(|line| piece_of(&pieces, *line)?.node).collect();
+        let mut lines: Vec<usize> = chosen
+            .iter()
+            .filter_map(|line| piece_of(&pieces, *line)?.node)
+            .collect();
         lines.sort_unstable();
         lines.dedup();
-        lines.into_iter().fold(false, |changed, line| art.set_format(line, |format| format.resize(larger)) || changed)
+        lines.into_iter().fold(false, |changed, line| {
+            art.set_format(line, |format| format.resize(larger)) || changed
+        })
     })
 }
 
@@ -541,7 +678,12 @@ fn open_change_shape(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
 /// The line a new shape is added next to when none is chosen: the last
 /// entry of the top level.
 fn anchor_line(art: &SmartArt, line: Option<usize>) -> usize {
-    line.unwrap_or_else(|| art.outline().iter().rposition(|(level, _)| *level == 0).unwrap_or(0))
+    line.unwrap_or_else(|| {
+        art.outline()
+            .iter()
+            .rposition(|(level, _)| *level == 0)
+            .unwrap_or(0)
+    })
 }
 
 /// Where a shape is added, relative to the chosen entry.
@@ -578,13 +720,15 @@ pub(super) fn restructure(app: &mut ExcelApp, cmd: Cmd, cx: &mut Cx) -> bool {
         match cmd {
             Cmd::SmartPromote => art.promote(at),
             Cmd::SmartDemote => art.demote(at),
-            Cmd::SmartMoveUp | Cmd::SmartMoveDown => match art.move_entry(at, cmd == Cmd::SmartMoveUp) {
-                Some(moved) => {
-                    *line = Some(moved);
-                    true
+            Cmd::SmartMoveUp | Cmd::SmartMoveDown => {
+                match art.move_entry(at, cmd == Cmd::SmartMoveUp) {
+                    Some(moved) => {
+                        *line = Some(moved);
+                        true
+                    }
+                    None => false,
                 }
-                None => false,
-            },
+            }
             _ => false,
         }
     })
@@ -605,7 +749,11 @@ pub(super) fn can(app: &ExcelApp, cmd: Cmd) -> bool {
     match cmd {
         Cmd::SmartPromote => line.is_some_and(|at| lines[at].0 > 0),
         Cmd::SmartDemote => line.is_some_and(|at| at > 0 && lines[at - 1].0 >= lines[at].0),
-        Cmd::SmartMoveUp | Cmd::SmartMoveDown => line.is_some_and(|at| art.clone().move_entry(at, cmd == Cmd::SmartMoveUp).is_some()),
+        Cmd::SmartMoveUp | Cmd::SmartMoveDown => line.is_some_and(|at| {
+            art.clone()
+                .move_entry(at, cmd == Cmd::SmartMoveUp)
+                .is_some()
+        }),
         // A shape is made larger or smaller by itself, not all at once.
         Cmd::SmartLarger | Cmd::SmartSmaller => line.is_some(),
         _ => true,
@@ -616,7 +764,12 @@ pub(super) fn can(app: &ExcelApp, cmd: Cmd) -> bool {
 
 /// Insert a new graphic in the middle of what the window shows of the
 /// sheet, and open its Text Pane.
-pub(super) fn insert(app: &mut ExcelApp, layout: Layout, window: &mut Window, cx: &mut Cx) -> Option<u32> {
+pub(super) fn insert(
+    app: &mut ExcelApp,
+    layout: Layout,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<u32> {
     if !app.may(Intent::EditObject(None), cx) {
         return None;
     }
@@ -625,7 +778,10 @@ pub(super) fn insert(app: &mut ExcelApp, layout: Layout, window: &mut Window, cx
     let mut drawing = Drawing::smartart(SmartArt::new(layout), DEFAULT_SIZE);
     drawing.offset = (x as f32, y as f32);
     let id = app.wb.add_drawing(sheet, drawing)?;
-    app.commit(t("Insert SmartArt Graphic", "Insérer un graphique SmartArt"), cx);
+    app.commit(
+        t("Insert SmartArt Graphic", "Insérer un graphique SmartArt"),
+        cx,
+    );
     app.select_object(Some(object_id(&Drawings, id)), cx);
     app.context_tab = Some(SMARTART_TAB);
     app.ext_mut::<SmartUi>().node = Some((id, 0));
@@ -647,7 +803,12 @@ pub(super) fn convert(app: &mut ExcelApp, cx: &mut Cx) -> bool {
     let Some(frame) = app.wb.drawing_frame(sheet, id) else {
         return false;
     };
-    let Some(art) = app.wb.drawing(sheet, id).and_then(Drawing::as_smartart).cloned() else {
+    let Some(art) = app
+        .wb
+        .drawing(sheet, id)
+        .and_then(Drawing::as_smartart)
+        .cloned()
+    else {
         return false;
     };
     let pieces = art.pieces(app.wb.theme(), frame.width as f32, frame.height as f32);
@@ -678,8 +839,20 @@ pub(super) struct NodeZone {
 
 /// The zones of the entries of the selected graphic, and the frame around
 /// the one that is chosen.
-pub(super) fn paint_selection(p: &mut Painter, drawing: &Drawing, art: &SmartArt, placed: &Placed, natural: (f32, f32), brush: &Brush, items: &mut Vec<Draw>) {
-    let chosen = if selected(p.app).is_some_and(|lead| lead.id == drawing.id) { chosen_lines(p.app) } else { Vec::new() };
+pub(super) fn paint_selection(
+    p: &mut Painter,
+    drawing: &Drawing,
+    art: &SmartArt,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    items: &mut Vec<Draw>,
+) {
+    let chosen = if selected(p.app).is_some_and(|lead| lead.id == drawing.id) {
+        chosen_lines(p.app)
+    } else {
+        Vec::new()
+    };
     for piece in art.pieces(p.app.wb.theme(), natural.0, natural.1) {
         let Some(line) = piece.node else {
             continue;
@@ -699,14 +872,26 @@ pub(super) fn paint_selection(p: &mut Painter, drawing: &Drawing, art: &SmartArt
                 brush.disc(handle, 2.5, c(0xFFFFFF), items);
             }
         }
-        p.zone((at.x0, at.y0, at.x1, at.y1), NodeZone { id: drawing.id, line });
+        p.zone(
+            (at.x0, at.y0, at.x1, at.y1),
+            NodeZone {
+                id: drawing.id,
+                line,
+            },
+        );
     }
 }
 
 /// A press on a shape of the selected graphic chooses its entry; on the
 /// entry that is chosen already, or twice, it types in the shape, the
 /// caret where the press was.
-pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> Option<ZoneResponse> {
+pub(super) fn mouse_down(
+    app: &mut ExcelApp,
+    zone: &Zone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<ZoneResponse> {
     let node = zone.payload::<NodeZone>()?;
     if ev.button != MouseButton::Left {
         return Some(ZoneResponse::Ignored);
@@ -734,7 +919,14 @@ pub(super) fn mouse_down(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window
     }
     app.ext_mut::<SmartUi>().also.clear();
     if chosen || ev.click_count >= 2 {
-        begin_edit(app, node.id, node.line, TextStart::At(ev.position), window, cx);
+        begin_edit(
+            app,
+            node.id,
+            node.line,
+            TextStart::At(ev.position),
+            window,
+            cx,
+        );
         return Some(ZoneResponse::Handled);
     }
     end_edit(app, cx);
@@ -750,10 +942,17 @@ pub(super) fn selection_changed(app: &mut ExcelApp, id: Option<u32>, cx: &mut Cx
     if editing(app).is_some_and(|(of, _)| Some(of) != id) {
         end_edit(app, cx);
     }
-    if app.ext::<SmartUi>().and_then(|ui| ui.node).is_some_and(|(of, _)| Some(of) != id) {
+    if app
+        .ext::<SmartUi>()
+        .and_then(|ui| ui.node)
+        .is_some_and(|(of, _)| Some(of) != id)
+    {
         app.ext_mut::<SmartUi>().also.clear();
     }
-    let shown = app.ext::<SmartUi>().and_then(|ui| ui.pane.as_ref()).map(|pane| pane.read(cx).id);
+    let shown = app
+        .ext::<SmartUi>()
+        .and_then(|ui| ui.pane.as_ref())
+        .map(|pane| pane.read(cx).id);
     if shown.is_some() && shown != id {
         flush(app, cx);
         close_pane(app, cx);
@@ -783,7 +982,13 @@ impl TextPane {
     fn outline(&self, cx: &App) -> Vec<Line> {
         self.app
             .upgrade()
-            .and_then(|app| app.read(cx).wb.drawing(app.read(cx).sheet, self.id).and_then(Drawing::as_smartart).map(SmartArt::outline))
+            .and_then(|app| {
+                app.read(cx)
+                    .wb
+                    .drawing(app.read(cx).sheet, self.id)
+                    .and_then(Drawing::as_smartart)
+                    .map(SmartArt::outline)
+            })
             .unwrap_or_default()
     }
 
@@ -802,7 +1007,8 @@ impl TextPane {
         }
         for (row, (_, text)) in self.rows.iter().zip(lines) {
             if row.input.read(cx).text() != text {
-                row.input.update(cx, |input, cx| input.set_text(text.clone(), cx));
+                row.input
+                    .update(cx, |input, cx| input.set_text(text.clone(), cx));
             }
         }
     }
@@ -817,7 +1023,13 @@ impl TextPane {
         cx.notify();
     }
 
-    fn on_input(&mut self, input: &Entity<TextInput>, event: &InputEvent, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_input(
+        &mut self,
+        input: &Entity<TextInput>,
+        event: &InputEvent,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let Some(line) = self.line_of(input) else {
             return;
         };
@@ -845,7 +1057,11 @@ impl TextPane {
                 self.focus = Some(line + 1);
             }
             InputEvent::Tab { shift } => {
-                let cmd = if *shift { Cmd::SmartPromote } else { Cmd::SmartDemote };
+                let cmd = if *shift {
+                    Cmd::SmartPromote
+                } else {
+                    Cmd::SmartDemote
+                };
                 self.act(cx, |app, cx| {
                     choose(app);
                     restructure(app, cmd, cx);
@@ -869,7 +1085,10 @@ impl TextPane {
 
     /// Delete or Backspace on a line: an empty one is removed.
     fn remove_empty(&mut self, line: usize, backward: bool, cx: &mut Context<Self>) -> bool {
-        let empty = self.rows.get(line).is_some_and(|row| row.input.read(cx).text().is_empty());
+        let empty = self
+            .rows
+            .get(line)
+            .is_some_and(|row| row.input.read(cx).text().is_empty());
         if !empty || self.rows.len() < 2 {
             return false;
         }
@@ -878,17 +1097,28 @@ impl TextPane {
             app.ext_mut::<SmartUi>().node = Some((id, line));
             change(app, t("Delete", "Supprimer"), cx, |art, at| {
                 let removed = art.remove(line);
-                *at = Some(if backward { line.saturating_sub(1) } else { line.min(art.outline().len().saturating_sub(1)) });
+                *at = Some(if backward {
+                    line.saturating_sub(1)
+                } else {
+                    line.min(art.outline().len().saturating_sub(1))
+                });
                 removed
             });
         });
-        self.focus = Some(if backward { line.saturating_sub(1) } else { line.min(self.rows.len().saturating_sub(2)) });
+        self.focus = Some(if backward {
+            line.saturating_sub(1)
+        } else {
+            line.min(self.rows.len().saturating_sub(2))
+        });
         true
     }
 
     #[cfg(test)]
     pub(super) fn texts(&self, cx: &App) -> Vec<String> {
-        self.rows.iter().map(|row| row.input.read(cx).text().to_string()).collect()
+        self.rows
+            .iter()
+            .map(|row| row.input.read(cx).text().to_string())
+            .collect()
     }
 }
 
@@ -922,18 +1152,29 @@ impl Render for TextPane {
                     .when(chosen == Some(line), |d| d.bg(c(theme::HOVER)))
                     // Before the field deletes a character: an empty line
                     // goes instead.
-                    .capture_action(cx.listener(move |this, _: &crate::text_input::Backspace, _, cx| {
-                        if this.remove_empty(line, true, cx) {
-                            cx.stop_propagation();
-                        }
-                    }))
-                    .capture_action(cx.listener(move |this, _: &crate::text_input::Delete, _, cx| {
-                        if this.remove_empty(line, false, cx) {
-                            cx.stop_propagation();
-                        }
-                    }))
-                    .child(div().flex_none().text_color(c(theme::TEXT_MUTED)).child("•"))
-                    .child(div().flex_1().child(widgets::TextField::new(&row.input).width(232.0 - 16.0 * *level as f32)))
+                    .capture_action(cx.listener(
+                        move |this, _: &crate::text_input::Backspace, _, cx| {
+                            if this.remove_empty(line, true, cx) {
+                                cx.stop_propagation();
+                            }
+                        },
+                    ))
+                    .capture_action(cx.listener(
+                        move |this, _: &crate::text_input::Delete, _, cx| {
+                            if this.remove_empty(line, false, cx) {
+                                cx.stop_propagation();
+                            }
+                        },
+                    ))
+                    .child(
+                        div()
+                            .flex_none()
+                            .text_color(c(theme::TEXT_MUTED))
+                            .child("•"),
+                    )
+                    .child(div().flex_1().child(
+                        widgets::TextField::new(&row.input).width(232.0 - 16.0 * *level as f32),
+                    ))
                     .into_any_element()
             })
             .collect();
@@ -944,7 +1185,12 @@ impl Render for TextPane {
             .flex_col()
             .gap(px(2.))
             .text_size(px(12.))
-            .child(div().pb(px(4.)).text_color(c(theme::TEXT_MUTED)).child(t("Type your text here", "Tapez votre texte ici")))
+            .child(
+                div()
+                    .pb(px(4.))
+                    .text_color(c(theme::TEXT_MUTED))
+                    .child(t("Type your text here", "Tapez votre texte ici")),
+            )
             .children(rows)
     }
 }
@@ -1036,8 +1282,25 @@ fn preview(art: SmartArt, theme: Arc<Theme>, width: f32, height: f32) -> impl In
             };
             let mut items = Vec::new();
             let placed = Placed::plain(1.0, 1.0, width - 1.0, height - 1.0);
-            draw(&art, &theme, &placed, (width - 2.0, height - 2.0), &brush, None, opensheet_engine::Locale::en(), None, &mut items);
-            crate::grid::paint_layers(vec![Layer { clip: bounds, items }], window, cx);
+            draw(
+                &art,
+                &theme,
+                &placed,
+                (width - 2.0, height - 2.0),
+                &brush,
+                None,
+                opensheet_engine::Locale::en(),
+                None,
+                &mut items,
+            );
+            crate::grid::paint_layers(
+                vec![Layer {
+                    clip: bounds,
+                    items,
+                }],
+                window,
+                cx,
+            );
         },
     )
     .w(px(width))
@@ -1068,14 +1331,26 @@ struct Gallery {
 }
 
 impl Gallery {
-    fn cell(&self, index: usize, on: bool, content: impl IntoElement, name: Option<&'static str>, apply: impl Fn(&mut SmartArt) + 'static, label: &'static str) -> AnyElement {
+    fn cell(
+        &self,
+        index: usize,
+        on: bool,
+        content: impl IntoElement,
+        name: Option<&'static str>,
+        apply: impl Fn(&mut SmartArt) + 'static,
+        label: &'static str,
+    ) -> AnyElement {
         let app = self.app.clone();
         div()
             .id(("smartart-choice", index))
             .p(px(3.))
             .rounded(px(3.))
             .border_1()
-            .border_color(if on { c(theme::ACCENT) } else { c(theme::BORDER) })
+            .border_color(if on {
+                c(theme::ACCENT)
+            } else {
+                c(theme::BORDER)
+            })
             .bg(c(0xFFFFFF))
             .hover(|s| s.border_color(c(theme::ACCENT)))
             .child(content)
@@ -1124,7 +1399,14 @@ impl Render for Gallery {
                 for layout in Layout::ALL {
                     let shown = sample(layout, art.colors, art.style);
                     let on = art.foreign.is_none() && art.layout == layout;
-                    cells.push(self.cell(index, on, preview(shown, theme.clone(), 84.0, 56.0), Some(layout_name(layout)), move |art| art.set_layout(layout), Cmd::SmartLayouts.label()));
+                    cells.push(self.cell(
+                        index,
+                        on,
+                        preview(shown, theme.clone(), 84.0, 56.0),
+                        Some(layout_name(layout)),
+                        move |art| art.set_layout(layout),
+                        Cmd::SmartLayouts.label(),
+                    ));
                     index += 1;
                 }
             }
@@ -1132,7 +1414,9 @@ impl Render for Gallery {
                 let mut group = None;
                 for colors in ColorScheme::all() {
                     let title = match colors {
-                        ColorScheme::Dark(_) => t("Primary Theme Colors", "Principales couleurs de thème"),
+                        ColorScheme::Dark(_) => {
+                            t("Primary Theme Colors", "Principales couleurs de thème")
+                        }
                         ColorScheme::Colorful(_) => t("Colorful", "En couleur"),
                         ColorScheme::Accent { accent: 1, .. } => t("Accent 1", "Accentuation 1"),
                         ColorScheme::Accent { accent: 2, .. } => t("Accent 2", "Accentuation 2"),
@@ -1147,7 +1431,14 @@ impl Render for Gallery {
                     }
                     let mut shown = sample(Layout::Process, colors, art.style);
                     shown.nodes.truncate(3);
-                    cells.push(self.cell(index, art.colors == colors, preview(shown, theme.clone(), 72.0, 22.0), None, move |art| art.colors = colors, Cmd::SmartColors.label()));
+                    cells.push(self.cell(
+                        index,
+                        art.colors == colors,
+                        preview(shown, theme.clone(), 72.0, 22.0),
+                        None,
+                        move |art| art.colors = colors,
+                        Cmd::SmartColors.label(),
+                    ));
                     index += 1;
                 }
             }
@@ -1155,12 +1446,29 @@ impl Render for Gallery {
                 for style in QuickStyle::ALL {
                     let mut shown = art.clone();
                     shown.style = style;
-                    cells.push(self.cell(index, art.style == style, preview(shown, theme.clone(), 84.0, 56.0), None, move |art| art.style = style, Cmd::SmartStyles.label()));
+                    cells.push(self.cell(
+                        index,
+                        art.style == style,
+                        preview(shown, theme.clone(), 84.0, 56.0),
+                        None,
+                        move |art| art.style = style,
+                        Cmd::SmartStyles.label(),
+                    ));
                     index += 1;
                 }
             }
         }
-        div().w(px(if self.choice == Choice::Colors { 420.0 } else { 392.0 })).p(px(6.)).flex().flex_wrap().gap(px(4.)).children(cells)
+        div()
+            .w(px(if self.choice == Choice::Colors {
+                420.0
+            } else {
+                392.0
+            }))
+            .p(px(6.))
+            .flex()
+            .flex_wrap()
+            .gap(px(4.))
+            .children(cells)
     }
 }
 
@@ -1197,11 +1505,21 @@ impl ChooseDialog {
 impl Render for ChooseDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let mut categories: Vec<SharedString> = vec![t_ctx("smartart", "All", "Tous").into()];
-        categories.extend(Category::ALL.into_iter().map(|category| SharedString::from(category_name(category))));
-        let selected_category = self.category.and_then(|category| Category::ALL.iter().position(|other| *other == category)).map_or(0, |at| at + 1);
+        categories.extend(
+            Category::ALL
+                .into_iter()
+                .map(|category| SharedString::from(category_name(category))),
+        );
+        let selected_category = self
+            .category
+            .and_then(|category| Category::ALL.iter().position(|other| *other == category))
+            .map_or(0, |at| at + 1);
         let layouts: Vec<AnyElement> = Layout::ALL
             .into_iter()
-            .filter(|layout| self.category.is_none_or(|category| layout.category() == category))
+            .filter(|layout| {
+                self.category
+                    .is_none_or(|category| layout.category() == category)
+            })
             .enumerate()
             .map(|(index, layout)| {
                 let on = self.layout == layout;
@@ -1210,75 +1528,110 @@ impl Render for ChooseDialog {
                     .p(px(4.))
                     .rounded(px(3.))
                     .border_2()
-                    .border_color(if on { c(theme::ACCENT) } else { gpui::transparent_black() })
+                    .border_color(if on {
+                        c(theme::ACCENT)
+                    } else {
+                        gpui::transparent_black()
+                    })
                     .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(preview(sample(layout, ColorScheme::default(), QuickStyle::default()), self.theme.clone(), 78.0, 52.0))
+                    .child(preview(
+                        sample(layout, ColorScheme::default(), QuickStyle::default()),
+                        self.theme.clone(),
+                        78.0,
+                        52.0,
+                    ))
                     .tooltip(tooltip(layout_name(layout)))
-                    .on_click(cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
-                        this.layout = layout;
-                        cx.notify();
-                        if event.click_count() >= 2 {
-                            this.ok(&(), window, cx);
-                        }
-                    }))
+                    .on_click(
+                        cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
+                            this.layout = layout;
+                            cx.notify();
+                            if event.click_count() >= 2 {
+                                this.ok(&(), window, cx);
+                            }
+                        }),
+                    )
                     .into_any_element()
             })
             .collect();
         let chosen = sample(self.layout, ColorScheme::default(), QuickStyle::default());
-        widgets::dialog(&self.modal, t("Choose a SmartArt Graphic", "Choisir un graphique SmartArt"))
-            .width(760.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(
-                div()
-                    .flex()
-                    .gap(px(8.))
-                    .child(
-                        ListBox::new("smartart-categories", categories, Some(selected_category))
-                            .width(150.0)
-                            .height(300.0)
-                            .on_change(cx.listener(|this, index: &usize, _, cx| {
-                                this.category = index.checked_sub(1).and_then(|at| Category::ALL.get(at).copied());
-                                // The layout picked stays in view.
-                                if let Some(category) = this.category.filter(|category| this.layout.category() != *category) {
-                                    this.layout = Layout::ALL.into_iter().find(|layout| layout.category() == category).unwrap_or(this.layout);
-                                }
-                                cx.notify();
-                            })),
-                    )
-                    .child(
-                        div()
-                            .w(px(290.))
-                            .h(px(300.))
-                            .border_1()
-                            .border_color(c(theme::BORDER))
-                            .bg(c(0xFFFFFF))
-                            .p(px(6.))
-                            .flex()
-                            .flex_wrap()
-                            .content_start()
-                            .gap(px(4.))
-                            .children(layouts),
-                    )
-                    .child(
-                        div()
-                            .w(px(270.))
-                            .h(px(300.))
-                            .border_1()
-                            .border_color(c(theme::BORDER))
-                            .bg(c(theme::CHROME_BG))
-                            .p(px(10.))
-                            .flex()
-                            .flex_col()
-                            .gap(px(8.))
-                            .child(div().bg(c(0xFFFFFF)).child(preview(chosen, self.theme.clone(), 248.0, 166.0)))
-                            .child(div().font_weight(gpui::FontWeight::SEMIBOLD).child(layout_name(self.layout))),
-                    ),
-            )
-            .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
+        widgets::dialog(
+            &self.modal,
+            t("Choose a SmartArt Graphic", "Choisir un graphique SmartArt"),
+        )
+        .width(760.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(
+            div()
+                .flex()
+                .gap(px(8.))
+                .child(
+                    ListBox::new("smartart-categories", categories, Some(selected_category))
+                        .width(150.0)
+                        .height(300.0)
+                        .on_change(cx.listener(|this, index: &usize, _, cx| {
+                            this.category = index
+                                .checked_sub(1)
+                                .and_then(|at| Category::ALL.get(at).copied());
+                            // The layout picked stays in view.
+                            if let Some(category) = this
+                                .category
+                                .filter(|category| this.layout.category() != *category)
+                            {
+                                this.layout = Layout::ALL
+                                    .into_iter()
+                                    .find(|layout| layout.category() == category)
+                                    .unwrap_or(this.layout);
+                            }
+                            cx.notify();
+                        })),
+                )
+                .child(
+                    div()
+                        .w(px(290.))
+                        .h(px(300.))
+                        .border_1()
+                        .border_color(c(theme::BORDER))
+                        .bg(c(0xFFFFFF))
+                        .p(px(6.))
+                        .flex()
+                        .flex_wrap()
+                        .content_start()
+                        .gap(px(4.))
+                        .children(layouts),
+                )
+                .child(
+                    div()
+                        .w(px(270.))
+                        .h(px(300.))
+                        .border_1()
+                        .border_color(c(theme::BORDER))
+                        .bg(c(theme::CHROME_BG))
+                        .p(px(10.))
+                        .flex()
+                        .flex_col()
+                        .gap(px(8.))
+                        .child(div().bg(c(0xFFFFFF)).child(preview(
+                            chosen,
+                            self.theme.clone(),
+                            248.0,
+                            166.0,
+                        )))
+                        .child(
+                            div()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .child(layout_name(self.layout)),
+                        ),
+                ),
+        )
+        .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
 
-pub(super) fn open_dialog(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) -> Option<Entity<ChooseDialog>> {
+pub(super) fn open_dialog(
+    app: &mut ExcelApp,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<Entity<ChooseDialog>> {
     if !app.may(Intent::EditObject(None), cx) {
         return None;
     }
@@ -1318,7 +1671,16 @@ pub(super) fn design_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
                 ])),
         )
         .into_any_element(),
-        group(t("Layouts", "Dispositions"), row(vec![app.cmd_large("sa-layouts", Cmd::SmartLayouts, true, cx)])).into_any_element(),
+        group(
+            t("Layouts", "Dispositions"),
+            row(vec![app.cmd_large(
+                "sa-layouts",
+                Cmd::SmartLayouts,
+                true,
+                cx,
+            )]),
+        )
+        .into_any_element(),
         group(
             t("SmartArt Styles", "Styles SmartArt"),
             row(vec![
@@ -1380,10 +1742,15 @@ pub(super) fn run(app: &mut ExcelApp, cmd: Cmd, window: &mut Window, cx: &mut Cx
             open_dialog(app, window, cx);
         }
         Cmd::SmartAddShape => {
-            let entries = [Cmd::SmartAddAfter, Cmd::SmartAddBefore, Cmd::SmartAddAbove, Cmd::SmartAddBelow]
-                .into_iter()
-                .map(|cmd| MenuEntry::command(cmd, app))
-                .collect();
+            let entries = [
+                Cmd::SmartAddAfter,
+                Cmd::SmartAddBefore,
+                Cmd::SmartAddAbove,
+                Cmd::SmartAddBelow,
+            ]
+            .into_iter()
+            .map(|cmd| MenuEntry::command(cmd, app))
+            .collect();
             app.open_command_menu(entries, 240.0, window, cx);
         }
         Cmd::SmartAddAfter => {

@@ -146,14 +146,19 @@ impl DateGroup {
     /// True when the date-time `serial` falls in this group.
     pub fn matches(&self, serial: f64) -> bool {
         let (y, m, d) = serial_to_ymd(serial);
-        if y != self.year as i64 || self.month.is_some_and(|x| x != m) || self.day.is_some_and(|x| x != d) {
+        if y != self.year as i64
+            || self.month.is_some_and(|x| x != m)
+            || self.day.is_some_and(|x| x != d)
+        {
             return false;
         }
         if self.hour.is_none() {
             return true;
         }
         let (h, min, s) = serial_to_hms(serial);
-        self.hour == Some(h) && self.minute.is_none_or(|x| x == min) && self.second.is_none_or(|x| x == s)
+        self.hour == Some(h)
+            && self.minute.is_none_or(|x| x == min)
+            && self.second.is_none_or(|x| x == s)
     }
 }
 
@@ -264,7 +269,10 @@ impl Condition {
         let ends = v.len() > 1 && v.ends_with('*') && !v.ends_with("~*");
         let pick = |plain, not| if negated { not } else { plain };
         match (starts, ends) {
-            (true, true) if v.len() > 2 => (pick(Comparison::Contains, Comparison::NotContains), &v[1..v.len() - 1]),
+            (true, true) if v.len() > 2 => (
+                pick(Comparison::Contains, Comparison::NotContains),
+                &v[1..v.len() - 1],
+            ),
             (false, true) => (
                 pick(Comparison::BeginsWith, Comparison::NotBeginsWith),
                 &v[..v.len() - 1],
@@ -286,7 +294,11 @@ impl Condition {
     }
 
     fn number(&self) -> Option<f64> {
-        self.value.trim().parse::<f64>().ok().filter(|n| n.is_finite())
+        self.value
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .filter(|n| n.is_finite())
     }
 
     /// Whether a cell holding `value`, displayed as `text`, passes.
@@ -296,7 +308,8 @@ impl Condition {
             if self.value.is_empty() {
                 return text.is_empty();
             }
-            matches!((number, value), (Some(n), Value::Number(x)) if *x == n) || wildcard_match(&self.value, text)
+            matches!((number, value), (Some(n), Value::Number(x)) if *x == n)
+                || wildcard_match(&self.value, text)
         };
         // Numbers are compared with numbers and text with text; a cell of
         // the other kind, or a blank one, is neither greater nor less.
@@ -555,7 +568,11 @@ impl AutoFilter {
             .into_iter()
             .filter_map(|(id, c)| moved(id).map(|id| (id, c)))
             .collect();
-        self.hidden_buttons = self.hidden_buttons.iter().filter_map(|id| moved(*id)).collect();
+        self.hidden_buttons = self
+            .hidden_buttons
+            .iter()
+            .filter_map(|id| moved(*id))
+            .collect();
         if let Some(sort) = &mut self.sort {
             sort.levels = std::mem::take(&mut sort.levels)
                 .into_iter()
@@ -832,10 +849,19 @@ pub enum FilterError {
 /// (table styles are not: Excel neither filters nor sorts on them). They
 /// are the colours as they are seen: a colour of the theme and the same
 /// colour picked elsewhere are one colour to a filter or a sort.
-pub(crate) fn cell_colors(wb: &Workbook, sheet: usize, row: u32, col: u32) -> (Option<Color>, Option<Color>) {
+pub(crate) fn cell_colors(
+    wb: &Workbook,
+    sheet: usize,
+    row: u32,
+    col: u32,
+) -> (Option<Color>, Option<Color>) {
     let style = wb.style_at(sheet, row, col);
     let (mut fill, mut font) = (style.fill, style.font.color);
-    if wb.sheets.get(sheet).is_some_and(|s| !s.cond_formats.is_empty()) {
+    if wb
+        .sheets
+        .get(sheet)
+        .is_some_and(|s| !s.cond_formats.is_empty())
+    {
         if let Some(result) = crate::condfmt::result_at(wb, sheet, row, col) {
             fill = result.patch.fill.unwrap_or(fill);
             font = result.patch.font_color.unwrap_or(font);
@@ -928,11 +954,19 @@ impl Workbook {
 
     /// Top 10 and the averages look at the whole column, whatever the other
     /// criteria hide.
-    fn matcher<'a>(&self, sheet: usize, range: Rect, col: u32, criteria: &'a Criteria, today: f64) -> Matcher<'a> {
+    fn matcher<'a>(
+        &self,
+        sheet: usize,
+        range: Rect,
+        col: u32,
+        criteria: &'a Criteria,
+        today: f64,
+    ) -> Matcher<'a> {
         match criteria {
-            Criteria::Values(filter) => {
-                Matcher::Values(filter, filter.values.iter().map(|v| v.to_lowercase()).collect())
-            }
+            Criteria::Values(filter) => Matcher::Values(
+                filter,
+                filter.values.iter().map(|v| v.to_lowercase()).collect(),
+            ),
             Criteria::Custom(custom) => Matcher::Custom(custom),
             Criteria::Top10(top) => match top.cut_off(self.column_numbers(sheet, range, col)) {
                 Some(cut) if top.top => Matcher::AtLeast(cut),
@@ -976,20 +1010,27 @@ impl Workbook {
                     return filter.blanks;
                 }
                 if let Some(n) = number {
-                    if filter.dates.iter().any(|g| g.matches(n)) && self.shows_date(sheet, row, col) {
+                    if filter.dates.iter().any(|g| g.matches(n)) && self.shows_date(sheet, row, col)
+                    {
                         return true;
                     }
                 }
                 texts.contains(&text.to_lowercase())
             }
-            Matcher::Custom(custom) => custom.matches(&value, &self.shown_text(sheet, row, col, &value)),
+            Matcher::Custom(custom) => {
+                custom.matches(&value, &self.shown_text(sheet, row, col, &value))
+            }
             Matcher::AtLeast(cut) => number.is_some_and(|n| n >= *cut),
             Matcher::AtMost(cut) => number.is_some_and(|n| n <= *cut),
             Matcher::Above(average) => number.is_some_and(|n| n > *average),
             Matcher::Below(average) => number.is_some_and(|n| n < *average),
-            Matcher::Days(first, end) => number.is_some_and(|n| n.floor() >= *first && n.floor() < *end),
+            Matcher::Days(first, end) => {
+                number.is_some_and(|n| n.floor() >= *first && n.floor() < *end)
+            }
             Matcher::Month(month) => number.is_some_and(|n| serial_to_ymd(n).1 == *month),
-            Matcher::Quarter(quarter) => number.is_some_and(|n| serial_to_ymd(n).1.div_ceil(3) == *quarter),
+            Matcher::Quarter(quarter) => {
+                number.is_some_and(|n| serial_to_ymd(n).1.div_ceil(3) == *quarter)
+            }
             Matcher::Color(filter) => {
                 let (fill, font) = cell_colors(self, sheet, row, col);
                 filter.color.map(Color::plain) == if filter.font { font } else { fill }
@@ -1000,12 +1041,23 @@ impl Workbook {
 
     /// The matchers of a filter's criteria, each with the offset of its
     /// column.
-    fn matchers<'a>(&self, sheet: usize, filter: &'a AutoFilter, range: Rect, today: f64) -> Vec<(u32, Matcher<'a>)> {
+    fn matchers<'a>(
+        &self,
+        sheet: usize,
+        filter: &'a AutoFilter,
+        range: Rect,
+        today: f64,
+    ) -> Vec<(u32, Matcher<'a>)> {
         filter
             .columns
             .iter()
             .filter(|(id, _)| **id < range.cols())
-            .map(|(id, criteria)| (*id, self.matcher(sheet, range, range.c0 + id, criteria, today)))
+            .map(|(id, criteria)| {
+                (
+                    *id,
+                    self.matcher(sheet, range, range.c0 + id, criteria, today),
+                )
+            })
             .collect()
     }
 
@@ -1022,7 +1074,12 @@ impl Workbook {
         let sh = self.sheets.get_mut(sheet)?;
         match scope {
             FilterScope::Sheet => sh.auto_filter.as_mut(),
-            FilterScope::Table(id) => sh.tables.iter_mut().find(|t| t.id == id)?.auto_filter.as_mut(),
+            FilterScope::Table(id) => sh
+                .tables
+                .iter_mut()
+                .find(|t| t.id == id)?
+                .auto_filter
+                .as_mut(),
         }
     }
 
@@ -1080,7 +1137,10 @@ impl Workbook {
                 continue;
             }
             for row in range.r0 + 1..=range.r1 {
-                if !matchers.iter().all(|(id, m)| self.passes(m, sheet, row, range.c0 + id)) {
+                if !matchers
+                    .iter()
+                    .all(|(id, m)| self.passes(m, sheet, row, range.c0 + id))
+                {
                     hidden.insert(row);
                 }
             }
@@ -1095,7 +1155,9 @@ impl Workbook {
             filter.range = range;
         }
         for (scope, id, cut) in cut_offs {
-            if let Some(Criteria::Top10(top)) = self.auto_filter_mut(sheet, scope).and_then(|f| f.columns.get_mut(&id))
+            if let Some(Criteria::Top10(top)) = self
+                .auto_filter_mut(sheet, scope)
+                .and_then(|f| f.columns.get_mut(&id))
             {
                 top.filter_value = cut;
             }
@@ -1107,9 +1169,17 @@ impl Workbook {
     /// when there is one, else puts one on the selection (a single cell
     /// stands for the block of data around it). Returns whether buttons
     /// are now shown.
-    pub fn toggle_auto_filter(&mut self, sheet: usize, selection: Rect) -> Result<bool, FilterError> {
+    pub fn toggle_auto_filter(
+        &mut self,
+        sheet: usize,
+        selection: Rect,
+    ) -> Result<bool, FilterError> {
         let sh = self.sheets.get(sheet).ok_or(FilterError::NothingToFilter)?;
-        if let Some(table) = sh.tables.iter().find(|t| t.contains(selection.r0, selection.c0)) {
+        if let Some(table) = sh
+            .tables
+            .iter()
+            .find(|t| t.contains(selection.r0, selection.c0))
+        {
             let (id, on) = (table.id, table.auto_filter.is_none());
             return match self.set_table_option(sheet, id, TableOption::FilterButton, on) {
                 Ok(()) => Ok(on),
@@ -1154,7 +1224,11 @@ impl Workbook {
 
     /// Remove the sheet's filter and show the rows it hid.
     pub fn remove_auto_filter(&mut self, sheet: usize) -> bool {
-        if !self.sheets.get(sheet).is_some_and(|s| s.auto_filter.is_some()) {
+        if !self
+            .sheets
+            .get(sheet)
+            .is_some_and(|s| s.auto_filter.is_some())
+        {
             return false;
         }
         self.snapshot();
@@ -1183,7 +1257,10 @@ impl Workbook {
         criteria: Option<Criteria>,
         today: f64,
     ) -> bool {
-        if !self.auto_filter(sheet, scope).is_some_and(|f| col_id < f.range.cols()) {
+        if !self
+            .auto_filter(sheet, scope)
+            .is_some_and(|f| col_id < f.range.cols())
+        {
             return false;
         }
         self.snapshot();
@@ -1252,7 +1329,12 @@ impl Workbook {
     /// Sort the rows of a filtered range on several levels (the Sort dialog
     /// opened on a filtered list or a table) and remember the sort with
     /// the filter. The keys of the levels are column offsets in its range.
-    pub fn sort_filter(&mut self, sheet: usize, scope: FilterScope, sort: SortState) -> Result<(), SortError> {
+    pub fn sort_filter(
+        &mut self,
+        sheet: usize,
+        scope: FilterScope,
+        sort: SortState,
+    ) -> Result<(), SortError> {
         let Some(sh) = self.sheets.get(sheet) else {
             return Ok(());
         };
@@ -1285,7 +1367,8 @@ impl Workbook {
         };
         let mut out = Vec::new();
         for (scope, filter) in filters(sh) {
-            for col_id in (0..filter.range.cols()).filter(|id| !filter.hidden_buttons.contains(id)) {
+            for col_id in (0..filter.range.cols()).filter(|id| !filter.hidden_buttons.contains(id))
+            {
                 out.push(FilterButton {
                     row: filter.range.r0,
                     col: filter.range.c0 + col_id,
@@ -1323,12 +1406,20 @@ impl Workbook {
     pub fn filter_record_count(&self, sheet: usize, scope: FilterScope) -> Option<(usize, usize)> {
         let filter = self.auto_filter(sheet, scope).filter(|f| f.is_filtered())?;
         let data = filter.data_range()?;
-        let hidden = self.sheets[sheet].filtered_rows.range(data.r0..=data.r1).count();
+        let hidden = self.sheets[sheet]
+            .filtered_rows
+            .range(data.r0..=data.r1)
+            .count();
         Some((data.rows() as usize - hidden, data.rows() as usize))
     }
 
     /// What the drop-down of a filter button shows for its column.
-    pub fn filter_dropdown(&self, sheet: usize, scope: FilterScope, col_id: u32) -> Option<FilterDropdown> {
+    pub fn filter_dropdown(
+        &self,
+        sheet: usize,
+        scope: FilterScope,
+        col_id: u32,
+    ) -> Option<FilterDropdown> {
         self.filter_dropdown_on(sheet, scope, col_id, today())
     }
 
@@ -1350,7 +1441,10 @@ impl Workbook {
         }
         let col = range.c0 + col_id;
         let matchers = self.matchers(sheet, filter, range, today);
-        let own = matchers.iter().find(|(id, _)| *id == col_id).map(|(_, m)| m);
+        let own = matchers
+            .iter()
+            .find(|(id, _)| *id == col_id)
+            .map(|(_, m)| m);
 
         let mut items: Vec<FilterItem> = Vec::new();
         let mut index: HashMap<String, usize> = HashMap::new();
@@ -1396,7 +1490,11 @@ impl Workbook {
                 None if items.len() >= MAX_FILTER_ITEMS => truncated = true,
                 None => {
                     index.insert(text.to_lowercase(), items.len());
-                    items.push(FilterItem { text, value, checked });
+                    items.push(FilterItem {
+                        text,
+                        value,
+                        checked,
+                    });
                 }
             }
         }
@@ -1451,7 +1549,12 @@ impl Workbook {
     /// For a dynamic filter, the `val` and `maxVal` files store beside its
     /// type: the average, or the first day of the period and the day after
     /// its last.
-    pub fn dynamic_filter_values(&self, sheet: usize, scope: FilterScope, col_id: u32) -> Option<(f64, Option<f64>)> {
+    pub fn dynamic_filter_values(
+        &self,
+        sheet: usize,
+        scope: FilterScope,
+        col_id: u32,
+    ) -> Option<(f64, Option<f64>)> {
         let filter = self.auto_filter(sheet, scope)?;
         let Some(Criteria::Dynamic(dynamic)) = filter.columns.get(&col_id) else {
             return None;
@@ -1584,7 +1687,9 @@ mod tests {
 
     /// The (0-based) data rows the filters show.
     fn shown(w: &Workbook) -> Vec<u32> {
-        (1..=6).filter(|r| !w.sheets[0].filtered_rows.contains(r)).collect()
+        (1..=6)
+            .filter(|r| !w.sheets[0].filtered_rows.contains(r))
+            .collect()
     }
 
     fn values(list: &[&str]) -> Criteria {
@@ -1595,7 +1700,11 @@ mod tests {
     }
 
     fn custom(comparison: Comparison, text: &str) -> Criteria {
-        Criteria::Custom(CustomFilter::one(Condition::new(comparison, text, Locale::en())))
+        Criteria::Custom(CustomFilter::one(Condition::new(
+            comparison,
+            text,
+            Locale::en(),
+        )))
     }
 
     /// 18 January 2024, a Thursday.
@@ -1612,7 +1721,10 @@ mod tests {
         );
         let buttons = w.filter_buttons(0);
         assert_eq!(buttons.len(), 3);
-        assert_eq!((buttons[2].row, buttons[2].col, buttons[2].col_id), (0, 2, 2));
+        assert_eq!(
+            (buttons[2].row, buttons[2].col, buttons[2].col_id),
+            (0, 2, 2)
+        );
         assert!(!buttons[0].filtered && buttons[0].sort.is_none());
         assert_eq!(w.filter_button_at(0, 0, 1).unwrap().col_id, 1);
         assert_eq!(w.filter_button_at(0, 1, 1), None);
@@ -1628,13 +1740,19 @@ mod tests {
         // A multi-cell selection gives the columns and the header row; the
         // data under it belongs to the list. A blank cell cannot be
         // filtered.
-        assert_eq!(w.toggle_auto_filter(0, Rect::parse("B1:C3").unwrap()), Ok(true));
+        assert_eq!(
+            w.toggle_auto_filter(0, Rect::parse("B1:C3").unwrap()),
+            Ok(true)
+        );
         assert_eq!(
             w.sheets[0].auto_filter.as_ref().unwrap().range,
             Rect::parse("B1:C7").unwrap()
         );
         w.remove_auto_filter(0);
-        assert_eq!(w.toggle_auto_filter(0, Rect::parse("A1:B1").unwrap()), Ok(true));
+        assert_eq!(
+            w.toggle_auto_filter(0, Rect::parse("A1:B1").unwrap()),
+            Ok(true)
+        );
         assert_eq!(
             w.sheets[0].auto_filter.as_ref().unwrap().range,
             Rect::parse("A1:B7").unwrap()
@@ -1709,7 +1827,11 @@ mod tests {
         assert_eq!(years, [2024, 2023, 2022]);
         let months: Vec<u32> = dates.dates[0].months.iter().map(|m| m.month).collect();
         assert_eq!(months, [1, 2]);
-        let days: Vec<u32> = dates.dates[0].months[0].days.iter().map(|d| d.day).collect();
+        let days: Vec<u32> = dates.dates[0].months[0]
+            .days
+            .iter()
+            .map(|d| d.day)
+            .collect();
         assert_eq!(days, [15, 20]);
 
         // Unchecking boxes gives the criterion to apply.
@@ -1740,7 +1862,11 @@ mod tests {
             Criteria::Values(ValueFilter {
                 values: Vec::new(),
                 blanks: false,
-                dates: vec![DateGroup::month(2024, 1), DateGroup::year(2023), DateGroup::year(2022)],
+                dates: vec![
+                    DateGroup::month(2024, 1),
+                    DateGroup::year(2023),
+                    DateGroup::year(2022)
+                ],
             })
         );
         // Banana (February 2024) is unchecked in both columns; the blank
@@ -1754,7 +1880,11 @@ mod tests {
         let texts: Vec<&str> = qty.items.iter().map(|i| i.text.as_str()).collect();
         assert_eq!(texts, ["5", "7", "20", "x"]);
         let names = w.filter_dropdown(0, S, 0).unwrap();
-        let checked: Vec<(&str, bool)> = names.items.iter().map(|i| (i.text.as_str(), i.checked)).collect();
+        let checked: Vec<(&str, bool)> = names
+            .items
+            .iter()
+            .map(|i| (i.text.as_str(), i.checked))
+            .collect();
         assert_eq!(checked, [("apple", true), ("cherry", true), ("date", true)]);
         assert!(names.is_filtered() && !names.has_blanks);
         let dates = w.filter_dropdown(0, S, 2).unwrap();
@@ -1775,7 +1905,10 @@ mod tests {
         assert_eq!(set(&mut w, 1, custom(Comparison::Greater, "6")), [2, 3, 4]);
         assert_eq!(set(&mut w, 1, custom(Comparison::LessOrEqual, "5")), [1, 5]);
         assert_eq!(set(&mut w, 1, custom(Comparison::Equals, "7")), [3]);
-        assert_eq!(set(&mut w, 1, custom(Comparison::NotEquals, "7")), [1, 2, 4, 5, 6]);
+        assert_eq!(
+            set(&mut w, 1, custom(Comparison::NotEquals, "7")),
+            [1, 2, 4, 5, 6]
+        );
         let both = |and: bool| {
             Criteria::Custom(CustomFilter {
                 first: Condition::new(Comparison::Greater, "6", Locale::en()),
@@ -1792,16 +1925,31 @@ mod tests {
         assert_eq!(set(&mut w, 0, custom(Comparison::NotContains, "a")), [3, 5]);
         assert_eq!(set(&mut w, 0, custom(Comparison::Equals, "?pple")), [1, 4]);
         assert_eq!(set(&mut w, 0, custom(Comparison::Equals, "*e*r*")), [3]);
-        assert_eq!(set(&mut w, 0, custom(Comparison::Equals, "~*")), [] as [u32; 0]);
-        assert_eq!(set(&mut w, 0, custom(Comparison::GreaterOrEqual, "c")), [3, 6]);
+        assert_eq!(
+            set(&mut w, 0, custom(Comparison::Equals, "~*")),
+            [] as [u32; 0]
+        );
+        assert_eq!(
+            set(&mut w, 0, custom(Comparison::GreaterOrEqual, "c")),
+            [3, 6]
+        );
         // Blanks: "equals nothing" and "does not equal nothing".
         assert_eq!(set(&mut w, 0, custom(Comparison::Equals, "")), [5]);
-        assert_eq!(set(&mut w, 0, custom(Comparison::NotEquals, "")), [1, 2, 3, 4, 6]);
+        assert_eq!(
+            set(&mut w, 0, custom(Comparison::NotEquals, "")),
+            [1, 2, 3, 4, 6]
+        );
         // Dates are typed as dates and stored as serial numbers.
         let after = Condition::new(Comparison::Greater, "1/16/2024", Locale::en());
-        assert_eq!(after.value, date_to_serial(2024, 1, 16).unwrap().to_string());
+        assert_eq!(
+            after.value,
+            date_to_serial(2024, 1, 16).unwrap().to_string()
+        );
         assert_eq!(after.operand_text(Locale::en(), true), "1/16/2024");
-        assert_eq!(set(&mut w, 2, Criteria::Custom(CustomFilter::one(after))), [2, 4]);
+        assert_eq!(
+            set(&mut w, 2, Criteria::Custom(CustomFilter::one(after))),
+            [2, 4]
+        );
     }
 
     #[test]
@@ -1836,7 +1984,12 @@ mod tests {
             panic!("no top 10");
         };
         assert_eq!(top.filter_value, Some(12.0));
-        w.set_filter_criteria(0, S, 1, Some(Criteria::Top10(Top10::new(false, false, 1.0))));
+        w.set_filter_criteria(
+            0,
+            S,
+            1,
+            Some(Criteria::Top10(Top10::new(false, false, 1.0))),
+        );
         assert_eq!(shown(&w), [5]);
         // Half of five numbers is two items.
         w.set_filter_criteria(0, S, 1, Some(Criteria::Top10(Top10::new(true, true, 50.0))));
@@ -1909,7 +2062,10 @@ mod tests {
             DynamicFilter::NextYear.period(t),
             Some((day(2025, 1, 1), day(2026, 1, 1)))
         );
-        assert_eq!(DynamicFilter::YearToDate.period(t), Some((day(2024, 1, 1), t + 1.0)));
+        assert_eq!(
+            DynamicFilter::YearToDate.period(t),
+            Some((day(2024, 1, 1), t + 1.0))
+        );
         assert_eq!(DynamicFilter::Month(3).period(t), None);
 
         let all = [
@@ -1935,7 +2091,10 @@ mod tests {
             DynamicFilter::Month(12),
         ];
         for dynamic in all {
-            assert_eq!(DynamicFilter::from_ooxml_type(&dynamic.ooxml_type()), Some(dynamic));
+            assert_eq!(
+                DynamicFilter::from_ooxml_type(&dynamic.ooxml_type()),
+                Some(dynamic)
+            );
         }
         assert_eq!(DynamicFilter::Month(1).ooxml_type(), "M1");
         assert_eq!(DynamicFilter::from_ooxml_type("Q5"), None);
@@ -1978,7 +2137,9 @@ mod tests {
         let yellow = Color(0xFFFF00);
         let red = Color(0xFF0000);
         w.update_style(0, Rect::parse("A3").unwrap(), &|s| s.fill = Some(yellow));
-        w.update_style(0, Rect::parse("A5:A6").unwrap(), &|s| s.font.color = Some(red));
+        w.update_style(0, Rect::parse("A5:A6").unwrap(), &|s| {
+            s.font.color = Some(red)
+        });
         let drop = w.filter_dropdown(0, S, 0).unwrap();
         assert_eq!(drop.cell_colors, [None, Some(yellow)]);
         assert_eq!(drop.font_colors, [None, Some(red)]);
@@ -2027,9 +2188,16 @@ mod tests {
         assert!(names.items.iter().any(|i| i.text == "elder"));
         assert!(!names.items.iter().any(|i| i.text == "apart"));
         w.set_filter_criteria(0, S, 1, Some(custom(Comparison::Less, "4")));
-        assert_eq!(w.auto_filter(0, S).unwrap().range, Rect::parse("A1:C8").unwrap());
         assert_eq!(
-            w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(),
+            w.auto_filter(0, S).unwrap().range,
+            Rect::parse("A1:C8").unwrap()
+        );
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
             [1, 2, 3, 4, 6]
         );
         assert_eq!(w.filter_record_count(0, S), Some((2, 7)));
@@ -2083,17 +2251,40 @@ mod tests {
         // A row above: the range and the hidden rows move down.
         w.insert_rows(0, 0, 1);
         w.commit("insert");
-        assert_eq!(w.auto_filter(0, S).unwrap().range, Rect::parse("A2:C8").unwrap());
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2, 6, 7]);
+        assert_eq!(
+            w.auto_filter(0, S).unwrap().range,
+            Rect::parse("A2:C8").unwrap()
+        );
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2, 6, 7]
+        );
         // A row inside joins the data, shown.
         w.insert_rows(0, 3, 1);
         w.commit("insert");
-        assert_eq!(w.auto_filter(0, S).unwrap().range, Rect::parse("A2:C9").unwrap());
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2, 7, 8]);
+        assert_eq!(
+            w.auto_filter(0, S).unwrap().range,
+            Rect::parse("A2:C9").unwrap()
+        );
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2, 7, 8]
+        );
         w.delete_rows(0, 3, 1);
         w.delete_rows(0, 0, 1);
         w.commit("delete");
-        assert_eq!(w.auto_filter(0, S).unwrap().range, Rect::parse("A1:C7").unwrap());
+        assert_eq!(
+            w.auto_filter(0, S).unwrap().range,
+            Rect::parse("A1:C7").unwrap()
+        );
         assert_eq!(shown(&w), [2, 3, 4]);
 
         // A column inserted inside: criteria follow their columns.
@@ -2112,7 +2303,10 @@ mod tests {
         w.insert_cols(0, 0, 2);
         w.delete_cols(0, 0, 1);
         w.commit("shift");
-        assert_eq!(w.auto_filter(0, S).unwrap().range, Rect::parse("B1:C7").unwrap());
+        assert_eq!(
+            w.auto_filter(0, S).unwrap().range,
+            Rect::parse("B1:C7").unwrap()
+        );
 
         // Deleting the header row removes the filter and shows the rows.
         assert!(!w.sheets[0].filtered_rows.is_empty());
@@ -2152,24 +2346,50 @@ mod tests {
             .insert(0, values(&["cherry"]));
         w.sheets[0].hidden_rows.extend([1, 2, 4, 9]);
         w.adopt_filtered_rows(0);
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [1, 2, 4]);
-        assert_eq!(w.sheets[0].hidden_rows.iter().copied().collect::<Vec<_>>(), [9]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [1, 2, 4]
+        );
+        assert_eq!(
+            w.sheets[0].hidden_rows.iter().copied().collect::<Vec<_>>(),
+            [9]
+        );
     }
 
     #[test]
     fn number_formats_and_many_values() {
         // Values are listed and matched as displayed.
         let mut w = wb(&[("A1", "Price"), ("A2", "1.5"), ("A3", "2"), ("A4", "1.5")]);
-        w.update_style(0, Rect::parse("A2:A4").unwrap(), &|s| s.num_fmt = "0.00".into());
+        w.update_style(0, Rect::parse("A2:A4").unwrap(), &|s| {
+            s.num_fmt = "0.00".into()
+        });
         w.toggle_auto_filter(0, Rect::cell(0, 0)).unwrap();
         let drop = w.filter_dropdown(0, S, 0).unwrap();
         let texts: Vec<&str> = drop.items.iter().map(|i| i.text.as_str()).collect();
         assert_eq!(texts, ["1.50", "2.00"]);
         w.set_filter_criteria(0, S, 0, Some(values(&["1.50"])));
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2]
+        );
         // "Equals 1.5" finds the number whatever its format.
         w.set_filter_criteria(0, S, 0, Some(custom(Comparison::Equals, "1.5")));
-        assert_eq!(w.sheets[0].filtered_rows.iter().copied().collect::<Vec<_>>(), [2]);
+        assert_eq!(
+            w.sheets[0]
+                .filtered_rows
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            [2]
+        );
 
         let mut w = wb(&[("A1", "n")]);
         for r in 1..=(MAX_FILTER_ITEMS as u32 + 5) {

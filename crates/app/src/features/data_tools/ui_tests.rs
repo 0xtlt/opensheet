@@ -71,7 +71,9 @@ fn undo_label(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Option<Stri
 // ---------------------------------------------------------- Text to Columns
 
 fn wizard(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<text_wizard::Wizard> {
-    let wizard = app.update_in(cx, |app, window, cx| text_wizard::open_text_to_columns(app, window, cx));
+    let wizard = app.update_in(cx, |app, window, cx| {
+        text_wizard::open_text_to_columns(app, window, cx)
+    });
     redraw(cx);
     wizard.expect("the wizard opens")
 }
@@ -79,7 +81,11 @@ fn wizard(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<text_wiz
 #[gpui::test]
 fn text_to_columns_with_return_alone(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    fill(&app, cx, &[("A1", "Jean;Dupont;42"), ("A2", "Marie;Curie;7")]);
+    fill(
+        &app,
+        cx,
+        &[("A1", "Jean;Dupont;42"), ("A2", "Marie;Curie;7")],
+    );
     select(&app, cx, "A1:A2");
     run(&app, cx, Cmd::TextToColumns);
     assert!(modal_open(&app, cx));
@@ -154,7 +160,11 @@ fn text_to_columns_asks_before_replacing(cx: &mut TestAppContext) {
 #[gpui::test]
 fn text_to_columns_fixed_width_break_lines(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    fill(&app, cx, &[("A1", "Jean     12  Paris"), ("A2", "Martine   7  Lyon")]);
+    fill(
+        &app,
+        cx,
+        &[("A1", "Jean     12  Paris"), ("A2", "Martine   7  Lyon")],
+    );
     select(&app, cx, "A1:A2");
     let wizard = wizard(&app, cx);
     // Columns padded with blanks: fixed width, with the breaks found.
@@ -190,7 +200,9 @@ fn text_to_columns_refusals(cx: &mut TestAppContext) {
     // Two columns, then nothing at all: a message, no wizard.
     for range in ["A1:B1", "D5"] {
         select(&app, cx, range);
-        let wizard = app.update_in(cx, |app, window, cx| text_wizard::open_text_to_columns(app, window, cx));
+        let wizard = app.update_in(cx, |app, window, cx| {
+            text_wizard::open_text_to_columns(app, window, cx)
+        });
         redraw(cx);
         assert!(wizard.is_none(), "{range}");
         assert!(modal_open(&app, cx));
@@ -215,7 +227,16 @@ fn text_to_columns_refusals(cx: &mut TestAppContext) {
 #[gpui::test]
 fn flash_fill_from_the_keyboard(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    fill(&app, cx, &[("A1", "Jean Dupont"), ("A2", "Marie Curie"), ("A3", "Victor Hugo"), ("B1", "Dupont, J.")]);
+    fill(
+        &app,
+        cx,
+        &[
+            ("A1", "Jean Dupont"),
+            ("A2", "Marie Curie"),
+            ("A3", "Victor Hugo"),
+            ("B1", "Dupont, J."),
+        ],
+    );
     select(&app, cx, "B2");
     cx.simulate_keystrokes("ctrl-e");
     redraw(cx);
@@ -234,7 +255,11 @@ fn flash_fill_from_the_keyboard(cx: &mut TestAppContext) {
 #[gpui::test]
 fn flash_fill_without_a_pattern_says_so(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    fill(&app, cx, &[("A1", "Jean Dupont"), ("A2", "Marie Curie"), ("B1", "xyz")]);
+    fill(
+        &app,
+        cx,
+        &[("A1", "Jean Dupont"), ("A2", "Marie Curie"), ("B1", "xyz")],
+    );
     select(&app, cx, "B2");
     run(&app, cx, Cmd::FlashFill);
     assert!(modal_open(&app, cx));
@@ -248,7 +273,11 @@ fn flash_fill_without_a_pattern_says_so(cx: &mut TestAppContext) {
 #[gpui::test]
 fn flash_fill_respects_protection(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    fill(&app, cx, &[("A1", "Jean Dupont"), ("A2", "Marie Curie"), ("B1", "Jean")]);
+    fill(
+        &app,
+        cx,
+        &[("A1", "Jean Dupont"), ("A2", "Marie Curie"), ("B1", "Jean")],
+    );
     edit(&app, cx, |wb| {
         wb.protect_sheet(0, Default::default(), "");
     });
@@ -284,7 +313,13 @@ fn staff(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) {
 }
 
 fn hidden_rows(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<u32> {
-    app.update(cx, |app, _| app.wb.sheets[app.sheet].filtered_rows.iter().copied().collect())
+    app.update(cx, |app, _| {
+        app.wb.sheets[app.sheet]
+            .filtered_rows
+            .iter()
+            .copied()
+            .collect()
+    })
 }
 
 #[gpui::test]
@@ -300,15 +335,23 @@ fn advanced_filter_in_place_and_clear(cx: &mut TestAppContext) {
     // control the keyboard in this window.)
     cx.simulate_keystrokes("tab tab tab");
     cx.simulate_input("D1:D2");
-    assert_eq!(dialog.update(cx, |d, cx| d.texts(cx)), ["$A$1:$B$5".to_string(), "D1:D2".to_string(), String::new()]);
+    assert_eq!(
+        dialog.update(cx, |d, cx| d.texts(cx)),
+        ["$A$1:$B$5".to_string(), "D1:D2".to_string(), String::new()]
+    );
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert!(!modal_open(&app, cx));
     assert_eq!(hidden_rows(&app, cx), [2, 4]);
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Advanced Filter"));
     // Data > Clear shows the rows again; undo twice goes back to the start.
-    assert!(app.update(cx, |app, _| crate::features::Command::enabled(crate::features::filters::Cmd::Clear, app)));
-    app.update_in(cx, |app, window, cx| app.run_command(crate::features::filters::Cmd::Clear, window, cx));
+    assert!(app.update(cx, |app, _| crate::features::Command::enabled(
+        crate::features::filters::Cmd::Clear,
+        app
+    )));
+    app.update_in(cx, |app, window, cx| {
+        app.run_command(crate::features::filters::Cmd::Clear, window, cx)
+    });
     redraw(cx);
     assert_eq!(hidden_rows(&app, cx), Vec::<u32>::new());
     cx.simulate_keystrokes("cmd-z");
@@ -443,7 +486,18 @@ fn consolidate_by_category_and_again(cx: &mut TestAppContext) {
 #[gpui::test]
 fn consolidate_with_links_to_the_sources(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    fill(&app, cx, &[("A1", "Q1"), ("B1", "Q2"), ("A2", "1"), ("B2", "2"), ("A3", "3"), ("B3", "4")]);
+    fill(
+        &app,
+        cx,
+        &[
+            ("A1", "Q1"),
+            ("B1", "Q2"),
+            ("A2", "1"),
+            ("B2", "2"),
+            ("A3", "3"),
+            ("B3", "4"),
+        ],
+    );
     // On the sheet of the sources Excel refuses the links.
     select(&app, cx, "E1");
     let dialog = app.update_in(cx, |app, window, cx| consolidate::open(app, window, cx));
@@ -487,7 +541,11 @@ fn consolidate_with_links_to_the_sources(cx: &mut TestAppContext) {
     assert_eq!(value(&app, cx, "A3"), Value::Number(1.0));
     assert_eq!(value(&app, cx, "B5"), Value::Number(4.0));
     let (hidden, formula) = app.update(cx, |app, _| {
-        let hidden: Vec<u32> = app.wb.sheets[app.sheet].hidden_rows.iter().copied().collect();
+        let hidden: Vec<u32> = app.wb.sheets[app.sheet]
+            .hidden_rows
+            .iter()
+            .copied()
+            .collect();
         (hidden, app.wb.formula_text(app.sheet, 1, 0))
     });
     assert_eq!(hidden, [1, 3]);
@@ -593,7 +651,9 @@ fn goal_seek_ok_keeps_and_cancel_restores(cx: &mut TestAppContext) {
     assert_eq!(undo_label(&app, cx).as_deref(), Some("setup"));
 
     // Again, kept with Return, undone in one step.
-    let dialog = app.update_in(cx, |app, window, cx| whatif::open_goal_seek(app, window, cx));
+    let dialog = app.update_in(cx, |app, window, cx| {
+        whatif::open_goal_seek(app, window, cx)
+    });
     redraw(cx);
     dialog.update(cx, |dialog, cx| dialog.set("$B$1", "14", "$A$1", cx));
     cx.simulate_keystrokes("enter");
@@ -614,8 +674,15 @@ fn goal_seek_refusals(cx: &mut TestAppContext) {
     select(&app, cx, "B1");
     // No formula in the set cell, a formula in the changing cell, a value
     // that is no number, a reference that is none.
-    for (set, value, changing) in [("A1", "5", "A1"), ("B1", "5", "B1"), ("B1", "five", "A1"), ("B1", "5", "")] {
-        let dialog = app.update_in(cx, |app, window, cx| whatif::open_goal_seek(app, window, cx));
+    for (set, value, changing) in [
+        ("A1", "5", "A1"),
+        ("B1", "5", "B1"),
+        ("B1", "five", "A1"),
+        ("B1", "5", ""),
+    ] {
+        let dialog = app.update_in(cx, |app, window, cx| {
+            whatif::open_goal_seek(app, window, cx)
+        });
         redraw(cx);
         dialog.update(cx, |dialog, cx| dialog.set(set, value, changing, cx));
         cx.simulate_keystrokes("enter");
@@ -631,24 +698,40 @@ fn goal_seek_refusals(cx: &mut TestAppContext) {
 #[gpui::test]
 fn scenarios_from_the_manager(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    fill(&app, cx, &[("A1", "100"), ("A2", "0.1"), ("A3", "=A1*(1+A2)")]);
+    fill(
+        &app,
+        cx,
+        &[("A1", "100"), ("A2", "0.1"), ("A3", "=A1*(1+A2)")],
+    );
     select(&app, cx, "A1:A2");
-    let manager = app.update_in(cx, |app, window, cx| whatif::open_scenario_manager(app, window, cx));
+    let manager = app.update_in(cx, |app, window, cx| {
+        whatif::open_scenario_manager(app, window, cx)
+    });
     redraw(cx);
     // Add: the changing cells are the selection, the values what they hold.
     for (name, values) in [("Low", ["50", "0.05"]), ("High", ["200", "0.2"])] {
-        let scenario = manager.update_in(cx, |manager, window, cx| manager.edit(None, window, cx)).expect("Add Scenario");
+        let scenario = manager
+            .update_in(cx, |manager, window, cx| manager.edit(None, window, cx))
+            .expect("Add Scenario");
         redraw(cx);
         cx.simulate_keystrokes("tab");
         cx.simulate_input(name);
-        let values_dialog = scenario.update_in(cx, |dialog, window, cx| dialog.next(window, cx)).expect("Scenario Values");
+        let values_dialog = scenario
+            .update_in(cx, |dialog, window, cx| dialog.next(window, cx))
+            .expect("Scenario Values");
         redraw(cx);
         values_dialog.update(cx, |dialog, cx| dialog.set(&values, cx));
         cx.simulate_keystrokes("enter");
         redraw(cx);
     }
     let names = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| -> Vec<String> {
-        app.update(cx, |app, _| app.wb.sheets[app.sheet].scenarios.iter().map(|s| s.name.clone()).collect())
+        app.update(cx, |app, _| {
+            app.wb.sheets[app.sheet]
+                .scenarios
+                .iter()
+                .map(|s| s.name.clone())
+                .collect()
+        })
     };
     assert_eq!(names(&app, cx), ["Low", "High"]);
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Add Scenario"));
@@ -659,25 +742,42 @@ fn scenarios_from_the_manager(cx: &mut TestAppContext) {
     assert!((number(&app, cx, "A3") - 240.0).abs() < 1e-9);
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Show Scenario"));
     // A name already taken is refused and the dialog stays.
-    let scenario = manager.update_in(cx, |manager, window, cx| manager.edit(None, window, cx)).expect("Add Scenario");
+    let scenario = manager
+        .update_in(cx, |manager, window, cx| manager.edit(None, window, cx))
+        .expect("Add Scenario");
     redraw(cx);
     scenario.update(cx, |dialog, cx| dialog.set("low", "A1", cx));
-    assert!(scenario.update_in(cx, |dialog, window, cx| dialog.next(window, cx)).is_none());
+    assert!(
+        scenario
+            .update_in(cx, |dialog, window, cx| dialog.next(window, cx))
+            .is_none()
+    );
     redraw(cx);
     cx.simulate_keystrokes("enter escape");
     redraw(cx);
     // Edit the first one: its values are proposed again.
     manager.update(cx, |manager, cx| manager.select(0, cx));
-    let scenario = manager.update_in(cx, |manager, window, cx| manager.edit(Some(0), window, cx)).expect("Edit Scenario");
+    let scenario = manager
+        .update_in(cx, |manager, window, cx| manager.edit(Some(0), window, cx))
+        .expect("Edit Scenario");
     redraw(cx);
-    let values_dialog = scenario.update_in(cx, |dialog, window, cx| dialog.next(window, cx)).expect("Scenario Values");
+    let values_dialog = scenario
+        .update_in(cx, |dialog, window, cx| dialog.next(window, cx))
+        .expect("Scenario Values");
     redraw(cx);
     values_dialog.update(cx, |dialog, cx| dialog.set(&["60"], cx));
     cx.simulate_keystrokes("enter");
     redraw(cx);
     let low = app.update(cx, |app, _| app.wb.sheets[0].scenarios[0].clone());
-    assert_eq!((low.cells[0].value.as_str(), low.cells[1].value.as_str()), ("60", "0.05"));
-    assert!(low.comment.contains("Created by") && low.comment.contains("Modified by"), "{}", low.comment);
+    assert_eq!(
+        (low.cells[0].value.as_str(), low.cells[1].value.as_str()),
+        ("60", "0.05")
+    );
+    assert!(
+        low.comment.contains("Created by") && low.comment.contains("Modified by"),
+        "{}",
+        low.comment
+    );
     // Delete the second, then undo brings it back.
     manager.update(cx, |manager, cx| {
         manager.select(1, cx);
@@ -710,16 +810,26 @@ fn scenario_summary_makes_a_sheet(cx: &mut TestAppContext) {
             wb.scenario_add(0, scenario).unwrap();
         }
     });
-    let manager = app.update_in(cx, |app, window, cx| whatif::open_scenario_manager(app, window, cx));
+    let manager = app.update_in(cx, |app, window, cx| {
+        whatif::open_scenario_manager(app, window, cx)
+    });
     redraw(cx);
-    let summary = manager.update_in(cx, |manager, window, cx| manager.summary(window, cx)).expect("Scenario Summary");
+    let summary = manager
+        .update_in(cx, |manager, window, cx| manager.summary(window, cx))
+        .expect("Scenario Summary");
     redraw(cx);
     summary.update(cx, |dialog, cx| dialog.set("A3", cx));
     cx.simulate_keystrokes("enter");
     redraw(cx);
     // Both dialogs are gone and the report is the sheet in view.
     assert!(!modal_open(&app, cx));
-    let (sheet, name, count) = app.update(cx, |app, _| (app.sheet, app.wb.sheets[app.sheet].name.clone(), app.wb.sheets.len()));
+    let (sheet, name, count) = app.update(cx, |app, _| {
+        (
+            app.sheet,
+            app.wb.sheets[app.sheet].name.clone(),
+            app.wb.sheets.len(),
+        )
+    });
     assert_eq!((sheet, name.as_str(), count), (0, "Scenario Summary", 2));
     assert_eq!(value(&app, cx, "E3"), text("Low"));
     assert_eq!(value(&app, cx, "F5"), Value::Number(200.0));
@@ -740,9 +850,15 @@ fn scenarios_respect_protection(cx: &mut TestAppContext) {
         protection.set(opensheet_engine::protect::Permission::EditScenarios, false);
         wb.protect_sheet(0, protection, "");
     });
-    let manager = app.update_in(cx, |app, window, cx| whatif::open_scenario_manager(app, window, cx));
+    let manager = app.update_in(cx, |app, window, cx| {
+        whatif::open_scenario_manager(app, window, cx)
+    });
     redraw(cx);
-    assert!(manager.update_in(cx, |manager, window, cx| manager.edit(None, window, cx)).is_none());
+    assert!(
+        manager
+            .update_in(cx, |manager, window, cx| manager.edit(None, window, cx))
+            .is_none()
+    );
     redraw(cx);
     // The manager, and the message over it.
     assert_eq!(modal_count(&app, cx), 2);
@@ -754,7 +870,16 @@ fn data_table_from_the_dialog(cx: &mut TestAppContext) {
     fill(
         &app,
         cx,
-        &[("B1", "10"), ("B2", "3"), ("B3", "=B1*B2"), ("D1", "=B3"), ("E1", "10"), ("F1", "20"), ("D2", "1"), ("D3", "2")],
+        &[
+            ("B1", "10"),
+            ("B2", "3"),
+            ("B3", "=B1*B2"),
+            ("D1", "=B3"),
+            ("E1", "10"),
+            ("F1", "20"),
+            ("D2", "1"),
+            ("D3", "2"),
+        ],
     );
     select(&app, cx, "D1:F3");
     run(&app, cx, Cmd::DataTable);
@@ -768,7 +893,10 @@ fn data_table_from_the_dialog(cx: &mut TestAppContext) {
     assert_eq!(value(&app, cx, "F3"), Value::Number(40.0));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Data Table"));
     // The formula bar shows Excel's array formula.
-    assert_eq!(app.update(cx, |app, _| app.wb.formula_bar_text(0, 2, 5)), "{=TABLE(B1,B2)}");
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.formula_bar_text(0, 2, 5)),
+        "{=TABLE(B1,B2)}"
+    );
     // The table follows the model.
     fill(&app, cx, &[("B3", "=B1*B2+1")]);
     assert_eq!(value(&app, cx, "F3"), Value::Number(41.0));
@@ -798,16 +926,30 @@ fn data_table_from_the_dialog(cx: &mut TestAppContext) {
     assert!(app.update(cx, |app, _| app.wb.sheets[0].data_tables.is_empty()));
     cx.simulate_keystrokes("cmd-z");
     assert_eq!(value(&app, cx, "F3"), Value::Number(41.0));
-    assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].data_tables.len()), 1);
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.sheets[0].data_tables.len()),
+        1
+    );
 }
 
 #[gpui::test]
 fn data_table_refusals(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    fill(&app, cx, &[("B1", "10"), ("D1", "=B1"), ("E1", "1"), ("D2", "2")]);
-    for (selection, row, column) in [("D1:E2", "", ""), ("D1:E2", "nowhere", ""), ("D1:E2", "E2", ""), ("D1", "B1", "")] {
+    fill(
+        &app,
+        cx,
+        &[("B1", "10"), ("D1", "=B1"), ("E1", "1"), ("D2", "2")],
+    );
+    for (selection, row, column) in [
+        ("D1:E2", "", ""),
+        ("D1:E2", "nowhere", ""),
+        ("D1:E2", "E2", ""),
+        ("D1", "B1", ""),
+    ] {
         select(&app, cx, selection);
-        let dialog = app.update_in(cx, |app, window, cx| whatif::open_data_table(app, window, cx));
+        let dialog = app.update_in(cx, |app, window, cx| {
+            whatif::open_data_table(app, window, cx)
+        });
         redraw(cx);
         dialog.update(cx, |dialog, cx| dialog.set(row, column, cx));
         cx.simulate_keystrokes("enter");
@@ -822,15 +964,22 @@ fn data_table_refusals(cx: &mut TestAppContext) {
 
 /// A text file of this test, in a directory of its own.
 fn text_file(name: &str, content: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("opensheet-datatools-{}-{name}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("opensheet-datatools-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("a directory for the test");
     let path = dir.join("sales.csv");
     std::fs::write(&path, content).expect("the file is written");
     path
 }
 
-fn import(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, path: &std::path::Path) -> Entity<text_wizard::Wizard> {
-    let wizard = app.update_in(cx, |app, window, cx| import::import_file(app, path, window, cx));
+fn import(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    path: &std::path::Path,
+) -> Entity<text_wizard::Wizard> {
+    let wizard = app.update_in(cx, |app, window, cx| {
+        import::import_file(app, path, window, cx)
+    });
     redraw(cx);
     wizard.expect("the Text Import Wizard")
 }
@@ -859,7 +1008,10 @@ fn get_data_from_text_then_refresh_all(cx: &mut TestAppContext) {
     assert_eq!(value(&app, cx, "C4"), Value::Number(4.0));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Import Data"));
     let kept = app.update(cx, |app, _| app.wb.sheets[0].text_imports[0].clone());
-    assert_eq!((kept.name.as_str(), kept.first_row, kept.range), ("sales", 2, Rect::parse("B2:C4").unwrap()));
+    assert_eq!(
+        (kept.name.as_str(), kept.first_row, kept.range),
+        ("sales", 2, Rect::parse("B2:C4").unwrap())
+    );
 
     // The file changes; Refresh All reads it again, in one step.
     std::fs::write(&path, "Sales 2025\nName;Qty\nCid;9\n").unwrap();
@@ -872,9 +1024,15 @@ fn get_data_from_text_then_refresh_all(cx: &mut TestAppContext) {
     assert_eq!(value(&app, cx, "B4"), text("Bob"));
     // Refresh works where the data is, and only there.
     select(&app, cx, "F9");
-    assert!(!app.update(cx, |app, _| crate::features::Command::enabled(Cmd::Refresh, app)));
+    assert!(!app.update(cx, |app, _| crate::features::Command::enabled(
+        Cmd::Refresh,
+        app
+    )));
     select(&app, cx, "C3");
-    assert!(app.update(cx, |app, _| crate::features::Command::enabled(Cmd::Refresh, app)));
+    assert!(app.update(cx, |app, _| crate::features::Command::enabled(
+        Cmd::Refresh,
+        app
+    )));
     run(&app, cx, Cmd::Refresh);
     assert_eq!(value(&app, cx, "B3"), text("Cid"));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Refresh"));
@@ -901,9 +1059,11 @@ fn get_data_on_a_new_sheet_and_refusals(cx: &mut TestAppContext) {
             path: path.to_string_lossy().into_owned(),
             range: Rect::cell(0, 0),
             first_row: 1,
-            spec: opensheet_engine::text_columns::Spec::new(opensheet_engine::text_columns::Layout::Delimited(
-                opensheet_engine::text_columns::Delimiters::only(','),
-            )),
+            spec: opensheet_engine::text_columns::Spec::new(
+                opensheet_engine::text_columns::Layout::Delimited(
+                    opensheet_engine::text_columns::Delimiters::only(','),
+                ),
+            ),
             web: None,
             props: Default::default(),
         };
@@ -921,15 +1081,26 @@ fn get_data_on_a_new_sheet_and_refusals(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert!(!modal_open(&app, cx));
-    assert_eq!(app.update(cx, |app, _| (app.sheet, app.wb.sheets.len())), (1, 2));
+    assert_eq!(
+        app.update(cx, |app, _| (app.sheet, app.wb.sheets.len())),
+        (1, 2)
+    );
     assert_eq!(value(&app, cx, "B2"), Value::Number(2.0));
     cx.simulate_keystrokes("cmd-z");
     redraw(cx);
-    assert_eq!(app.update(cx, |app, _| (app.sheet, app.wb.sheets.len())), (0, 1));
+    assert_eq!(
+        app.update(cx, |app, _| (app.sheet, app.wb.sheets.len())),
+        (0, 1)
+    );
     // A file that is not there, or empty: a message, no wizard.
     std::fs::write(&path, "").unwrap();
     for missing in [path.clone(), path.with_file_name("none.csv")] {
-        assert!(app.update_in(cx, |app, window, cx| import::import_file(app, &missing, window, cx)).is_none());
+        assert!(
+            app.update_in(cx, |app, window, cx| import::import_file(
+                app, &missing, window, cx
+            ))
+            .is_none()
+        );
         redraw(cx);
         assert_eq!(modal_count(&app, cx), 1);
     }
@@ -939,25 +1110,55 @@ fn get_data_on_a_new_sheet_and_refusals(cx: &mut TestAppContext) {
 #[gpui::test]
 fn refresh_all_recomputes_pivot_tables(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    fill(&app, cx, &[("A1", "City"), ("B1", "Qty"), ("A2", "Paris"), ("B2", "1"), ("A3", "Lyon"), ("B3", "2")]);
+    fill(
+        &app,
+        cx,
+        &[
+            ("A1", "City"),
+            ("B1", "Qty"),
+            ("A2", "Paris"),
+            ("B2", "1"),
+            ("A3", "Lyon"),
+            ("B3", "2"),
+        ],
+    );
     app.update(cx, |app, cx| {
-        let source = opensheet_engine::pivot::PivotSource::parse("Sheet1!$A$1:$B$3", 0, &app.wb).expect("a source");
-        let dest = opensheet_engine::pivot::PivotDestination::Existing { sheet: 0, row: 0, col: 4 };
-        let id = app.wb.pivot_create(source, dest, false).expect("a PivotTable");
-        app.wb.pivot_add_field(id, 1, opensheet_engine::pivot::Area::Values, None, false).expect("a value field");
+        let source = opensheet_engine::pivot::PivotSource::parse("Sheet1!$A$1:$B$3", 0, &app.wb)
+            .expect("a source");
+        let dest = opensheet_engine::pivot::PivotDestination::Existing {
+            sheet: 0,
+            row: 0,
+            col: 4,
+        };
+        let id = app
+            .wb
+            .pivot_create(source, dest, false)
+            .expect("a PivotTable");
+        app.wb
+            .pivot_add_field(id, 1, opensheet_engine::pivot::Area::Values, None, false)
+            .expect("a value field");
         app.commit("pivot", cx);
     });
     redraw(cx);
     let total = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| -> Vec<Value> {
         // What the report shows, wherever its total sits.
-        app.update(cx, |app, _| (0..8).flat_map(|r| (4..8).map(move |c| (r, c))).map(|(r, c)| app.wb.value_at(0, r, c)).collect())
+        app.update(cx, |app, _| {
+            (0..8)
+                .flat_map(|r| (4..8).map(move |c| (r, c)))
+                .map(|(r, c)| app.wb.value_at(0, r, c))
+                .collect()
+        })
     };
     assert!(total(&app, cx).contains(&Value::Number(3.0)));
     // The source changes; the report waits for a refresh.
     fill(&app, cx, &[("B3", "10")]);
     assert!(total(&app, cx).contains(&Value::Number(3.0)));
     run(&app, cx, Cmd::RefreshAll);
-    assert!(total(&app, cx).contains(&Value::Number(11.0)), "{:?}", total(&app, cx));
+    assert!(
+        total(&app, cx).contains(&Value::Number(11.0)),
+        "{:?}",
+        total(&app, cx)
+    );
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Refresh All"));
 }
 
@@ -967,17 +1168,26 @@ use super::sources::test_server::{Server, page};
 
 /// The dialog in front, as the view it is.
 fn front<V: 'static>(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<V> {
-    let view = app.update(cx, |app, _| app.front_modal_view()).expect("a dialog is open");
+    let view = app
+        .update(cx, |app, _| app.front_modal_view())
+        .expect("a dialog is open");
     view.downcast::<V>().ok().expect("the dialog expected")
 }
 
 fn alert_text(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> String {
-    app.update(cx, |app, cx| app.front_alert(cx)).map(|(_, message)| message).unwrap_or_default()
+    app.update(cx, |app, cx| app.front_alert(cx))
+        .map(|(_, message)| message)
+        .unwrap_or_default()
 }
 
 fn sales_page(rows: &[(&str, &str)]) -> String {
-    let body: String = rows.iter().map(|(name, qty)| format!("<tr><td>{name}</td><td>{qty}</td></tr>")).collect();
-    format!("<html><body><table><tr><td>Menu</td></tr></table><table id=\"sales\"><tr><th>Name</th><th>Qty</th></tr>{body}</table></body></html>")
+    let body: String = rows
+        .iter()
+        .map(|(name, qty)| format!("<tr><td>{name}</td><td>{qty}</td></tr>"))
+        .collect();
+    format!(
+        "<html><body><table><tr><td>Menu</td></tr></table><table id=\"sales\"><tr><th>Name</th><th>Qty</th></tr>{body}</table></body></html>"
+    )
 }
 
 /// Type an address into From Web and confirm.
@@ -993,26 +1203,40 @@ fn from_web(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, address: &str) {
 fn get_data_from_web_then_refresh(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     let server = Server::start();
-    server.set("/sales", page("text/html", &sales_page(&[("Ann", "3"), ("Bob", "4")])));
+    server.set(
+        "/sales",
+        page("text/html", &sales_page(&[("Ann", "3"), ("Bob", "4")])),
+    );
     // The address is typed without its scheme.
     from_web(&app, cx, &format!("127.0.0.1:{}/sales", server.port));
     // The Navigator lists the tables of the page; the second is chosen.
     let navigator = front::<navigator::Navigator>(&app, cx);
-    assert_eq!(navigator.read_with(cx, |navigator, _| navigator.names()), ["Table 0", "sales"]);
+    assert_eq!(
+        navigator.read_with(cx, |navigator, _| navigator.names()),
+        ["Table 0", "sales"]
+    );
     navigator.update(cx, |navigator, cx| navigator.select(1, cx));
     redraw(cx);
     // Load: on a new sheet, as Excel does.
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert!(!modal_open(&app, cx));
-    assert_eq!(app.update(cx, |app, _| (app.sheet, app.wb.sheets.len())), (1, 2));
+    assert_eq!(
+        app.update(cx, |app, _| (app.sheet, app.wb.sheets.len())),
+        (1, 2)
+    );
     assert_eq!(value(&app, cx, "A1"), text("Name"));
     assert_eq!(value(&app, cx, "B3"), Value::Number(4.0));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Import Data"));
     let kept = app.update(cx, |app, _| app.wb.sheets[1].text_imports[0].clone());
     assert_eq!(kept.name, "sales");
     assert_eq!(kept.path, server.url("/sales"));
-    assert_eq!(kept.web, Some(opensheet_engine::external::WebQuery { item: Some(opensheet_engine::external::QueryItem::Index(2)) }));
+    assert_eq!(
+        kept.web,
+        Some(opensheet_engine::external::WebQuery {
+            item: Some(opensheet_engine::external::QueryItem::Index(2))
+        })
+    );
     assert_eq!(kept.range, Rect::parse("A1:B3").unwrap());
 
     // The page changes: Refresh All fetches it again, off the window
@@ -1031,15 +1255,37 @@ fn get_data_from_web_then_refresh(cx: &mut TestAppContext) {
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Refresh"));
 
     // The table is gone from the page: Excel's message, the data stays.
-    server.set("/sales", page("text/html", "<html><table><tr><td>Menu</td></tr></table></html>"));
+    server.set(
+        "/sales",
+        page(
+            "text/html",
+            "<html><table><tr><td>Menu</td></tr></table></html>",
+        ),
+    );
     run(&app, cx, Cmd::Refresh);
-    assert!(alert_text(&app, cx).contains("sales"), "{}", alert_text(&app, cx));
+    assert!(
+        alert_text(&app, cx).contains("sales"),
+        "{}",
+        alert_text(&app, cx)
+    );
     assert_eq!(modal_count(&app, cx), 1);
     assert_eq!(value(&app, cx, "A2"), text("Cid"));
     // The page is gone.
-    server.set("/sales", super::sources::test_server::Answer { status: 404, content_type: "text/html", body: Vec::new(), location: None });
+    server.set(
+        "/sales",
+        super::sources::test_server::Answer {
+            status: 404,
+            content_type: "text/html",
+            body: Vec::new(),
+            location: None,
+        },
+    );
     run(&app, cx, Cmd::RefreshAll);
-    assert!(alert_text(&app, cx).contains("404"), "{}", alert_text(&app, cx));
+    assert!(
+        alert_text(&app, cx).contains("404"),
+        "{}",
+        alert_text(&app, cx)
+    );
     assert_eq!(modal_count(&app, cx), 1);
     // A protected sheet keeps its data as it is, silently.
     server.set("/sales", page("text/html", &sales_page(&[("Dan", "1")])));
@@ -1059,12 +1305,20 @@ fn get_data_from_web_refusals_and_text(cx: &mut TestAppContext) {
     server.set("/data.csv", page("text/csv", "Name;Qty\nAnn;3\n"));
     // A page without a table, a page that is not there, no server at all.
     from_web(&app, cx, &server.url("/empty"));
-    assert!(alert_text(&app, cx).contains("no data"), "{}", alert_text(&app, cx));
+    assert!(
+        alert_text(&app, cx).contains("no data"),
+        "{}",
+        alert_text(&app, cx)
+    );
     assert_eq!(modal_count(&app, cx), 1);
     from_web(&app, cx, &server.url("/missing"));
     assert!(alert_text(&app, cx).contains("(HTTP/1.0 404)"));
     assert_eq!(modal_count(&app, cx), 1);
-    let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let free = std::net::TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     from_web(&app, cx, &format!("http://127.0.0.1:{free}/x"));
     assert!(alert_text(&app, cx).contains("Cannot locate the Internet server"));
     assert_eq!(modal_count(&app, cx), 1);
@@ -1083,7 +1337,14 @@ fn get_data_from_web_refusals_and_text(cx: &mut TestAppContext) {
     redraw(cx);
     assert_eq!(value(&app, cx, "B2"), Value::Number(3.0));
     let kept = app.update(cx, |app, _| app.wb.sheets[0].text_imports[0].clone());
-    assert_eq!((kept.name.as_str(), kept.web.is_none(), kept.path == server.url("/data.csv")), ("data", true, true));
+    assert_eq!(
+        (
+            kept.name.as_str(),
+            kept.web.is_none(),
+            kept.path == server.url("/data.csv")
+        ),
+        ("data", true, true)
+    );
     server.set("/data.csv", page("text/csv", "Name;Qty\nAnn;30\n"));
     run(&app, cx, Cmd::RefreshAll);
     assert_eq!(value(&app, cx, "B2"), Value::Number(30.0));
@@ -1096,15 +1357,23 @@ fn get_data_from_web_refusals_and_text(cx: &mut TestAppContext) {
 #[gpui::test]
 fn get_data_from_documents(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    let dir = text_file("documents", "unused").parent().unwrap().to_path_buf();
+    let dir = text_file("documents", "unused")
+        .parent()
+        .unwrap()
+        .to_path_buf();
     // JSON: records to rows, nested records to columns; Load To asks where.
     let json = dir.join("people data.json");
     std::fs::write(&json, r#"{"people":[{"name":"Ann","address":{"city":"Paris"},"born":"1990-05-17"},{"name":"Bob","address":{"city":"Lyon"}}]}"#).unwrap();
     let address = super::sources::file_url(&json);
-    app.update_in(cx, |app, window, cx| import::open_address(app, address.clone(), None, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        import::open_address(app, address.clone(), None, window, cx)
+    });
     redraw(cx);
     let navigator = front::<navigator::Navigator>(&app, cx);
-    assert_eq!(navigator.read_with(cx, |navigator, _| navigator.names()), ["people data", "people"]);
+    assert_eq!(
+        navigator.read_with(cx, |navigator, _| navigator.names()),
+        ["people data", "people"]
+    );
     navigator.update_in(cx, |navigator, window, cx| {
         navigator.select(1, cx);
         navigator.load(true, window, cx);
@@ -1120,9 +1389,12 @@ fn get_data_from_documents(cx: &mut TestAppContext) {
     assert_eq!(value(&app, cx, "D4"), text("Lyon"));
     assert!(matches!(value(&app, cx, "E3"), Value::Number(n) if n > 32000.0));
     // A second query cannot start inside the first.
-    app.update_in(cx, |app, window, cx| import::open_address(app, address.clone(), None, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        import::open_address(app, address.clone(), None, window, cx)
+    });
     redraw(cx);
-    front::<navigator::Navigator>(&app, cx).update_in(cx, |navigator, window, cx| navigator.load(true, window, cx));
+    front::<navigator::Navigator>(&app, cx)
+        .update_in(cx, |navigator, window, cx| navigator.load(true, window, cx));
     redraw(cx);
     front::<import::ImportDialog>(&app, cx).update(cx, |dialog, cx| dialog.set(false, "=$D$3", cx));
     cx.simulate_keystrokes("enter");
@@ -1130,7 +1402,11 @@ fn get_data_from_documents(cx: &mut TestAppContext) {
     assert!(alert_text(&app, cx).contains("existing External Data Range"));
     assert_eq!(modal_count(&app, cx), 2);
     // The file changes; Refresh reads it again.
-    std::fs::write(&json, r#"{"people":[{"name":"Zoe","address":{"city":"Nice"}}]}"#).unwrap();
+    std::fs::write(
+        &json,
+        r#"{"people":[{"name":"Zoe","address":{"city":"Nice"}}]}"#,
+    )
+    .unwrap();
     select(&app, cx, "C3");
     run(&app, cx, Cmd::Refresh);
     assert_eq!(value(&app, cx, "C3"), text("Zoe"));
@@ -1141,7 +1417,12 @@ fn get_data_from_documents(cx: &mut TestAppContext) {
     let write = |qty: &str| {
         let mut wb = Workbook::new(opensheet_engine::Locale::en());
         wb.sheets[0].name = "Stock".into();
-        for (cell, entry) in [((0, 0), "Item"), ((0, 1), "Qty"), ((1, 0), "Nut"), ((1, 1), qty)] {
+        for (cell, entry) in [
+            ((0, 0), "Item"),
+            ((0, 1), "Qty"),
+            ((1, 0), "Nut"),
+            ((1, 1), qty),
+        ] {
             wb.set_cell_text(0, cell.0, cell.1, entry).unwrap();
         }
         wb.commit("setup");
@@ -1149,10 +1430,15 @@ fn get_data_from_documents(cx: &mut TestAppContext) {
     };
     write("12");
     let address = super::sources::file_url(&book);
-    app.update_in(cx, |app, window, cx| import::open_address(app, address, None, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        import::open_address(app, address, None, window, cx)
+    });
     redraw(cx);
     let navigator = front::<navigator::Navigator>(&app, cx);
-    assert_eq!(navigator.read_with(cx, |navigator, _| navigator.names()), ["Stock"]);
+    assert_eq!(
+        navigator.read_with(cx, |navigator, _| navigator.names()),
+        ["Stock"]
+    );
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(app.update(cx, |app, _| app.sheet), 1);
@@ -1164,7 +1450,9 @@ fn get_data_from_documents(cx: &mut TestAppContext) {
     // XML: a row per element under the root.
     let xml = dir.join("books.xml");
     std::fs::write(&xml, "<catalog><book id=\"b1\"><title>Dune</title></book><book id=\"b2\"><title>Emma</title></book></catalog>").unwrap();
-    app.update_in(cx, |app, window, cx| import::open_address(app, super::sources::file_url(&xml), None, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        import::open_address(app, super::sources::file_url(&xml), None, window, cx)
+    });
     redraw(cx);
     cx.simulate_keystrokes("enter");
     redraw(cx);
@@ -1177,7 +1465,10 @@ fn queries_and_connections_dialogs(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     let server = Server::start();
     server.set("/a", page("text/html", &sales_page(&[("Ann", "3")])));
-    server.set("/b", page("text/html", &sales_page(&[("Bea", "7"), ("Cy", "8")])));
+    server.set(
+        "/b",
+        page("text/html", &sales_page(&[("Bea", "7"), ("Cy", "8")])),
+    );
     from_web(&app, cx, &server.url("/a"));
     front::<navigator::Navigator>(&app, cx).update_in(cx, |navigator, window, cx| {
         navigator.select(1, cx);
@@ -1185,14 +1476,24 @@ fn queries_and_connections_dialogs(cx: &mut TestAppContext) {
     });
     redraw(cx);
     // Properties of the range under the active cell.
-    assert!(app.update(cx, |app, _| crate::features::Command::enabled(Cmd::RangeProperties, app)));
+    assert!(app.update(cx, |app, _| crate::features::Command::enabled(
+        Cmd::RangeProperties,
+        app
+    )));
     run(&app, cx, Cmd::RangeProperties);
-    front::<connections::RangeDialog>(&app, cx).update(cx, |dialog, cx| dialog.set(false, false, cx));
+    front::<connections::RangeDialog>(&app, cx)
+        .update(cx, |dialog, cx| dialog.set(false, false, cx));
     cx.simulate_keystrokes("enter");
     redraw(cx);
     let props = app.update(cx, |app, _| app.wb.sheets[1].text_imports[0].props.clone());
-    assert_eq!((props.preserve_formatting, props.adjust_width), (false, false));
-    assert_eq!(undo_label(&app, cx).as_deref(), Some("Connection Properties"));
+    assert_eq!(
+        (props.preserve_formatting, props.adjust_width),
+        (false, false)
+    );
+    assert_eq!(
+        undo_label(&app, cx).as_deref(),
+        Some("Connection Properties")
+    );
 
     // Queries & Connections: the list, then the properties of the one selected.
     run(&app, cx, Cmd::Connections);
@@ -1201,17 +1502,29 @@ fn queries_and_connections_dialogs(cx: &mut TestAppContext) {
     redraw(cx);
     let properties = front::<connections::PropertiesDialog>(&app, cx);
     // A name that is no name keeps the dialog.
-    properties.update(cx, |dialog, cx| dialog.set("1 bad", "", None, false, &server.url("/a"), cx));
+    properties.update(cx, |dialog, cx| {
+        dialog.set("1 bad", "", None, false, &server.url("/a"), cx)
+    });
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert!(alert_text(&app, cx).contains("not valid"));
     app.update_in(cx, |app, window, cx| app.close_modal(window, cx));
     let address = server.url("/b");
-    properties.update(cx, |dialog, cx| dialog.set("weekly", "Sales of the week", Some(5), true, &address, cx));
+    properties.update(cx, |dialog, cx| {
+        dialog.set("weekly", "Sales of the week", Some(5), true, &address, cx)
+    });
     cx.simulate_keystrokes("enter");
     redraw(cx);
     let kept = app.update(cx, |app, _| app.wb.sheets[1].text_imports[0].clone());
-    assert_eq!((kept.name.as_str(), kept.props.description.as_str(), kept.props.refresh_minutes, kept.props.refresh_on_open), ("weekly", "Sales of the week", 5, true));
+    assert_eq!(
+        (
+            kept.name.as_str(),
+            kept.props.description.as_str(),
+            kept.props.refresh_minutes,
+            kept.props.refresh_on_open
+        ),
+        ("weekly", "Sales of the week", 5, true)
+    );
     assert_eq!(kept.path, address);
     // The list is still open, on the new name; Refresh reads the new address.
     let list = front::<connections::ConnectionsDialog>(&app, cx);
@@ -1234,7 +1547,8 @@ fn queries_and_connections_dialogs(cx: &mut TestAppContext) {
     // Remove asks first; the data stays, the query is gone, and comes
     // back with Undo.
     run(&app, cx, Cmd::Connections);
-    front::<connections::ConnectionsDialog>(&app, cx).update_in(cx, |list, window, cx| list.remove(window, cx));
+    front::<connections::ConnectionsDialog>(&app, cx)
+        .update_in(cx, |list, window, cx| list.remove(window, cx));
     redraw(cx);
     assert!(alert_text(&app, cx).contains("Removing connection(s)"));
     cx.simulate_keystrokes("enter");
@@ -1242,9 +1556,15 @@ fn queries_and_connections_dialogs(cx: &mut TestAppContext) {
     assert!(app.update(cx, |app, _| app.wb.sheets[1].text_imports.is_empty()));
     assert_eq!(value(&app, cx, "A2"), text("Dee"));
     assert_eq!(modal_count(&app, cx), 1);
-    assert!(!app.update(cx, |app, _| crate::features::Command::enabled(Cmd::RangeProperties, app)));
+    assert!(!app.update(cx, |app, _| crate::features::Command::enabled(
+        Cmd::RangeProperties,
+        app
+    )));
     cx.simulate_keystrokes("cmd-z");
-    assert_eq!(app.update(cx, |app, _| app.wb.sheets[1].text_imports.len()), 1);
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.sheets[1].text_imports.len()),
+        1
+    );
 }
 
 #[gpui::test]
@@ -1257,7 +1577,9 @@ fn edit_query_and_refresh_on_open(cx: &mut TestAppContext) {
     redraw(cx);
     assert_eq!(value(&app, cx, "A1"), text("Menu"));
     // Edit Query: the same address, another table of the page.
-    let query = app.update(cx, |app, _| import::QueryRef::of(app, 1, 0)).unwrap();
+    let query = app
+        .update(cx, |app, _| import::QueryRef::of(app, 1, 0))
+        .unwrap();
     let address = server.url("/a");
     app.update_in(cx, |app, window, cx| {
         navigator::open_web(app, &address, Some(query), window, cx);
@@ -1273,21 +1595,43 @@ fn edit_query_and_refresh_on_open(cx: &mut TestAppContext) {
     redraw(cx);
     assert_eq!(value(&app, cx, "A2"), text("Ann"));
     assert_eq!(undo_label(&app, cx).as_deref(), Some("Edit Query"));
-    assert_eq!(app.update(cx, |app, _| app.wb.sheets[1].text_imports.len()), 1);
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.sheets[1].text_imports.len()),
+        1
+    );
     cx.simulate_keystrokes("cmd-z");
     assert_eq!(value(&app, cx, "A1"), text("Menu"));
     assert_eq!(value(&app, cx, "A2"), Value::Empty);
 
     // A file that refreshes on opening: nothing is fetched before the
     // user agrees.
-    edit(&app, cx, |wb| wb.update_import(1, 0, |import| import.props.refresh_on_open = true));
-    let bytes = app.update(cx, |app, _| opensheet_io::write_xlsx(&app.wb, std::io::Cursor::new(Vec::new())).unwrap().into_inner());
-    let wb = opensheet_io::read_xlsx(std::io::Cursor::new(bytes), opensheet_engine::Locale::en()).unwrap();
-    server.set("/a", page("text/html", &sales_page(&[("Zed", "0")]).replace("Menu", "Carte")));
-    app.update(cx, |app, cx| app.set_workbook(wb, None, "Opened".into(), cx));
+    edit(&app, cx, |wb| {
+        wb.update_import(1, 0, |import| import.props.refresh_on_open = true)
+    });
+    let bytes = app.update(cx, |app, _| {
+        opensheet_io::write_xlsx(&app.wb, std::io::Cursor::new(Vec::new()))
+            .unwrap()
+            .into_inner()
+    });
+    let wb = opensheet_io::read_xlsx(std::io::Cursor::new(bytes), opensheet_engine::Locale::en())
+        .unwrap();
+    server.set(
+        "/a",
+        page(
+            "text/html",
+            &sales_page(&[("Zed", "0")]).replace("Menu", "Carte"),
+        ),
+    );
+    app.update(cx, |app, cx| {
+        app.set_workbook(wb, None, "Opened".into(), cx)
+    });
     redraw(cx);
     redraw(cx);
-    assert!(alert_text(&app, cx).contains("connects to an external data source"), "{}", alert_text(&app, cx));
+    assert!(
+        alert_text(&app, cx).contains("connects to an external data source"),
+        "{}",
+        alert_text(&app, cx)
+    );
     app.update(cx, |app, cx| {
         app.sheet = 1;
         cx.notify();

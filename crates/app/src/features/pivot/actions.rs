@@ -2,7 +2,9 @@
 //! step made through `perform`.
 
 use super::logic::{self, MoveTo, SelectWhat, Target};
-use super::{Outcome, active_cell, active_pivot, active_target, dialogs, perform, sheet_inserted, update};
+use super::{
+    Outcome, active_cell, active_pivot, active_target, dialogs, perform, sheet_inserted, update,
+};
 use crate::app::ExcelApp;
 use crate::features::Cx;
 use crate::i18n::t;
@@ -21,9 +23,13 @@ pub(super) fn rename_pivot(app: &mut ExcelApp, name: String, window: &mut Window
     let Some(id) = active_pivot(app).map(|p| p.id) else {
         return;
     };
-    perform(app, t("Rename PivotTable", "Renommer le tableau croisé dynamique"), window, cx, move |app, _| {
-        app.wb.pivot_rename(id, &name)
-    });
+    perform(
+        app,
+        t("Rename PivotTable", "Renommer le tableau croisé dynamique"),
+        window,
+        cx,
+        move |app, _| app.wb.pivot_rename(id, &name),
+    );
 }
 
 /// Would this caption be accepted for a field or a value field?
@@ -38,7 +44,12 @@ fn name_is_free(pivot: &PivotTable, target: Target, name: &str) -> bool {
 /// Give the field or the value field under the active cell a custom name
 /// (the "Active Field" box). A name already taken is refused with Excel's
 /// message.
-pub(super) fn rename_active_field(app: &mut ExcelApp, name: String, window: &mut Window, cx: &mut Cx) {
+pub(super) fn rename_active_field(
+    app: &mut ExcelApp,
+    name: String,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let (Some(pivot), Some(target)) = (active_pivot(app), active_target(app)) else {
         return;
     };
@@ -47,12 +58,19 @@ pub(super) fn rename_active_field(app: &mut ExcelApp, name: String, window: &mut
         warn(app, logic::name_exists(), cx);
         return;
     }
-    update(app, id, t("Rename Field", "Renommer le champ"), window, cx, move |p| {
-        match target {
-            Target::Field(field) => p.set_field_caption(field, &name),
-            Target::Data(data) => p.set_data_name(data, &name),
-        };
-    });
+    update(
+        app,
+        id,
+        t("Rename Field", "Renommer le champ"),
+        window,
+        cx,
+        move |p| {
+            match target {
+                Target::Field(field) => p.set_field_caption(field, &name),
+                Target::Data(data) => p.set_data_name(data, &name),
+            };
+        },
+    );
 }
 
 // ------------------------------------------------------- expand and collapse
@@ -63,16 +81,30 @@ pub(super) fn drill_field(app: &ExcelApp) -> Option<(u32, usize)> {
     logic::drill_field(pivot, &active_cell(app)?).map(|field| (pivot.id, field))
 }
 
-pub(super) fn collapse_field(app: &mut ExcelApp, id: u32, field: usize, collapsed: bool, window: &mut Window, cx: &mut Cx) {
+pub(super) fn collapse_field(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    collapsed: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let label = if collapsed {
         t("Collapse Entire Field", "Réduire le champ entier")
     } else {
         t("Expand Entire Field", "Développer le champ entier")
     };
-    update(app, id, label, window, cx, move |p| p.set_field_collapsed(field, collapsed));
+    update(app, id, label, window, cx, move |p| {
+        p.set_field_collapsed(field, collapsed)
+    });
 }
 
-pub(super) fn collapse_active_field(app: &mut ExcelApp, collapsed: bool, window: &mut Window, cx: &mut Cx) {
+pub(super) fn collapse_active_field(
+    app: &mut ExcelApp,
+    collapsed: bool,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if let Some((id, field)) = drill_field(app) {
         collapse_field(app, id, field, collapsed, window, cx);
     }
@@ -88,8 +120,14 @@ pub(super) fn collapse_item(
     window: &mut Window,
     cx: &mut Cx,
 ) {
-    let label = if collapsed { t("Collapse", "Réduire") } else { t("Expand", "Développer") };
-    update(app, id, label, window, cx, move |p| p.set_collapsed(field, item, collapsed));
+    let label = if collapsed {
+        t("Collapse", "Réduire")
+    } else {
+        t("Expand", "Développer")
+    };
+    update(app, id, label, window, cx, move |p| {
+        p.set_collapsed(field, item, collapsed)
+    });
 }
 
 // ----------------------------------------------------------------- grouping
@@ -102,7 +140,8 @@ pub(super) fn group_field(app: &ExcelApp) -> Option<(u32, usize)> {
 
 pub(super) fn can_group(app: &ExcelApp) -> bool {
     group_field(app).is_some()
-        || logic::selected_items(&app.wb, app.sheet, &app.sel().ranges).is_some_and(|(_, _, items)| items.len() > 1)
+        || logic::selected_items(&app.wb, app.sheet, &app.sel().ranges)
+            .is_some_and(|(_, _, items)| items.len() > 1)
 }
 
 /// "Group Selection": several labels become "Group1"; a date or a number
@@ -114,18 +153,40 @@ pub(super) fn group_selection(app: &mut ExcelApp, window: &mut Window, cx: &mut 
     }
     match logic::selected_items(&app.wb, app.sheet, &app.sel().ranges) {
         Some((id, field, items)) if items.len() > 1 => {
-            perform(app, t("Group Selection", "Grouper la sélection"), window, cx, move |app, overwrite| {
-                app.wb.pivot_group_items(id, field, &items, overwrite).map(|_| ())
-            });
+            perform(
+                app,
+                t("Group Selection", "Grouper la sélection"),
+                window,
+                cx,
+                move |app, overwrite| {
+                    app.wb
+                        .pivot_group_items(id, field, &items, overwrite)
+                        .map(|_| ())
+                },
+            );
         }
-        _ => warn(app, t("Cannot group that selection.", "Impossible de grouper cette sélection."), cx),
+        _ => warn(
+            app,
+            t(
+                "Cannot group that selection.",
+                "Impossible de grouper cette sélection.",
+            ),
+            cx,
+        ),
     }
 }
 
 pub(super) fn open_group_field(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     match group_field(app) {
         Some((id, field)) => dialogs::open_grouping(app, id, field, window, cx),
-        None => warn(app, t("Cannot group that selection.", "Impossible de grouper cette sélection."), cx),
+        None => warn(
+            app,
+            t(
+                "Cannot group that selection.",
+                "Impossible de grouper cette sélection.",
+            ),
+            cx,
+        ),
     }
 }
 
@@ -143,40 +204,74 @@ pub(super) fn ungroup(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let Some((id, field, item)) = ungroup_target(app) else {
         warn(
             app,
-            t("Cannot ungroup that selection.", "Impossible de dissocier le groupe de cette sélection."),
+            t(
+                "Cannot ungroup that selection.",
+                "Impossible de dissocier le groupe de cette sélection.",
+            ),
             cx,
         );
         return;
     };
-    perform(app, t("Ungroup", "Dissocier"), window, cx, move |app, overwrite| {
-        app.wb.pivot_ungroup(id, field, item, overwrite)
-    });
+    perform(
+        app,
+        t("Ungroup", "Dissocier"),
+        window,
+        cx,
+        move |app, overwrite| app.wb.pivot_ungroup(id, field, item, overwrite),
+    );
 }
 
 // --------------------------------------------------------------------- data
 
 pub(super) fn refresh(app: &mut ExcelApp, all: bool, window: &mut Window, cx: &mut Cx) {
     let id = active_pivot(app).map(|p| p.id);
-    perform(app, t("Refresh", "Actualiser"), window, cx, move |app, overwrite| match id {
-        Some(id) if !all => app.wb.pivot_refresh(id, overwrite),
-        _ => app.wb.pivot_refresh_all(overwrite),
-    });
+    perform(
+        app,
+        t("Refresh", "Actualiser"),
+        window,
+        cx,
+        move |app, overwrite| match id {
+            Some(id) if !all => app.wb.pivot_refresh(id, overwrite),
+            _ => app.wb.pivot_refresh_all(overwrite),
+        },
+    );
 }
 
 pub(super) fn clear_all(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    super::update_active(app, t("Clear All", "Effacer tout"), window, cx, |p| p.clear());
-}
-
-pub(super) fn clear_filters(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    super::update_active(app, t("Clear Filters", "Effacer les filtres"), window, cx, |p| {
-        for field in 0..p.fields.len() {
-            p.clear_filters(field);
-        }
+    super::update_active(app, t("Clear All", "Effacer tout"), window, cx, |p| {
+        p.clear()
     });
 }
 
-pub(super) fn clear_field_filters(app: &mut ExcelApp, id: u32, field: usize, window: &mut Window, cx: &mut Cx) {
-    update(app, id, t("Clear Filter", "Effacer le filtre"), window, cx, move |p| p.clear_filters(field));
+pub(super) fn clear_filters(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
+    super::update_active(
+        app,
+        t("Clear Filters", "Effacer les filtres"),
+        window,
+        cx,
+        |p| {
+            for field in 0..p.fields.len() {
+                p.clear_filters(field);
+            }
+        },
+    );
+}
+
+pub(super) fn clear_field_filters(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
+    update(
+        app,
+        id,
+        t("Clear Filter", "Effacer le filtre"),
+        window,
+        cx,
+        move |p| p.clear_filters(field),
+    );
 }
 
 pub(super) fn select(app: &mut ExcelApp, what: SelectWhat, cx: &mut Cx) {
@@ -187,33 +282,56 @@ pub(super) fn select(app: &mut ExcelApp, what: SelectWhat, cx: &mut Cx) {
 
 /// "Show Details": the records behind a value, listed as a table on a new
 /// sheet placed before the PivotTable's.
-pub(super) fn show_details(app: &mut ExcelApp, row: u32, col: u32, window: &mut Window, cx: &mut Cx) {
+pub(super) fn show_details(
+    app: &mut ExcelApp,
+    row: u32,
+    col: u32,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let sheet = app.sheet;
     let ts = window.text_system().clone();
-    let done = perform(app, t("Show Details", "Afficher les détails"), window, cx, move |app, _| {
-        let (target, rect) = app.wb.pivot_show_details(sheet, row, col)?;
-        sheet_inserted(app, target);
-        // Excel lists the records as a table, its columns fitted.
-        let _ = app.wb.add_table(target, rect, true);
-        for col in rect.c0..=rect.c1 {
-            if let Some(width) = crate::grid::autofit_col_width(&app.wb, target, col, &app.fonts, &ts) {
-                // Room for the filter button of the table header.
-                app.wb.set_col_width(target, col, Some(width + 18.0));
+    let done = perform(
+        app,
+        t("Show Details", "Afficher les détails"),
+        window,
+        cx,
+        move |app, _| {
+            let (target, rect) = app.wb.pivot_show_details(sheet, row, col)?;
+            sheet_inserted(app, target);
+            // Excel lists the records as a table, its columns fitted.
+            let _ = app.wb.add_table(target, rect, true);
+            for col in rect.c0..=rect.c1 {
+                if let Some(width) =
+                    crate::grid::autofit_col_width(&app.wb, target, col, &app.fonts, &ts)
+                {
+                    // Room for the filter button of the table header.
+                    app.wb.set_col_width(target, col, Some(width + 18.0));
+                }
             }
-        }
-        app.sheet = target;
-        Ok(())
-    });
+            app.sheet = target;
+            Ok(())
+        },
+    );
     if done == Outcome::Done {
         app.select_cell(0, 0, cx);
     }
 }
 
 /// "Show Report Filter Pages": one sheet per item of a filter field.
-pub(super) fn filter_pages(app: &mut ExcelApp, id: u32, field: usize, window: &mut Window, cx: &mut Cx) {
+pub(super) fn filter_pages(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     perform(
         app,
-        t("Show Report Filter Pages", "Afficher les pages de filtre du rapport"),
+        t(
+            "Show Report Filter Pages",
+            "Afficher les pages de filtre du rapport",
+        ),
         window,
         cx,
         move |app, _| {
@@ -237,58 +355,135 @@ pub(super) fn sort(
     window: &mut Window,
     cx: &mut Cx,
 ) {
-    update(app, id, t("Sort", "Trier"), window, cx, move |p| p.sort_field(field, order, by_value));
+    update(app, id, t("Sort", "Trier"), window, cx, move |p| {
+        p.sort_field(field, order, by_value)
+    });
 }
 
 /// Take a field or a value field out of the report.
-pub(super) fn remove(app: &mut ExcelApp, id: u32, target: Target, window: &mut Window, cx: &mut Cx) {
-    update(app, id, t("Remove Field", "Supprimer le champ"), window, cx, move |p| match target {
-        Target::Field(field) => p.remove_field(field),
-        Target::Data(data) => p.remove_data_field(data),
-    });
+pub(super) fn remove(
+    app: &mut ExcelApp,
+    id: u32,
+    target: Target,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
+    update(
+        app,
+        id,
+        t("Remove Field", "Supprimer le champ"),
+        window,
+        cx,
+        move |p| match target {
+            Target::Field(field) => p.remove_field(field),
+            Target::Data(data) => p.remove_data_field(data),
+        },
+    );
 }
 
-pub(super) fn set_function(app: &mut ExcelApp, id: u32, data: usize, function: Aggregation, window: &mut Window, cx: &mut Cx) {
+pub(super) fn set_function(
+    app: &mut ExcelApp,
+    id: u32,
+    data: usize,
+    function: Aggregation,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let locale = app.wb.locale;
-    update(app, id, t("Summarize Values By", "Synthèse des valeurs par"), window, cx, move |p| {
-        p.set_function(data, function, locale)
-    });
+    update(
+        app,
+        id,
+        t("Summarize Values By", "Synthèse des valeurs par"),
+        window,
+        cx,
+        move |p| p.set_function(data, function, locale),
+    );
 }
 
-pub(super) fn set_show_as(app: &mut ExcelApp, id: u32, data: usize, show: ShowAs, window: &mut Window, cx: &mut Cx) {
-    update(app, id, t("Show Values As", "Afficher les valeurs"), window, cx, move |p| {
-        if let Some(d) = p.data_fields.get_mut(data) {
-            d.show_as = show;
-        }
-    });
+pub(super) fn set_show_as(
+    app: &mut ExcelApp,
+    id: u32,
+    data: usize,
+    show: ShowAs,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
+    update(
+        app,
+        id,
+        t("Show Values As", "Afficher les valeurs"),
+        window,
+        cx,
+        move |p| {
+            if let Some(d) = p.data_fields.get_mut(data) {
+                d.show_as = show;
+            }
+        },
+    );
 }
 
 /// The "Subtotal "Field"" entry of the context menu: on (automatic) or off.
-pub(super) fn toggle_subtotal(app: &mut ExcelApp, id: u32, field: usize, window: &mut Window, cx: &mut Cx) {
-    update(app, id, t("Subtotals", "Sous-totaux"), window, cx, move |p| logic::toggle_subtotal(p, field));
+pub(super) fn toggle_subtotal(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
+    update(
+        app,
+        id,
+        t("Subtotals", "Sous-totaux"),
+        window,
+        cx,
+        move |p| logic::toggle_subtotal(p, field),
+    );
 }
 
 /// "Keep Only Selected Items" / "Hide Selected Items".
 pub(super) fn filter_selected(app: &mut ExcelApp, keep: bool, window: &mut Window, cx: &mut Cx) {
-    let Some((id, field, items)) = logic::selected_items(&app.wb, app.sheet, &app.sel().ranges) else {
+    let Some((id, field, items)) = logic::selected_items(&app.wb, app.sheet, &app.sel().ranges)
+    else {
         return;
     };
     let label = if keep {
-        t("Keep Only Selected Items", "Conserver uniquement les éléments sélectionnés")
+        t(
+            "Keep Only Selected Items",
+            "Conserver uniquement les éléments sélectionnés",
+        )
     } else {
         t("Hide Selected Items", "Masquer les éléments sélectionnés")
     };
-    update(app, id, label, window, cx, move |p| logic::filter_items(p, field, &items, keep));
+    update(app, id, label, window, cx, move |p| {
+        logic::filter_items(p, field, &items, keep)
+    });
 }
 
 /// Move an item among the items of its field (the field becomes sorted by
 /// hand).
-pub(super) fn move_item(app: &mut ExcelApp, id: u32, field: usize, item: u32, to: MoveTo, window: &mut Window, cx: &mut Cx) {
-    update(app, id, t("Move", "Déplacer"), window, cx, move |p| logic::move_item(p, field, item, to));
+pub(super) fn move_item(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    item: u32,
+    to: MoveTo,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
+    update(app, id, t("Move", "Déplacer"), window, cx, move |p| {
+        logic::move_item(p, field, item, to)
+    });
 }
 
 /// Move a field inside its area.
-pub(super) fn move_field(app: &mut ExcelApp, id: u32, field: usize, to: MoveTo, window: &mut Window, cx: &mut Cx) {
+pub(super) fn move_field(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    to: MoveTo,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     let locale = app.wb.locale;
     update(app, id, t("Move", "Déplacer"), window, cx, move |p| {
         let Some((area, index)) = logic::place_of(p, field) else {
@@ -300,8 +495,19 @@ pub(super) fn move_field(app: &mut ExcelApp, id: u32, field: usize, to: MoveTo, 
 }
 
 /// Move a field to the end of another area.
-pub(super) fn move_field_to(app: &mut ExcelApp, id: u32, field: usize, area: Area, window: &mut Window, cx: &mut Cx) {
-    perform(app, t("Move", "Déplacer"), window, cx, move |app, overwrite| {
-        app.wb.pivot_add_field(id, field, area, None, overwrite)
-    });
+pub(super) fn move_field_to(
+    app: &mut ExcelApp,
+    id: u32,
+    field: usize,
+    area: Area,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
+    perform(
+        app,
+        t("Move", "Déplacer"),
+        window,
+        cx,
+        move |app, overwrite| app.wb.pivot_add_field(id, field, area, None, overwrite),
+    );
 }

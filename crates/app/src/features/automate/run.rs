@@ -137,14 +137,23 @@ fn protection_refusal(before: &Workbook, after: &Workbook) -> Option<&'static st
         "The script tried to change a protected sheet. Nothing was changed.",
         "Le script a tenté de modifier une feuille protégée. Rien n'a été modifié.",
     );
-    let same_sheets = before.sheets.len() == after.sheets.len() && before.sheets.iter().zip(&after.sheets).all(|(a, b)| a.name == b.name);
+    let same_sheets = before.sheets.len() == after.sheets.len()
+        && before
+            .sheets
+            .iter()
+            .zip(&after.sheets)
+            .all(|(a, b)| a.name == b.name);
     if !same_sheets {
         if before.permits(&Action::InsertSheet).is_err() {
             return Some(structure);
         }
         // Sheets came, went or changed place: a protected sheet must
         // still be there, under its name, as it was.
-        for sheet in before.sheets.iter().filter(|sheet| sheet.protection.is_some()) {
+        for sheet in before
+            .sheets
+            .iter()
+            .filter(|sheet| sheet.protection.is_some())
+        {
             if !after.sheets.iter().any(|other| other.name == sheet.name) {
                 return Some(protected);
             }
@@ -160,7 +169,12 @@ fn protection_refusal(before: &Workbook, after: &Workbook) -> Option<&'static st
         // The cells whose content changed, and whether a format did.
         let mut edited: Vec<Rect> = Vec::new();
         let mut formatted = false;
-        let positions = sheet.cells.keys().chain(other.cells.keys().filter(|pos| !sheet.cells.contains_key(pos)));
+        let positions = sheet.cells.keys().chain(
+            other
+                .cells
+                .keys()
+                .filter(|pos| !sheet.cells.contains_key(pos)),
+        );
         for pos in positions {
             let (old, new) = (sheet.cells.get(pos), other.cells.get(pos));
             if old.map(|cell| &cell.content) != new.map(|cell| &cell.content) {
@@ -170,14 +184,35 @@ fn protection_refusal(before: &Workbook, after: &Workbook) -> Option<&'static st
                 formatted = true;
             }
         }
-        formatted |= sheet.col_styles != other.col_styles || sheet.row_styles != other.row_styles || sheet.merges != other.merges;
-        let columns = sheet.col_widths != other.col_widths || sheet.hidden_cols != other.hidden_cols;
+        formatted |= sheet.col_styles != other.col_styles
+            || sheet.row_styles != other.row_styles
+            || sheet.merges != other.merges;
+        let columns =
+            sheet.col_widths != other.col_widths || sheet.hidden_cols != other.hidden_cols;
         let rows = sheet.row_heights != other.row_heights || sheet.hidden_rows != other.hidden_rows;
-        let refused = (!edited.is_empty() && before.permits(&Action::EditCells { sheet: index, ranges: &edited }).is_err())
-            || (formatted && before.permits(&Action::FormatCells { sheet: index }).is_err())
-            || (columns && before.permits(&Action::FormatColumns { sheet: index }).is_err())
-            || (rows && before.permits(&Action::FormatRows { sheet: index }).is_err())
-            || (sheet.tables.len() != other.tables.len() && before.permits(&Action::ChangeTable { sheet: index }).is_err());
+        let refused = (!edited.is_empty()
+            && before
+                .permits(&Action::EditCells {
+                    sheet: index,
+                    ranges: &edited,
+                })
+                .is_err())
+            || (formatted
+                && before
+                    .permits(&Action::FormatCells { sheet: index })
+                    .is_err())
+            || (columns
+                && before
+                    .permits(&Action::FormatColumns { sheet: index })
+                    .is_err())
+            || (rows
+                && before
+                    .permits(&Action::FormatRows { sheet: index })
+                    .is_err())
+            || (sheet.tables.len() != other.tables.len()
+                && before
+                    .permits(&Action::ChangeTable { sheet: index })
+                    .is_err());
         if refused {
             return Some(protected);
         }
@@ -200,7 +235,13 @@ fn error_text(error: &ScriptError) -> String {
 /// Run a script on the workbook of the window. False when it did not
 /// start: another script is running, or the entry being typed in a cell
 /// was refused.
-pub(crate) fn start(app: &mut ExcelApp, name: &str, source: &str, window: &mut Window, cx: &mut Cx) -> bool {
+pub(crate) fn start(
+    app: &mut ExcelApp,
+    name: &str,
+    source: &str,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> bool {
     if is_running(app) {
         return false;
     }
@@ -211,15 +252,23 @@ pub(crate) fn start(app: &mut ExcelApp, name: &str, source: &str, window: &mut W
     let selection = app.sel().clone();
     let context = Context {
         active_sheet: app.sheet,
-        selection: selection.ranges.last().copied().unwrap_or(Rect::cell(selection.active.0, selection.active.1)),
+        selection: selection
+            .ranges
+            .last()
+            .copied()
+            .unwrap_or(Rect::cell(selection.active.0, selection.active.1)),
         active_cell: selection.active,
         workbook_name: app
             .path
             .as_ref()
             .and_then(|path| path.file_name())
-            .map_or_else(|| app.title.clone(), |name| name.to_string_lossy().into_owned()),
+            .map_or_else(
+                || app.title.clone(),
+                |name| name.to_string_lossy().into_owned(),
+            ),
         // The author of the comments and notes the script writes.
-        user_name: crate::features::preferences::user_name().unwrap_or_else(|| Context::default().user_name),
+        user_name: crate::features::preferences::user_name()
+            .unwrap_or_else(|| Context::default().user_name),
         ..Context::default()
     };
     let mut fork = app.wb.fork();
@@ -248,7 +297,10 @@ pub(crate) fn start(app: &mut ExcelApp, name: &str, source: &str, window: &mut W
     });
     cx.spawn_in(window, async move |app, cx| {
         let (fork, outcome) = task.await;
-        app.update_in(cx, |app, window, cx| finish(app, id, fork, outcome, window, cx)).ok();
+        app.update_in(cx, |app, window, cx| {
+            finish(app, id, fork, outcome, window, cx)
+        })
+        .ok();
     })
     .detach();
     true
@@ -270,13 +322,22 @@ pub(crate) fn stop(app: &mut ExcelApp, cx: &mut Cx) {
 
 /// The columns the script asked to fit were sized by the engine without
 /// fonts: fit them again with the ones the window draws with.
-pub(crate) fn refit(wb: &mut Workbook, outcome: &Outcome, fonts: &crate::grid::FontResolver, ts: &gpui::WindowTextSystem) {
+pub(crate) fn refit(
+    wb: &mut Workbook,
+    outcome: &Outcome,
+    fonts: &crate::grid::FontResolver,
+    ts: &gpui::WindowTextSystem,
+) {
     for fit in outcome.autofit.iter().filter(|fit| fit.columns) {
         let Some(sheet) = wb.sheets.get(fit.sheet) else {
             continue;
         };
-        let columns: std::collections::BTreeSet<u32> =
-            sheet.cells.keys().map(|(_, column)| *column).filter(|column| (fit.first..=fit.last).contains(column)).collect();
+        let columns: std::collections::BTreeSet<u32> = sheet
+            .cells
+            .keys()
+            .map(|(_, column)| *column)
+            .filter(|column| (fit.first..=fit.last).contains(column))
+            .collect();
         for column in columns {
             if let Some(width) = crate::grid::autofit_col_width(wb, fit.sheet, column, fonts, ts) {
                 wb.set_col_width(fit.sheet, column, Some(width));
@@ -287,9 +348,20 @@ pub(crate) fn refit(wb: &mut Workbook, outcome: &Outcome, fonts: &crate::grid::F
 
 /// The script ended: show what it logged, and take over its changes or
 /// say why not.
-fn finish(app: &mut ExcelApp, id: u64, fork: Workbook, outcome: Outcome, window: &mut Window, cx: &mut Cx) {
+fn finish(
+    app: &mut ExcelApp,
+    id: u64,
+    fork: Workbook,
+    outcome: Outcome,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     // Stopped meanwhile, or the window shows another workbook now.
-    let Some(running) = app.ext::<Runs>().and_then(|runs| runs.running.clone()).filter(|running| running.id == id) else {
+    let Some(running) = app
+        .ext::<Runs>()
+        .and_then(|runs| runs.running.clone())
+        .filter(|running| running.id == id)
+    else {
         return;
     };
     let mut output: Vec<OutputLine> = outcome
@@ -306,7 +378,11 @@ fn finish(app: &mut ExcelApp, id: u64, fork: Workbook, outcome: Outcome, window:
     let refusal = match &outcome.error {
         Some(error) => {
             failed_at = error.line.map(|line| (line, error.column));
-            Some(OutputLine::error(error_text(error), error.line, error.column))
+            Some(OutputLine::error(
+                error_text(error),
+                error.line,
+                error.column,
+            ))
         }
         // The workbook is no longer the one the script worked on.
         None if app.wb.generation != running.generation => Some(OutputLine::error(
@@ -321,7 +397,9 @@ fn finish(app: &mut ExcelApp, id: u64, fork: Workbook, outcome: Outcome, window:
         // of its steps by the engine: the workbook as it was protected
         // before says nothing of what it may have done since.
         None if outcome.protection_changed => None,
-        None => protection_refusal(&app.wb, &fork).map(|message| OutputLine::error(message, None, None)),
+        None => {
+            protection_refusal(&app.wb, &fork).map(|message| OutputLine::error(message, None, None))
+        }
     };
     match refusal {
         Some(line) => output.push(line),
@@ -331,19 +409,31 @@ fn finish(app: &mut ExcelApp, id: u64, fork: Workbook, outcome: Outcome, window:
             refit(&mut app.wb, &outcome, &fonts, window.text_system());
             app.commit(t("Run Script", "Exécuter le script"), cx);
             // The window follows what the script put in front.
-            if let Some(sheet) = outcome.activated.filter(|sheet| *sheet < app.wb.sheets.len() && *sheet != app.sheet) {
+            if let Some(sheet) = outcome
+                .activated
+                .filter(|sheet| *sheet < app.wb.sheets.len() && *sheet != app.sheet)
+            {
                 app.switch_sheet(sheet, window, cx);
             }
-            if let Some((sheet, rect)) = outcome.selected.filter(|(sheet, _)| *sheet < app.wb.sheets.len()) {
+            if let Some((sheet, rect)) = outcome
+                .selected
+                .filter(|(sheet, _)| *sheet < app.wb.sheets.len())
+            {
                 if sheet != app.sheet {
                     app.switch_sheet(sheet, window, cx);
                 }
                 app.select_rect(rect, cx);
             }
             if let Some(value) = &outcome.returned {
-                output.push(OutputLine::note(crate::i18n::labelled(t("Returned value", "Valeur renvoyée"), value)));
+                output.push(OutputLine::note(crate::i18n::labelled(
+                    t("Returned value", "Valeur renvoyée"),
+                    value,
+                )));
             }
-            output.push(OutputLine::note(t("The script ran successfully.", "Le script a été exécuté.")));
+            output.push(OutputLine::note(t(
+                "The script ran successfully.",
+                "Le script a été exécuté.",
+            )));
             // Protecting a sheet forgets the history, by hand or by script.
             if outcome.protection_changed {
                 output.push(OutputLine::note(t(
@@ -397,9 +487,15 @@ pub(crate) mod testing {
             source
                 .lines()
                 .enumerate()
-                .filter(|(_, line)| line.contains("syntax error") || line.contains("unknown member"))
+                .filter(|(_, line)| {
+                    line.contains("syntax error") || line.contains("unknown member")
+                })
                 .map(|(index, line)| ScriptError {
-                    kind: if line.contains("syntax error") { ErrorKind::Syntax } else { ErrorKind::Check },
+                    kind: if line.contains("syntax error") {
+                        ErrorKind::Syntax
+                    } else {
+                        ErrorKind::Check
+                    },
                     message: format!("Unexpected token in {:?}", line.trim()),
                     line: Some(index as u32 + 1),
                     column: Some(1),
@@ -417,12 +513,15 @@ pub(crate) mod testing {
                     "set" => {
                         let (cell, text) = rest.split_once(' ').unwrap_or((rest, ""));
                         let at = rect(cell);
-                        wb.set_cell_text(sheet, at.r0, at.c0, text).expect("a value");
+                        wb.set_cell_text(sheet, at.r0, at.c0, text)
+                            .expect("a value");
                     }
                     "bold" => wb.update_style(sheet, rect(rest), &|style| style.font.bold = true),
                     "hide-column" => {
                         wb.snapshot();
-                        wb.sheets[sheet].hidden_cols.insert(rest.parse().expect("a column"));
+                        wb.sheets[sheet]
+                            .hidden_cols
+                            .insert(rest.parse().expect("a column"));
                     }
                     "log" => outcome.logs.push(Log {
                         level: LogLevel::Log,

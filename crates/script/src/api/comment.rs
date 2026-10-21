@@ -20,11 +20,22 @@ use crate::host::Host;
 const PX_PER_POINT: f64 = 96.0 / 72.0;
 
 fn cell_object(h: &Host, class: &str, sheet: usize, cell: (u32, u32)) -> J {
-    object(class, vec![h.sheet_id(sheet).into(), cell.0.into(), cell.1.into()])
+    object(
+        class,
+        vec![h.sheet_id(sheet).into(), cell.0.into(), cell.1.into()],
+    )
 }
 
 fn reply_object(h: &Host, sheet: usize, cell: (u32, u32), reply: usize) -> J {
-    object("CommentReply", vec![h.sheet_id(sheet).into(), cell.0.into(), cell.1.into(), reply.into()])
+    object(
+        "CommentReply",
+        vec![
+            h.sheet_id(sheet).into(),
+            cell.0.into(),
+            cell.1.into(),
+            reply.into(),
+        ],
+    )
 }
 
 /// The sheet and the cell an object of these classes stands for.
@@ -36,7 +47,10 @@ fn place(h: &Host, call: &Call) -> Res<(usize, (u32, u32))> {
 
 fn thread<'h>(h: &'h Host, call: &Call) -> Res<(usize, (u32, u32), &'h Thread)> {
     let (sheet, cell) = place(h, call)?;
-    let thread = h.wb.comment_at(sheet, cell.0, cell.1).and_then(Comment::as_thread).ok_or_else(|| call.gone())?;
+    let thread =
+        h.wb.comment_at(sheet, cell.0, cell.1)
+            .and_then(Comment::as_thread)
+            .ok_or_else(|| call.gone())?;
     Ok((sheet, cell, thread))
 }
 
@@ -54,7 +68,10 @@ fn post<'h>(h: &'h Host, call: &Call) -> Res<(usize, (u32, u32), Option<usize>, 
 
 fn note<'h>(h: &'h Host, call: &Call) -> Res<(usize, (u32, u32), &'h Note)> {
     let (sheet, cell) = place(h, call)?;
-    let note = h.wb.comment_at(sheet, cell.0, cell.1).and_then(Comment::as_note).ok_or_else(|| call.gone())?;
+    let note =
+        h.wb.comment_at(sheet, cell.0, cell.1)
+            .and_then(Comment::as_note)
+            .ok_or_else(|| call.gone())?;
     Ok((sheet, cell, note))
 }
 
@@ -92,10 +109,19 @@ fn content(call: &Call, index: usize) -> Res<(String, Vec<Mention>)> {
     if let Some(text) = given.as_str() {
         return Ok((text.to_string(), Vec::new()));
     }
-    let rich = given.get("richContent").and_then(J::as_str).ok_or_else(|| call.invalid())?;
-    let people = given.get("mentions").and_then(J::as_array).map(Vec::as_slice).unwrap_or_default();
+    let rich = given
+        .get("richContent")
+        .and_then(J::as_str)
+        .ok_or_else(|| call.invalid())?;
+    let people = given
+        .get("mentions")
+        .and_then(J::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
     let person = |id: u64| {
-        let found = people.iter().find(|p| p.get("id").and_then(J::as_u64) == Some(id))?;
+        let found = people
+            .iter()
+            .find(|p| p.get("id").and_then(J::as_u64) == Some(id))?;
         let field = |key: &str| found.get(key).and_then(J::as_str).unwrap_or_default();
         Some(Person::mentioned(field("name"), field("email")))
     };
@@ -114,7 +140,11 @@ fn content(call: &Call, index: usize) -> Res<(String, Vec<Mention>)> {
         };
         text.push_str(&rest[..at]);
         let name = format!("@{}", shown.trim_start_matches('@'));
-        mentions.push(Mention { person, start: text.len(), len: name.len() });
+        mentions.push(Mention {
+            person,
+            start: text.len(),
+            len: name.len(),
+        });
         text.push_str(&name);
         rest = after;
     }
@@ -130,7 +160,10 @@ fn rich(post: &Post) -> String {
     for (piece, person) in post.pieces() {
         match person {
             Some(_) => {
-                out.push_str(&format!("<at id=\"{id}\">{}</at>", piece.trim_start_matches('@')));
+                out.push_str(&format!(
+                    "<at id=\"{id}\">{}</at>",
+                    piece.trim_start_matches('@')
+                ));
                 id += 1;
             }
             None => out.push_str(piece),
@@ -151,7 +184,11 @@ fn mentions(post: &Post) -> J {
 
 /// The address a person is known by, when they are known by one.
 fn email(person: &Person) -> &str {
-    if person.user_id.contains('@') { &person.user_id } else { "" }
+    if person.user_id.contains('@') {
+        &person.user_id
+    } else {
+        ""
+    }
 }
 
 /// A moment of the workbook (a serial in UTC) as milliseconds since 1970.
@@ -196,10 +233,20 @@ pub(super) fn add_note(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
 /// the order of the cells.
 pub(super) fn all(h: &Host, only: Option<usize>, threads: bool) -> Ret {
     let mut out = Vec::new();
-    for (sheet, sh) in h.wb.sheets.iter().enumerate().filter(|(index, _)| only.is_none_or(|s| s == *index)) {
+    for (sheet, sh) in
+        h.wb.sheets
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| only.is_none_or(|s| s == *index))
+    {
         for (cell, held) in &sh.comments {
             if held.as_thread().is_some() == threads {
-                out.push(cell_object(h, if threads { "Comment" } else { "Note" }, sheet, *cell));
+                out.push(cell_object(
+                    h,
+                    if threads { "Comment" } else { "Note" },
+                    sheet,
+                    *cell,
+                ));
             }
         }
     }
@@ -209,15 +256,25 @@ pub(super) fn all(h: &Host, only: Option<usize>, threads: bool) -> Ret {
 /// `getComment(id)`.
 pub(super) fn by_id(h: &Host, call: &Call, only: Option<usize>) -> Res<Ret> {
     let found = parse_id(h, call.str(0)?).filter(|(sheet, cell, reply)| {
-        reply.is_none() && only.is_none_or(|s| s == *sheet) && h.wb.comment_at(*sheet, cell.0, cell.1).is_some_and(|c| c.as_thread().is_some())
+        reply.is_none()
+            && only.is_none_or(|s| s == *sheet)
+            && h.wb
+                .comment_at(*sheet, cell.0, cell.1)
+                .is_some_and(|c| c.as_thread().is_some())
     });
-    Ok(Ret::maybe(found.map(|(sheet, cell, _)| cell_object(h, "Comment", sheet, cell))))
+    Ok(Ret::maybe(found.map(|(sheet, cell, _)| {
+        cell_object(h, "Comment", sheet, cell)
+    })))
 }
 
 /// `getCommentByCell`.
 pub(super) fn by_cell(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
     let (on, cell) = cell_arg(h, call, 0, sheet)?;
-    match h.wb.comment_at(on, cell.0, cell.1).and_then(Comment::as_thread) {
+    match h
+        .wb
+        .comment_at(on, cell.0, cell.1)
+        .and_then(Comment::as_thread)
+    {
         Some(_) => Ok(Ret::Object(cell_object(h, "Comment", on, cell))),
         None => Err(call.gone()),
     }
@@ -226,7 +283,10 @@ pub(super) fn by_cell(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
 /// `getCommentByReplyId`.
 pub(super) fn by_reply(h: &Host, call: &Call, only: Option<usize>) -> Res<Ret> {
     let (sheet, cell, reply) = parse_id(h, call.str(0)?).ok_or_else(|| call.gone())?;
-    let thread = h.wb.comment_at(sheet, cell.0, cell.1).and_then(Comment::as_thread).ok_or_else(|| call.gone())?;
+    let thread =
+        h.wb.comment_at(sheet, cell.0, cell.1)
+            .and_then(Comment::as_thread)
+            .ok_or_else(|| call.gone())?;
     if only.is_some_and(|s| s != sheet) || reply.is_none_or(|index| index >= thread.replies.len()) {
         return Err(call.gone());
     }
@@ -236,11 +296,21 @@ pub(super) fn by_reply(h: &Host, call: &Call, only: Option<usize>) -> Res<Ret> {
 /// `getNote(key)`: by cell address, or by place among the notes.
 pub(super) fn note_by_key(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
     if let Some(index) = call.arg(0).as_u64() {
-        let cell = h.wb.sheets[sheet].comments.iter().filter(|(_, held)| held.as_note().is_some()).nth(index as usize).map(|(cell, _)| *cell);
-        return Ok(Ret::maybe(cell.map(|cell| cell_object(h, "Note", sheet, cell))));
+        let cell = h.wb.sheets[sheet]
+            .comments
+            .iter()
+            .filter(|(_, held)| held.as_note().is_some())
+            .nth(index as usize)
+            .map(|(cell, _)| *cell);
+        return Ok(Ret::maybe(
+            cell.map(|cell| cell_object(h, "Note", sheet, cell)),
+        ));
     }
     let (on, cell) = cell_arg(h, call, 0, sheet)?;
-    let found = h.wb.comment_at(on, cell.0, cell.1).and_then(Comment::as_note).is_some();
+    let found =
+        h.wb.comment_at(on, cell.0, cell.1)
+            .and_then(Comment::as_note)
+            .is_some();
     Ok(Ret::maybe(found.then(|| cell_object(h, "Note", on, cell))))
 }
 
@@ -249,7 +319,10 @@ pub(super) fn note_by_key(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
 fn set_content(h: &mut Host, call: &Call, text: &str, mentions: Vec<Mention>) -> Res<Ret> {
     let (sheet, cell, reply, _) = post(h, call)?;
     h.permit(call, &Action::EditComment { sheet })?;
-    if !h.wb.edit_comment_mentions(sheet, cell.0, cell.1, reply, text, mentions) {
+    if !h
+        .wb
+        .edit_comment_mentions(sheet, cell.0, cell.1, reply, text, mentions)
+    {
         return Err(refused(call));
     }
     Ok(Ret::Nothing)
@@ -345,12 +418,18 @@ pub(super) const COMMENT_REPLY: ApiClass = post_members!("CommentReply", "A repl
 /// Resize the box of a note, keeping its corner.
 fn resize_note(h: &mut Host, call: &Call, width: Option<f64>, height: Option<f64>) -> Res<Ret> {
     let (sheet, cell, _) = note(h, call)?;
-    let size = |given: Option<f64>| given.map(|points| points * PX_PER_POINT).filter(|px| !(*px > 0.0 && *px < 10_000.0));
+    let size = |given: Option<f64>| {
+        given
+            .map(|points| points * PX_PER_POINT)
+            .filter(|px| !(*px > 0.0 && *px < 10_000.0))
+    };
     if size(width).is_some() || size(height).is_some() {
         return Err(call.invalid());
     }
     h.permit(call, &Action::EditComment { sheet })?;
-    let old = h.wb.sheets[sheet].note_frame(cell.0, cell.1).ok_or_else(|| call.gone())?;
+    let old = h.wb.sheets[sheet]
+        .note_frame(cell.0, cell.1)
+        .ok_or_else(|| call.gone())?;
     let frame = Frame {
         width: width.map_or(old.width, |points| points * PX_PER_POINT),
         height: height.map_or(old.height, |points| points * PX_PER_POINT),

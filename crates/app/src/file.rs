@@ -1,8 +1,8 @@
 //! New / Open / Save, and the "unsaved changes" guard.
 
 use crate::app::ExcelApp;
-use crate::shell::Alert;
 use crate::i18n::t;
+use crate::shell::Alert;
 use gpui::{App, Context, PathPromptOptions, PromptLevel, Window, WindowHandle};
 use std::path::PathBuf;
 
@@ -41,7 +41,8 @@ impl ExcelApp {
         );
         cx.spawn_in(window, async move |this, cx| {
             if answer.await == Ok(1) {
-                this.update_in(cx, |this, window, cx| then(this, window, cx)).ok();
+                this.update_in(cx, |this, window, cx| then(this, window, cx))
+                    .ok();
             }
         })
         .detach();
@@ -141,9 +142,11 @@ impl ExcelApp {
             Ok(()) => {
                 // Only the workbook formats keep everything; a CSV export
                 // leaves the document "edited".
-                let lossless = path
-                    .extension()
-                    .is_some_and(|e| ["xlsx", "xlsm", "xltx", "xltm"].iter().any(|kind| e.eq_ignore_ascii_case(kind)));
+                let lossless = path.extension().is_some_and(|e| {
+                    ["xlsx", "xlsm", "xltx", "xltm"]
+                        .iter()
+                        .any(|kind| e.eq_ignore_ascii_case(kind))
+                });
                 if lossless {
                     self.wb.modified = false;
                     self.title = file_title(&path);
@@ -154,7 +157,10 @@ impl ExcelApp {
             Err(err) => {
                 self.alert(
                     Alert::new(
-                        t("Can't save this file", "Impossible d'enregistrer ce fichier"),
+                        t(
+                            "Can't save this file",
+                            "Impossible d'enregistrer ce fichier",
+                        ),
                         format!("{}\n\n{}", path.display(), err),
                     )
                     .warning(),

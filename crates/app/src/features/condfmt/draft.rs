@@ -6,8 +6,9 @@
 use super::words;
 use crate::i18n::t;
 use opensheet_engine::condfmt::{
-    BarColor, CellOp, Cfvo, ColorScale, ColorStop, CondFormat, DataBar, IconRule, IconSet, IconThreshold, Rule,
-    ScalePreset, TextOp, TimePeriod, is_relative, operand_text, parse_operand, parse_text_operand,
+    BarColor, CellOp, Cfvo, ColorScale, ColorStop, CondFormat, DataBar, IconRule, IconSet,
+    IconThreshold, Rule, ScalePreset, TextOp, TimePeriod, is_relative, operand_text, parse_operand,
+    parse_text_operand,
 };
 use opensheet_engine::style::{Color, StylePatch};
 use opensheet_engine::{Expr, Locale};
@@ -73,7 +74,12 @@ pub enum Graded {
 }
 
 impl Graded {
-    pub const ALL: [Graded; 4] = [Graded::TwoColor, Graded::ThreeColor, Graded::DataBar, Graded::IconSet];
+    pub const ALL: [Graded; 4] = [
+        Graded::TwoColor,
+        Graded::ThreeColor,
+        Graded::DataBar,
+        Graded::IconSet,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -136,9 +142,21 @@ pub enum At {
 impl At {
     /// The types offered for the low end, the middle and the high end of a
     /// colour scale.
-    pub const SCALE_LOW: [At; 5] = [At::Lowest, At::Number, At::Percent, At::Formula, At::Percentile];
+    pub const SCALE_LOW: [At; 5] = [
+        At::Lowest,
+        At::Number,
+        At::Percent,
+        At::Formula,
+        At::Percentile,
+    ];
     pub const MIDDLE: [At; 4] = [At::Number, At::Percent, At::Formula, At::Percentile];
-    pub const SCALE_HIGH: [At; 5] = [At::Highest, At::Number, At::Percent, At::Formula, At::Percentile];
+    pub const SCALE_HIGH: [At; 5] = [
+        At::Highest,
+        At::Number,
+        At::Percent,
+        At::Formula,
+        At::Percentile,
+    ];
     /// The types offered for the shortest and the longest data bar.
     pub const BAR_LOW: [At; 6] = [
         At::Lowest,
@@ -234,7 +252,12 @@ impl Level {
         locale.parse_number(self.value.trim())
     }
 
-    fn cfvo(&self, locale: &Locale, active: (u32, u32), anchor: (u32, u32)) -> Result<Cfvo, String> {
+    fn cfvo(
+        &self,
+        locale: &Locale,
+        active: (u32, u32),
+        anchor: (u32, u32),
+    ) -> Result<Cfvo, String> {
         if !self.at.has_value() {
             return Ok(match self.at {
                 At::Lowest => Cfvo::Min,
@@ -245,7 +268,9 @@ impl Level {
         let formula = self.value.trim_start().starts_with('=');
         let expr = match parse_operand(&self.value, locale, active, anchor) {
             Ok(expr) => expr,
-            Err(_) if formula || self.at == At::Formula => return Err(enter_valid_formula().to_string()),
+            Err(_) if formula || self.at == At::Formula => {
+                return Err(enter_valid_formula().to_string());
+            }
             Err(_) => return Err(not_a_number().to_string()),
         };
         if is_relative(&expr) {
@@ -368,7 +393,11 @@ impl Draft {
         Draft {
             kind,
             style,
-            stops: [Level::new(At::Lowest, ""), Level::new(At::Percentile, "50"), Level::new(At::Highest, "")],
+            stops: [
+                Level::new(At::Lowest, ""),
+                Level::new(At::Percentile, "50"),
+                Level::new(At::Highest, ""),
+            ],
             colors: [three[0], three[1], three[2]],
             bar: DataBar::preset(BarColor::Blue, false),
             bar_low: Level::new(At::Automatic, ""),
@@ -405,7 +434,11 @@ impl Draft {
         match &cf.rule {
             Rule::ColorScale(scale) => {
                 let (first, last) = (0, scale.stops.len().saturating_sub(1));
-                draft.style = if scale.stops.len() >= 3 { Graded::ThreeColor } else { Graded::TwoColor };
+                draft.style = if scale.stops.len() >= 3 {
+                    Graded::ThreeColor
+                } else {
+                    Graded::TwoColor
+                };
                 for (place, index) in [(0, first), (2, last)] {
                     if let Some(stop) = scale.stops.get(index) {
                         draft.stops[place] = level(&stop.at);
@@ -433,7 +466,11 @@ impl Draft {
                 let count = icons.set.len();
                 draft.icons = (0..count)
                     .map(|band| {
-                        let slot = if icons.reverse { count - 1 - band } else { band };
+                        let slot = if icons.reverse {
+                            count - 1 - band
+                        } else {
+                            band
+                        };
                         match icons.custom.as_ref().and_then(|custom| custom.get(slot)) {
                             Some(picked) => *picked,
                             None => Some((icons.set, slot as u8)),
@@ -480,17 +517,27 @@ impl Draft {
                     _ => Contains::NoErrors,
                 };
             }
-            Rule::TopBottom { rank, percent, bottom } => {
+            Rule::TopBottom {
+                rank,
+                percent,
+                bottom,
+            } => {
                 draft.kind = Kind::Ranked;
                 draft.rank = rank.to_string();
                 draft.percent = *percent;
                 draft.bottom = *bottom;
             }
-            Rule::Average { above, or_equal, std_dev } => {
+            Rule::Average {
+                above,
+                or_equal,
+                std_dev,
+            } => {
                 draft.kind = Kind::Average;
                 draft.average = words::AVERAGES
                     .iter()
-                    .position(|choice| *choice == (*above, *or_equal && *std_dev == 0, (*std_dev).min(3)))
+                    .position(|choice| {
+                        *choice == (*above, *or_equal && *std_dev == 0, (*std_dev).min(3))
+                    })
                     .unwrap_or(0);
             }
             Rule::DuplicateValues | Rule::UniqueValues => {
@@ -529,7 +576,12 @@ impl Draft {
 
     /// The rule, or the message Excel shows for what is wrong with it.
     /// Formulas are typed for `active` and stored for `anchor`.
-    pub fn rule(&self, locale: &Locale, active: (u32, u32), anchor: (u32, u32)) -> Result<Rule, String> {
+    pub fn rule(
+        &self,
+        locale: &Locale,
+        active: (u32, u32),
+        anchor: (u32, u32),
+    ) -> Result<Rule, String> {
         let cfvo = |level: &Level| level.cfvo(locale, active, anchor);
         let no_value = || {
             t(
@@ -542,7 +594,8 @@ impl Draft {
             if text.trim().is_empty() {
                 return Err(no_value());
             }
-            parse_operand(text, locale, active, anchor).map_err(|_| enter_valid_formula().to_string())
+            parse_operand(text, locale, active, anchor)
+                .map_err(|_| enter_valid_formula().to_string())
         };
         Ok(match self.kind {
             Kind::Values => match self.style {
@@ -560,10 +613,12 @@ impl Draft {
                 }),
                 Graded::ThreeColor => {
                     // Ends of the same type must be in order.
-                    let ordered = |low: &Level, high: &Level| match (low.number(locale), high.number(locale)) {
-                        (Some(a), Some(b)) if low.at == high.at => a < b,
-                        _ => true,
-                    };
+                    let ordered =
+                        |low: &Level, high: &Level| match (low.number(locale), high.number(locale))
+                        {
+                            (Some(a), Some(b)) if low.at == high.at => a < b,
+                            _ => true,
+                        };
                     if !ordered(&self.stops[1], &self.stops[2]) {
                         return Err(t(
                             "The value for the maximum must be greater than the value for the midpoint.",
@@ -580,7 +635,10 @@ impl Draft {
                     }
                     let mut stops = Vec::with_capacity(3);
                     for (level, color) in self.stops.iter().zip(self.colors) {
-                        stops.push(ColorStop { at: cfvo(level)?, color });
+                        stops.push(ColorStop {
+                            at: cfvo(level)?,
+                            color,
+                        });
                     }
                     Rule::ColorScale(ColorScale { stops })
                 }
@@ -594,7 +652,9 @@ impl Draft {
                     // From the top band down, each threshold of the same
                     // type must lie below the one above it.
                     for pair in self.icon_rows.windows(2) {
-                        if let (Some(low), Some(high)) = (pair[0].level.number(locale), pair[1].level.number(locale)) {
+                        if let (Some(low), Some(high)) =
+                            (pair[0].level.number(locale), pair[1].level.number(locale))
+                        {
                             if pair[0].level.at == pair[1].level.at && low >= high {
                                 return Err(t(
                                     "One or more icon data ranges overlap. Adjust icon data range values so that the ranges do not overlap.",
@@ -631,7 +691,11 @@ impl Draft {
             Kind::Contains => match self.contains {
                 Contains::CellValue => {
                     let first = operand(&self.first)?;
-                    let second = if self.cell_op.takes_two() { Some(operand(&self.second)?) } else { None };
+                    let second = if self.cell_op.takes_two() {
+                        Some(operand(&self.second)?)
+                    } else {
+                        None
+                    };
                     Rule::cell_is(self.cell_op, first, second)
                 }
                 Contains::Text => {
@@ -652,9 +716,21 @@ impl Draft {
             },
             Kind::Ranked => {
                 let (limit, message) = if self.percent {
-                    (100, t("You must enter a number between 1 and 100.", "Vous devez entrer un nombre entre 1 et 100."))
+                    (
+                        100,
+                        t(
+                            "You must enter a number between 1 and 100.",
+                            "Vous devez entrer un nombre entre 1 et 100.",
+                        ),
+                    )
                 } else {
-                    (1000, t("Enter a whole number between 1 and 1000.", "Entrez un nombre entier entre 1 et 1 000."))
+                    (
+                        1000,
+                        t(
+                            "Enter a whole number between 1 and 1000.",
+                            "Entrez un nombre entier entre 1 et 1 000.",
+                        ),
+                    )
                 };
                 let rank = match self.rank.trim().parse::<u32>() {
                     Ok(n) if (1..=limit).contains(&n) => n,
@@ -667,7 +743,8 @@ impl Draft {
                 }
             }
             Kind::Average => {
-                let (above, or_equal, std_dev) = words::AVERAGES[self.average.min(words::AVERAGES.len() - 1)];
+                let (above, or_equal, std_dev) =
+                    words::AVERAGES[self.average.min(words::AVERAGES.len() - 1)];
                 Rule::Average {
                     above,
                     or_equal,
@@ -682,7 +759,10 @@ impl Draft {
                 }
                 // Without `=` Excel takes what was typed as a text, which
                 // never is true: that is what is stored.
-                Rule::Formula(parse_operand(&self.formula, locale, active, anchor).map_err(|_| enter_valid_formula().to_string())?)
+                Rule::Formula(
+                    parse_operand(&self.formula, locale, active, anchor)
+                        .map_err(|_| enter_valid_formula().to_string())?,
+                )
             }
         })
     }
@@ -719,7 +799,10 @@ mod tests {
             panic!("a colour scale");
         };
         assert_eq!(scale.stops.len(), 2);
-        assert_eq!((&scale.stops[0].at, &scale.stops[1].at), (&Cfvo::Min, &Cfvo::Max));
+        assert_eq!(
+            (&scale.stops[0].at, &scale.stops[1].at),
+            (&Cfvo::Min, &Cfvo::Max)
+        );
     }
 
     #[test]
@@ -749,7 +832,9 @@ mod tests {
             std_dev: 0,
         });
         round_trip(Rule::UniqueValues);
-        round_trip(Rule::Formula(parse_operand("=$A1>3", en(), (0, 0), (0, 0)).unwrap()));
+        round_trip(Rule::Formula(
+            parse_operand("=$A1>3", en(), (0, 0), (0, 0)).unwrap(),
+        ));
     }
 
     #[test]
@@ -757,8 +842,14 @@ mod tests {
         let level = |at, value: &str| Level::new(at, value).cfvo(en(), (0, 0), (0, 0));
         assert_eq!(level(At::Number, "12"), Ok(Cfvo::number(12.0)));
         assert_eq!(level(At::Percent, "40"), Ok(Cfvo::percent(40.0)));
-        assert!(matches!(level(At::Number, "=$B$2"), Ok(Cfvo::Number(Expr::Ref(_)))));
-        assert!(matches!(level(At::Formula, "=MAX($B$2:$B$9)/2"), Ok(Cfvo::Formula(_))));
+        assert!(matches!(
+            level(At::Number, "=$B$2"),
+            Ok(Cfvo::Number(Expr::Ref(_)))
+        ));
+        assert!(matches!(
+            level(At::Formula, "=MAX($B$2:$B$9)/2"),
+            Ok(Cfvo::Formula(_))
+        ));
         assert!(level(At::Number, "abc").is_err());
         assert!(level(At::Number, "").is_err());
         assert!(level(At::Percent, "140").is_err());
@@ -771,7 +862,11 @@ mod tests {
     #[test]
     fn a_three_colour_scale_wants_its_points_in_order() {
         let mut draft = Draft::new(Kind::Values, Graded::ThreeColor);
-        draft.stops = [Level::new(At::Number, "10"), Level::new(At::Number, "5"), Level::new(At::Number, "20")];
+        draft.stops = [
+            Level::new(At::Number, "10"),
+            Level::new(At::Number, "5"),
+            Level::new(At::Number, "20"),
+        ];
         assert!(rule(&draft).unwrap_err().contains("midpoint"));
         draft.stops[1] = Level::new(At::Number, "15");
         assert!(matches!(rule(&draft), Ok(Rule::ColorScale(scale)) if scale.stops.len() == 3));
@@ -802,7 +897,10 @@ mod tests {
         };
         assert!(reversed.reverse && reversed.custom.is_none());
         // Reading it back shows the same icons on the same bands.
-        assert_eq!(Draft::of(&cf(Rule::IconSet(reversed)), en(), (0, 0)).icons, draft.icons);
+        assert_eq!(
+            Draft::of(&cf(Rule::IconSet(reversed)), en(), (0, 0)).icons,
+            draft.icons
+        );
 
         draft.icons[0] = None;
         draft.icons[1] = Some((IconSet::ThreeFlags, 2));
@@ -810,8 +908,14 @@ mod tests {
             panic!("an icon set");
         };
         assert!(!custom.reverse);
-        assert_eq!(custom.custom.as_ref().map(|icons| icons[1]), Some(Some((IconSet::ThreeFlags, 2))));
-        assert_eq!(Draft::of(&cf(Rule::IconSet(custom)), en(), (0, 0)).icons, draft.icons);
+        assert_eq!(
+            custom.custom.as_ref().map(|icons| icons[1]),
+            Some(Some((IconSet::ThreeFlags, 2)))
+        );
+        assert_eq!(
+            Draft::of(&cf(Rule::IconSet(custom)), en(), (0, 0)).icons,
+            draft.icons
+        );
     }
 
     #[test]
@@ -821,7 +925,11 @@ mod tests {
         draft.choose_set(IconSet::ThreeFlags);
         assert_eq!(draft.icon_rows[1].level, Level::new(At::Number, "80"));
         draft.choose_set(IconSet::FiveRating);
-        let values: Vec<&str> = draft.icon_rows.iter().map(|row| row.level.value.as_str()).collect();
+        let values: Vec<&str> = draft
+            .icon_rows
+            .iter()
+            .map(|row| row.level.value.as_str())
+            .collect();
         assert_eq!(values, ["20", "40", "60", "80"]);
         assert_eq!(draft.icons.len(), 5);
     }
@@ -845,7 +953,10 @@ mod tests {
         draft.first = "1".to_string();
         assert!(rule(&draft).is_err(), "between needs two values");
         draft.second = "9".to_string();
-        assert_eq!(rule(&draft), Ok(Rule::between(Expr::Number(1.0), Expr::Number(9.0))));
+        assert_eq!(
+            rule(&draft),
+            Ok(Rule::between(Expr::Number(1.0), Expr::Number(9.0)))
+        );
         draft.cell_op = CellOp::Less;
         assert_eq!(rule(&draft), Ok(Rule::less_than(Expr::Number(1.0))));
 

@@ -17,7 +17,8 @@ use gpui::{AnyElement, Context, FontWeight, Render, SharedString, Window, div, p
 use opensheet_engine::Locale;
 use opensheet_engine::ast::RefExpr;
 use opensheet_engine::chart::{
-    Chart, ChartData, ChartKind, ChartTitle, Family, Fill, LegendPos, Series, SeriesData, TickLabels,
+    Chart, ChartData, ChartKind, ChartTitle, Family, Fill, LegendPos, Series, SeriesData,
+    TickLabels,
 };
 use std::rc::Rc;
 
@@ -37,7 +38,16 @@ pub enum Page {
 
 impl Page {
     /// In the order of the "All Charts" list.
-    pub const ALL: [Page; 8] = [Page::Column, Page::Line, Page::Pie, Page::Bar, Page::Area, Page::Scatter, Page::Radar, Page::Combo];
+    pub const ALL: [Page; 8] = [
+        Page::Column,
+        Page::Line,
+        Page::Pie,
+        Page::Bar,
+        Page::Area,
+        Page::Scatter,
+        Page::Radar,
+        Page::Combo,
+    ];
 
     fn name(self) -> &'static str {
         match self {
@@ -56,7 +66,14 @@ impl Page {
     pub fn kinds(self) -> &'static [ChartKind] {
         use ChartKind::*;
         match self {
-            Page::Column => &[Column, StackedColumn, PercentStackedColumn, Column3D, StackedColumn3D, PercentStackedColumn3D],
+            Page::Column => &[
+                Column,
+                StackedColumn,
+                PercentStackedColumn,
+                Column3D,
+                StackedColumn3D,
+                PercentStackedColumn3D,
+            ],
             Page::Line => &[
                 Line,
                 StackedLine,
@@ -67,9 +84,30 @@ impl Page {
                 Line3D,
             ],
             Page::Pie => &[Pie, Pie3D, Doughnut],
-            Page::Bar => &[Bar, StackedBar, PercentStackedBar, Bar3D, StackedBar3D, PercentStackedBar3D],
-            Page::Area => &[Area, StackedArea, PercentStackedArea, Area3D, StackedArea3D, PercentStackedArea3D],
-            Page::Scatter => &[Scatter, ScatterSmoothMarkers, ScatterSmooth, ScatterLinesMarkers, ScatterLines, Bubble],
+            Page::Bar => &[
+                Bar,
+                StackedBar,
+                PercentStackedBar,
+                Bar3D,
+                StackedBar3D,
+                PercentStackedBar3D,
+            ],
+            Page::Area => &[
+                Area,
+                StackedArea,
+                PercentStackedArea,
+                Area3D,
+                StackedArea3D,
+                PercentStackedArea3D,
+            ],
+            Page::Scatter => &[
+                Scatter,
+                ScatterSmoothMarkers,
+                ScatterSmooth,
+                ScatterLinesMarkers,
+                ScatterLines,
+                Bubble,
+            ],
             Page::Radar => &[Radar, RadarMarkers, RadarFilled],
             Page::Combo => &[],
         }
@@ -127,7 +165,11 @@ pub(crate) fn sample(kind: ChartKind) -> (Chart, ChartData) {
             // The accents of the workbook's theme, as the chart will have.
             color: crate::theme::document_theme().chart_color(i),
             x_values: (1..=points).map(|k| Some(k as f64)).collect(),
-            sizes: if kind.family() == Family::Bubble { vec![Some(3.0), Some(8.0), Some(5.0), Some(2.0)] } else { Vec::new() },
+            sizes: if kind.family() == Family::Bubble {
+                vec![Some(3.0), Some(8.0), Some(5.0), Some(2.0)]
+            } else {
+                Vec::new()
+            },
             format: "General".into(),
         });
     }
@@ -163,7 +205,10 @@ fn preset_name(preset: usize) -> &'static str {
             "Clustered Column - Line on Secondary Axis",
             "Histogramme groupé - Courbe sur l'axe secondaire",
         ),
-        2 => t("Stacked Area - Clustered Column", "Aires empilées - Histogramme groupé"),
+        2 => t(
+            "Stacked Area - Clustered Column",
+            "Aires empilées - Histogramme groupé",
+        ),
         _ => t("Custom Combination", "Combinaison personnalisée"),
     }
 }
@@ -196,23 +241,24 @@ pub fn apply_combo(chart: &mut Chart, rows: &[(ChartKind, bool)]) {
 
 /// The controls of the "Charts" group of the Insert tab.
 pub fn insert_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
-    let drop = |id: &'static str, icon_name: &'static str, tip: &'static str, page: Page, cx: &mut Cx| {
-        app.small(
-            id,
-            div()
-                .flex()
-                .items_center()
-                .gap(px(2.))
-                .px(px(1.))
-                .child(icon(icon_name, 16.0, theme::TEXT))
-                .child(icon("chevron-down", 8.0, theme::TEXT_MUTED)),
-            tip,
-            false,
-            cx,
-            move |this, window, cx| open_gallery(this, id, page, window, cx),
-        )
-        .into_any_element()
-    };
+    let drop =
+        |id: &'static str, icon_name: &'static str, tip: &'static str, page: Page, cx: &mut Cx| {
+            app.small(
+                id,
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(2.))
+                    .px(px(1.))
+                    .child(icon(icon_name, 16.0, theme::TEXT))
+                    .child(icon("chevron-down", 8.0, theme::TEXT_MUTED)),
+                tip,
+                false,
+                cx,
+                move |this, window, cx| open_gallery(this, id, page, window, cx),
+            )
+            .into_any_element()
+        };
     row(vec![
         app.cmd_large("in-chart-rec", Cmd::Recommended, false, cx),
         rows(vec![
@@ -271,7 +317,13 @@ pub fn insert_group(app: &ExcelApp, cx: &mut Cx) -> AnyElement {
 
 /// The gallery of a button of the Insert tab: Excel's headings, a picture
 /// per type, and the way into the dialog.
-pub(super) fn open_gallery(app: &mut ExcelApp, anchor: &'static str, page: Page, window: &mut Window, cx: &mut Cx) {
+pub(super) fn open_gallery(
+    app: &mut ExcelApp,
+    anchor: &'static str,
+    page: Page,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     use ChartKind::*;
     let kinds = |title: &'static str, kinds: &[ChartKind]| Section {
         title: title.into(),
@@ -279,19 +331,33 @@ pub(super) fn open_gallery(app: &mut ExcelApp, anchor: &'static str, page: Page,
             .iter()
             .map(|&kind| {
                 let (chart, data) = sample(kind);
-                Item::new(Picture::Chart(Rc::new(chart), Rc::new(data)), chart_kind_name(kind), move |a, window, cx| {
-                    a.insert_chart(kind, window, cx)
-                })
+                Item::new(
+                    Picture::Chart(Rc::new(chart), Rc::new(data)),
+                    chart_kind_name(kind),
+                    move |a, window, cx| a.insert_chart(kind, window, cx),
+                )
             })
             .collect(),
     };
     let (sections, more) = match page {
         Page::Column | Page::Bar => (
             vec![
-                kinds(t("2-D Column", "Histogramme 2D"), &[Column, StackedColumn, PercentStackedColumn]),
-                kinds(t("3-D Column", "Histogramme 3D"), &[Column3D, StackedColumn3D, PercentStackedColumn3D]),
-                kinds(t("2-D Bar", "Barres 2D"), &[Bar, StackedBar, PercentStackedBar]),
-                kinds(t("3-D Bar", "Barres 3D"), &[Bar3D, StackedBar3D, PercentStackedBar3D]),
+                kinds(
+                    t("2-D Column", "Histogramme 2D"),
+                    &[Column, StackedColumn, PercentStackedColumn],
+                ),
+                kinds(
+                    t("3-D Column", "Histogramme 3D"),
+                    &[Column3D, StackedColumn3D, PercentStackedColumn3D],
+                ),
+                kinds(
+                    t("2-D Bar", "Barres 2D"),
+                    &[Bar, StackedBar, PercentStackedBar],
+                ),
+                kinds(
+                    t("3-D Bar", "Barres 3D"),
+                    &[Bar3D, StackedBar3D, PercentStackedBar3D],
+                ),
             ],
             t("More Column Charts…", "Autres histogrammes…"),
         ),
@@ -299,11 +365,24 @@ pub(super) fn open_gallery(app: &mut ExcelApp, anchor: &'static str, page: Page,
             vec![
                 kinds(
                     t("2-D Line", "Courbe 2D"),
-                    &[Line, StackedLine, PercentStackedLine, LineMarkers, StackedLineMarkers, PercentStackedLineMarkers],
+                    &[
+                        Line,
+                        StackedLine,
+                        PercentStackedLine,
+                        LineMarkers,
+                        StackedLineMarkers,
+                        PercentStackedLineMarkers,
+                    ],
                 ),
                 kinds(t("3-D Line", "Courbe 3D"), &[Line3D]),
-                kinds(t("2-D Area", "Aires 2D"), &[Area, StackedArea, PercentStackedArea]),
-                kinds(t("3-D Area", "Aires 3D"), &[Area3D, StackedArea3D, PercentStackedArea3D]),
+                kinds(
+                    t("2-D Area", "Aires 2D"),
+                    &[Area, StackedArea, PercentStackedArea],
+                ),
+                kinds(
+                    t("3-D Area", "Aires 3D"),
+                    &[Area3D, StackedArea3D, PercentStackedArea3D],
+                ),
             ],
             t("More Line Charts…", "Autres graphiques en courbes…"),
         ),
@@ -319,14 +398,23 @@ pub(super) fn open_gallery(app: &mut ExcelApp, anchor: &'static str, page: Page,
             vec![
                 kinds(
                     t("Scatter", "Nuages de points"),
-                    &[Scatter, ScatterSmoothMarkers, ScatterSmooth, ScatterLinesMarkers, ScatterLines],
+                    &[
+                        Scatter,
+                        ScatterSmoothMarkers,
+                        ScatterSmooth,
+                        ScatterLinesMarkers,
+                        ScatterLines,
+                    ],
                 ),
                 kinds(t("Bubble", "Bulles"), &[Bubble]),
             ],
             t("More Scatter Charts…", "Autres nuages de points…"),
         ),
         Page::Radar => (
-            vec![kinds(t("Radar", "Radar"), &[Radar, RadarMarkers, RadarFilled])],
+            vec![kinds(
+                t("Radar", "Radar"),
+                &[Radar, RadarMarkers, RadarFilled],
+            )],
             t("More Radar Charts…", "Autres graphiques en radar…"),
         ),
         Page::Combo => (
@@ -335,20 +423,32 @@ pub(super) fn open_gallery(app: &mut ExcelApp, anchor: &'static str, page: Page,
                 items: (0..PRESETS)
                     .map(|preset| {
                         let (chart, data) = combo_sample(preset);
-                        Item::new(Picture::Chart(Rc::new(chart), Rc::new(data)), preset_name(preset), move |a, window, cx| {
-                            let mut chart = a.wb.chart_from_range(a.sheet, a.sel().current(), Column);
-                            let count = chart.series.len();
-                            let rows: Vec<(ChartKind, bool)> = (0..count).map(|i| preset_series(preset, i, count)).collect();
-                            apply_combo(&mut chart, &rows);
-                            a.insert_built_chart(chart, window, cx);
-                        })
+                        Item::new(
+                            Picture::Chart(Rc::new(chart), Rc::new(data)),
+                            preset_name(preset),
+                            move |a, window, cx| {
+                                let mut chart =
+                                    a.wb.chart_from_range(a.sheet, a.sel().current(), Column);
+                                let count = chart.series.len();
+                                let rows: Vec<(ChartKind, bool)> = (0..count)
+                                    .map(|i| preset_series(preset, i, count))
+                                    .collect();
+                                apply_combo(&mut chart, &rows);
+                                a.insert_built_chart(chart, window, cx);
+                            },
+                        )
                     })
                     .collect(),
             }],
-            t("Create Custom Combo Chart…", "Créer un graphique combiné personnalisé…"),
+            t(
+                "Create Custom Combo Chart…",
+                "Créer un graphique combiné personnalisé…",
+            ),
         ),
     };
-    let gallery = Gallery::new(app, cx, sections).footer(more, move |a, window, cx| open_insert_dialog(a, Some(page), window, cx));
+    let gallery = Gallery::new(app, cx, sections).footer(more, move |a, window, cx| {
+        open_insert_dialog(a, Some(page), window, cx)
+    });
     let view = cx.new(|_| gallery);
     open_ribbon_view(app, Some(anchor), view, window, cx);
 }
@@ -382,8 +482,13 @@ fn build(app: &ExcelApp, change: bool, choice: &Choice) -> Option<Chart> {
     let mut chart = if change {
         app.selected_chart()?.clone()
     } else {
-        let kind = if combo { ChartKind::Column } else { choice.kind };
-        app.wb.chart_from_range(app.sheet, app.sel().current(), kind)
+        let kind = if combo {
+            ChartKind::Column
+        } else {
+            choice.kind
+        };
+        app.wb
+            .chart_from_range(app.sheet, app.sel().current(), kind)
     };
     if combo {
         apply_combo(&mut chart, &choice.rows);
@@ -416,23 +521,40 @@ fn combo_rows(chart: &Chart) -> Vec<(ChartKind, bool)> {
         .enumerate()
         .map(|(i, s)| {
             let kind = chart.series_kind(s);
-            if mixed && COMBO_KINDS.contains(&kind) { (kind, s.secondary) } else { preset_series(0, i, count) }
+            if mixed && COMBO_KINDS.contains(&kind) {
+                (kind, s.secondary)
+            } else {
+                preset_series(0, i, count)
+            }
         })
         .collect()
 }
 
-fn open_dialog(app: &mut ExcelApp, change: bool, page: Option<Page>, window: &mut Window, cx: &mut Cx) {
+fn open_dialog(
+    app: &mut ExcelApp,
+    change: bool,
+    page: Option<Page>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if app.editing.is_some() && !app.commit_edit(None, window, cx) {
         return;
     }
     let base = if change {
-        let Some(chart) = app.selected_chart() else { return };
+        let Some(chart) = app.selected_chart() else {
+            return;
+        };
         chart.clone()
     } else {
-        app.wb.chart_from_range(app.sheet, app.sel().current(), ChartKind::Column)
+        app.wb
+            .chart_from_range(app.sheet, app.sel().current(), ChartKind::Column)
     };
     let mixed = base.series.iter().any(|s| s.kind.is_some());
-    let page = page.unwrap_or(if change && mixed { Page::Combo } else { Page::of(base.kind) });
+    let page = page.unwrap_or(if change && mixed {
+        Page::Combo
+    } else {
+        Page::of(base.kind)
+    });
     let kind = match page.kinds().contains(&base.kind) {
         true => base.kind,
         false => page.kinds().first().copied().unwrap_or(ChartKind::Column),
@@ -443,7 +565,9 @@ fn open_dialog(app: &mut ExcelApp, change: bool, page: Option<Page>, window: &mu
         rows: combo_rows(&base),
     };
     let data = app.wb.chart_data(app.sheet, &base);
-    let names = (0..base.series.len()).map(|i| series_name(&data, i).into()).collect();
+    let names = (0..base.series.len())
+        .map(|i| series_name(&data, i).into())
+        .collect();
     let preview = build(app, change, &choice).map(|chart| {
         let data = app.wb.chart_data(app.sheet, &chart);
         (Rc::new(chart), Rc::new(data))
@@ -461,7 +585,12 @@ fn open_dialog(app: &mut ExcelApp, change: bool, page: Option<Page>, window: &mu
 }
 
 /// "Insert Chart" for the selected cells, on a given page of the list.
-pub(crate) fn open_insert_dialog(app: &mut ExcelApp, page: Option<Page>, window: &mut Window, cx: &mut Cx) {
+pub(crate) fn open_insert_dialog(
+    app: &mut ExcelApp,
+    page: Option<Page>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     open_dialog(app, false, page, window, cx);
 }
 
@@ -502,7 +631,13 @@ impl ChartTypeDialog {
     fn preset(&self) -> usize {
         let count = self.choice.rows.len();
         (0..PRESETS)
-            .find(|preset| self.choice.rows.iter().enumerate().all(|(i, row)| *row == preset_series(*preset, i, count)))
+            .find(|preset| {
+                self.choice
+                    .rows
+                    .iter()
+                    .enumerate()
+                    .all(|(i, row)| *row == preset_series(*preset, i, count))
+            })
             .unwrap_or(PRESETS)
     }
 
@@ -530,68 +665,111 @@ impl ChartTypeDialog {
     }
 
     /// One picture of the row of types above the preview.
-    fn thumb(&self, id: usize, picture: (Chart, ChartData), tip: &'static str, selected: bool, cx: &mut Context<Self>, pick: impl Fn(&mut Self, &mut Context<Self>) + 'static) -> AnyElement {
+    fn thumb(
+        &self,
+        id: usize,
+        picture: (Chart, ChartData),
+        tip: &'static str,
+        selected: bool,
+        cx: &mut Context<Self>,
+        pick: impl Fn(&mut Self, &mut Context<Self>) + 'static,
+    ) -> AnyElement {
         div()
             .id(("chart-type", id))
             .p(px(4.))
             .border_1()
             .rounded(px(3.))
-            .border_color(if selected { c(theme::ACCENT) } else { c(theme::BORDER) })
+            .border_color(if selected {
+                c(theme::ACCENT)
+            } else {
+                c(theme::BORDER)
+            })
             .when(selected, |d| d.bg(c(theme::ACCENT_LIGHT)))
             .hover(|s| s.border_color(c(theme::BORDER_STRONG)))
-            .child(chart_view::chart_canvas(Rc::new(picture.0), Rc::new(picture.1), 46.0, 36.0, 0.4, self.font.clone(), self.locale))
+            .child(chart_view::chart_canvas(
+                Rc::new(picture.0),
+                Rc::new(picture.1),
+                46.0,
+                36.0,
+                0.4,
+                self.font.clone(),
+                self.locale,
+            ))
             .tooltip(tooltip(tip))
             .on_click(cx.listener(move |this, _, _, cx| pick(this, cx)))
             .into_any_element()
     }
 
     fn combo_table(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let kinds: Vec<SharedString> = COMBO_KINDS.iter().map(|k| chart_kind_name(*k).into()).collect();
+        let kinds: Vec<SharedString> = COMBO_KINDS
+            .iter()
+            .map(|k| chart_kind_name(*k).into())
+            .collect();
         let header = div()
             .flex()
             .items_center()
             .gap(px(8.))
             .text_color(c(theme::TEXT_MUTED))
             .child(div().w(px(120.)).child(t("Series Name", "Nom de la série")))
-            .child(div().w(px(220.)).child(t("Chart Type", "Type de graphique")))
-            .child(t("Secondary Axis", "Axe secondaire"));
-        let rows: Vec<AnyElement> = self
-            .choice
-            .rows
-            .iter()
-            .enumerate()
-            .map(|(i, (kind, secondary))| {
+            .child(
                 div()
-                    .h(px(28.))
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .child(
-                        div()
-                            .w(px(120.))
-                            .flex()
-                            .items_center()
-                            .gap(px(5.))
-                            .child(div().size(px(9.)).flex_none().bg(c(crate::theme::document_theme().chart_color(i).value())))
-                            .child(div().truncate().child(self.names.get(i).cloned().unwrap_or_default())),
-                    )
-                    .child(
-                        Select::new(("combo-kind", i), kinds.clone(), COMBO_KINDS.iter().position(|k| k == kind))
+                    .w(px(220.))
+                    .child(t("Chart Type", "Type de graphique")),
+            )
+            .child(t("Secondary Axis", "Axe secondaire"));
+        let rows: Vec<AnyElement> =
+            self.choice
+                .rows
+                .iter()
+                .enumerate()
+                .map(|(i, (kind, secondary))| {
+                    div()
+                        .h(px(28.))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(
+                            div()
+                                .w(px(120.))
+                                .flex()
+                                .items_center()
+                                .gap(px(5.))
+                                .child(
+                                    div().size(px(9.)).flex_none().bg(c(
+                                        crate::theme::document_theme().chart_color(i).value(),
+                                    )),
+                                )
+                                .child(
+                                    div()
+                                        .truncate()
+                                        .child(self.names.get(i).cloned().unwrap_or_default()),
+                                ),
+                        )
+                        .child(
+                            Select::new(
+                                ("combo-kind", i),
+                                kinds.clone(),
+                                COMBO_KINDS.iter().position(|k| k == kind),
+                            )
                             .width(220.0)
-                            .on_change(cx.listener(move |this, ix: &usize, _, cx| {
-                                this.choice.rows[i].0 = COMBO_KINDS[*ix];
-                                this.refresh(cx);
-                            })),
-                    )
-                    .child(Checkbox::new(("combo-secondary", i), "", *secondary).on_change(cx.listener(
-                        move |this, on: &bool, _, cx| {
-                            this.choice.rows[i].1 = *on;
-                            this.refresh(cx);
-                        },
-                    )))
-                    .into_any_element()
-            })
-            .collect();
+                            .on_change(cx.listener(
+                                move |this, ix: &usize, _, cx| {
+                                    this.choice.rows[i].0 = COMBO_KINDS[*ix];
+                                    this.refresh(cx);
+                                },
+                            )),
+                        )
+                        .child(
+                            Checkbox::new(("combo-secondary", i), "", *secondary).on_change(
+                                cx.listener(move |this, on: &bool, _, cx| {
+                                    this.choice.rows[i].1 = *on;
+                                    this.refresh(cx);
+                                }),
+                            ),
+                        )
+                        .into_any_element()
+                })
+                .collect();
         div()
             .flex()
             .flex_col()
@@ -614,13 +792,21 @@ impl Render for ChartTypeDialog {
         let thumbs: Vec<AnyElement> = if combo {
             (0..=PRESETS)
                 .map(|p| {
-                    self.thumb(p, combo_sample(p.min(PRESETS - 1)), preset_name(p), p == preset, cx, move |this, cx| {
-                        if p < PRESETS {
-                            let count = this.choice.rows.len();
-                            this.choice.rows = (0..count).map(|i| preset_series(p, i, count)).collect();
-                            this.refresh(cx);
-                        }
-                    })
+                    self.thumb(
+                        p,
+                        combo_sample(p.min(PRESETS - 1)),
+                        preset_name(p),
+                        p == preset,
+                        cx,
+                        move |this, cx| {
+                            if p < PRESETS {
+                                let count = this.choice.rows.len();
+                                this.choice.rows =
+                                    (0..count).map(|i| preset_series(p, i, count)).collect();
+                                this.refresh(cx);
+                            }
+                        },
+                    )
                 })
                 .collect()
         } else {
@@ -628,20 +814,37 @@ impl Render for ChartTypeDialog {
                 .iter()
                 .enumerate()
                 .map(|(i, &kind)| {
-                    self.thumb(i, sample(kind), chart_kind_name(kind), kind == self.choice.kind, cx, move |this, cx| {
-                        this.choice.kind = kind;
-                        this.refresh(cx);
-                    })
+                    self.thumb(
+                        i,
+                        sample(kind),
+                        chart_kind_name(kind),
+                        kind == self.choice.kind,
+                        cx,
+                        move |this, cx| {
+                            this.choice.kind = kind;
+                            this.refresh(cx);
+                        },
+                    )
                 })
                 .collect()
         };
-        let name = if combo { preset_name(preset) } else { chart_kind_name(self.choice.kind) };
+        let name = if combo {
+            preset_name(preset)
+        } else {
+            chart_kind_name(self.choice.kind)
+        };
         let preview_h = if combo { 150.0 } else { 270.0 };
         let preview = match &self.preview {
-            Some((chart, data)) if !chart.series.is_empty() => {
-                chart_view::chart_canvas(chart.clone(), data.clone(), 430.0, preview_h, 0.8, self.font.clone(), self.locale)
-                    .into_any_element()
-            }
+            Some((chart, data)) if !chart.series.is_empty() => chart_view::chart_canvas(
+                chart.clone(),
+                data.clone(),
+                430.0,
+                preview_h,
+                0.8,
+                self.font.clone(),
+                self.locale,
+            )
+            .into_any_element(),
             _ => div()
                 .w(px(430.))
                 .h(px(preview_h))
@@ -679,7 +882,9 @@ impl Render for ChartTypeDialog {
                         ListBox::new("pages", pages, Page::ALL.iter().position(|p| *p == page))
                             .width(158.0)
                             .height(380.0)
-                            .on_change(cx.listener(|this, ix: &usize, _, cx| this.set_page(*ix, cx))),
+                            .on_change(
+                                cx.listener(|this, ix: &usize, _, cx| this.set_page(*ix, cx)),
+                            ),
                     )
                     .child(
                         div()
@@ -688,8 +893,18 @@ impl Render for ChartTypeDialog {
                             .flex_col()
                             .gap(px(6.))
                             .child(div().flex().gap(px(4.)).children(thumbs))
-                            .child(div().text_size(px(14.)).font_weight(FontWeight::SEMIBOLD).child(name))
-                            .child(div().border_1().border_color(c(theme::BORDER)).child(preview))
+                            .child(
+                                div()
+                                    .text_size(px(14.))
+                                    .font_weight(FontWeight::SEMIBOLD)
+                                    .child(name),
+                            )
+                            .child(
+                                div()
+                                    .border_1()
+                                    .border_color(c(theme::BORDER))
+                                    .child(preview),
+                            )
                             .children(table),
                     ),
             )
@@ -714,18 +929,34 @@ mod tests {
     fn presets_split_the_series() {
         // Three series: two columns and a line.
         let kinds: Vec<ChartKind> = (0..3).map(|i| preset_series(0, i, 3).0).collect();
-        assert_eq!(kinds, [ChartKind::Column, ChartKind::Column, ChartKind::Line]);
+        assert_eq!(
+            kinds,
+            [ChartKind::Column, ChartKind::Column, ChartKind::Line]
+        );
         assert_eq!(preset_series(1, 1, 2), (ChartKind::Line, true));
         assert_eq!(preset_series(2, 0, 2), (ChartKind::StackedArea, false));
         let (mut chart, _) = sample(ChartKind::Pie);
         chart.series.push(Series::new(RefExpr::cell(0, 1)));
-        apply_combo(&mut chart, &[(ChartKind::Column, false), (ChartKind::LineMarkers, true)]);
+        apply_combo(
+            &mut chart,
+            &[(ChartKind::Column, false), (ChartKind::LineMarkers, true)],
+        );
         assert_eq!(chart.kind, ChartKind::Column);
         assert_eq!(chart.series[0].kind, None);
-        assert_eq!((chart.series[1].kind, chart.series[1].secondary), (Some(ChartKind::LineMarkers), true));
-        assert_eq!(combo_rows(&chart), [(ChartKind::Column, false), (ChartKind::LineMarkers, true)]);
+        assert_eq!(
+            (chart.series[1].kind, chart.series[1].secondary),
+            (Some(ChartKind::LineMarkers), true)
+        );
+        assert_eq!(
+            combo_rows(&chart),
+            [(ChartKind::Column, false), (ChartKind::LineMarkers, true)]
+        );
         // Every type of the Combo page can stand next to columns.
-        assert!(COMBO_KINDS.iter().all(|k| ChartKind::Column.combines_with(*k)));
+        assert!(
+            COMBO_KINDS
+                .iter()
+                .all(|k| ChartKind::Column.combines_with(*k))
+        );
     }
 
     #[test]

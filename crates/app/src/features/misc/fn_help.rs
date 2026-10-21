@@ -43,7 +43,8 @@ fn resources() -> PathBuf {
 
 /// A big-endian unsigned integer of 1 to 8 bytes.
 fn be_uint(bytes: &[u8]) -> Option<u64> {
-    (!bytes.is_empty() && bytes.len() <= 8).then(|| bytes.iter().fold(0u64, |n, b| (n << 8) | *b as u64))
+    (!bytes.is_empty() && bytes.len() <= 8)
+        .then(|| bytes.iter().fold(0u64, |n, b| (n << 8) | *b as u64))
 }
 
 /// Reader of the objects of a binary property list.
@@ -77,7 +78,9 @@ impl<'a> Plist<'a> {
         if index >= self.count {
             return None;
         }
-        let at = self.table.checked_add(index.checked_mul(self.offset_size)?)?;
+        let at = self
+            .table
+            .checked_add(index.checked_mul(self.offset_size)?)?;
         Some(be_uint(self.bytes.get(at..at.checked_add(self.offset_size)?)?)? as usize)
     }
 
@@ -102,11 +105,18 @@ impl<'a> Plist<'a> {
         let (len, start) = self.counted(at)?;
         match *self.bytes.get(at)? >> 4 {
             // ASCII, UTF-8.
-            0x5 | 0x7 => String::from_utf8(self.bytes.get(start..start.checked_add(len)?)?.to_vec()).ok(),
+            0x5 | 0x7 => {
+                String::from_utf8(self.bytes.get(start..start.checked_add(len)?)?.to_vec()).ok()
+            }
             // UTF-16, big-endian.
             0x6 => {
-                let raw = self.bytes.get(start..start.checked_add(len.checked_mul(2)?)?)?;
-                let units: Vec<u16> = raw.chunks_exact(2).map(|pair| u16::from_be_bytes([pair[0], pair[1]])).collect();
+                let raw = self
+                    .bytes
+                    .get(start..start.checked_add(len.checked_mul(2)?)?)?;
+                let units: Vec<u16> = raw
+                    .chunks_exact(2)
+                    .map(|pair| u16::from_be_bytes([pair[0], pair[1]]))
+                    .collect();
                 String::from_utf16(&units).ok()
             }
             _ => None,
@@ -198,7 +208,10 @@ fn load(dir: &Path, lang: Lang) -> HashMap<&'static str, FunctionHelp> {
     };
     let pages: Vec<HashMap<String, String>> = ["strman_0061", "strman_0062", "strman_0063"]
         .iter()
-        .map(|file| read_strings_file(&dir.join(format!("{}.lproj/{file}.strings", lang.code()))).unwrap_or_default())
+        .map(|file| {
+            read_strings_file(&dir.join(format!("{}.lproj/{file}.strings", lang.code())))
+                .unwrap_or_default()
+        })
         .collect();
     for (key, name) in &names {
         let Ok(number) = usize::from_str_radix(key, 16) else {
@@ -221,8 +234,13 @@ fn load(dir: &Path, lang: Lang) -> HashMap<&'static str, FunctionHelp> {
 /// What Excel says about a function in the language of the interface, if
 /// Excel is installed on this machine.
 pub(crate) fn help(function: &str) -> Option<&'static FunctionHelp> {
-    static TABLES: [OnceLock<HashMap<&'static str, FunctionHelp>>; 5] =
-        [OnceLock::new(), OnceLock::new(), OnceLock::new(), OnceLock::new(), OnceLock::new()];
+    static TABLES: [OnceLock<HashMap<&'static str, FunctionHelp>>; 5] = [
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+        OnceLock::new(),
+    ];
     let lang = crate::i18n::lang();
     TABLES[lang as usize % TABLES.len()]
         .get_or_init(|| load(&resources(), lang))
@@ -270,7 +288,11 @@ pub(crate) fn arguments(def: &FunctionDef, help: Option<&FunctionHelp>, count: u
             if index < named {
                 return Arg {
                     name: help.args[index].clone(),
-                    description: help.arg_descriptions.get(index).cloned().unwrap_or_default(),
+                    description: help
+                        .arg_descriptions
+                        .get(index)
+                        .cloned()
+                        .unwrap_or_default(),
                     optional: index >= min,
                 };
             }
@@ -287,7 +309,11 @@ pub(crate) fn arguments(def: &FunctionDef, help: Option<&FunctionHelp>, count: u
                 .unwrap_or(1);
             Arg {
                 name: renumbered(&help.args[source], first_number + 1 + beyond / group),
-                description: help.arg_descriptions.get(source).cloned().unwrap_or_default(),
+                description: help
+                    .arg_descriptions
+                    .get(source)
+                    .cloned()
+                    .unwrap_or_default(),
                 optional: true,
             }
         })
@@ -297,10 +323,22 @@ pub(crate) fn arguments(def: &FunctionDef, help: Option<&FunctionHelp>, count: u
 /// How many argument boxes the Function Arguments dialog shows for a
 /// function of which `filled` arguments are typed: the named ones, and
 /// always an empty one to go on with when the function takes more.
-pub(crate) fn shown_arguments(def: &FunctionDef, help: Option<&FunctionHelp>, filled: usize) -> usize {
-    let max = if def.max_args == VAR { 255 } else { def.max_args as usize };
+pub(crate) fn shown_arguments(
+    def: &FunctionDef,
+    help: Option<&FunctionHelp>,
+    filled: usize,
+) -> usize {
+    let max = if def.max_args == VAR {
+        255
+    } else {
+        def.max_args as usize
+    };
     let named = help.map(|help| help.args.len()).unwrap_or(0);
-    let base = if def.max_args == VAR { named.max(def.min_args as usize).max(1) } else { max };
+    let base = if def.max_args == VAR {
+        named.max(def.min_args as usize).max(1)
+    } else {
+        max
+    };
     base.max(filled + 1).min(max).max(filled)
 }
 
@@ -312,7 +350,10 @@ pub(crate) fn syntax(def: &FunctionDef, help: Option<&FunctionHelp>, locale: &Lo
         _ if def.max_args == VAR => (def.min_args as usize).max(1),
         _ => def.max_args as usize,
     };
-    let mut names: Vec<String> = arguments(def, help, listed).into_iter().map(|arg| arg.name).collect();
+    let mut names: Vec<String> = arguments(def, help, listed)
+        .into_iter()
+        .map(|arg| arg.name)
+        .collect();
     if def.max_args == VAR {
         names.push("...".to_string());
     }
@@ -326,19 +367,23 @@ mod tests {
     /// A `.strings` file in binary form holding three pairs (made with
     /// `plutil -convert binary1`): one value in ASCII, one in UTF-16.
     const SAMPLE: [u8; 365] = [
-        98, 112, 108, 105, 115, 116, 48, 48, 211, 1, 2, 3, 4, 5, 6, 81, 52, 82, 49, 97, 85, 99, 111, 117, 110, 116, 95, 16,
-        95, 33, 102, 105, 114, 115, 116, 44, 115, 101, 99, 111, 110, 100, 44, 46, 46, 46, 33, 33, 83, 97, 109, 112, 108, 101,
-        32, 116, 101, 120, 116, 32, 111, 102, 32, 97, 32, 102, 117, 110, 99, 116, 105, 111, 110, 33, 119, 104, 97, 116, 32,
-        116, 104, 101, 32, 102, 105, 114, 115, 116, 32, 111, 110, 101, 32, 105, 115, 32, 102, 111, 114, 33, 119, 104, 97, 116,
-        32, 116, 104, 101, 32, 111, 116, 104, 101, 114, 115, 32, 97, 114, 101, 32, 102, 111, 114, 33, 111, 16, 95, 0, 33, 0,
-        118, 0, 97, 0, 108, 0, 101, 0, 117, 0, 114, 0, 33, 0, 33, 0, 84, 0, 101, 0, 120, 0, 116, 0, 101, 0, 32, 0, 97, 0, 99,
-        0, 99, 0, 101, 0, 110, 0, 116, 0, 117, 0, 233, 0, 32, 0, 58, 0, 32, 0, 233, 0, 32, 0, 224, 0, 32, 0, 231, 0, 33, 0,
-        117, 0, 110, 0, 32, 0, 110, 0, 111, 0, 109, 0, 98, 0, 114, 0, 101, 0, 32, 0, 114, 0, 233, 0, 101, 0, 108, 0, 32, 0,
-        115, 0, 117, 0, 102, 0, 102, 0, 105, 0, 115, 0, 97, 0, 109, 0, 109, 0, 101, 0, 110, 0, 116, 0, 32, 0, 108, 0, 111, 0,
-        110, 0, 103, 0, 32, 0, 112, 0, 111, 0, 117, 0, 114, 0, 32, 0, 100, 0, 233, 0, 112, 0, 97, 0, 115, 0, 115, 0, 101, 0,
-        114, 0, 32, 0, 113, 0, 117, 0, 97, 0, 116, 0, 111, 0, 114, 0, 122, 0, 101, 0, 32, 0, 117, 0, 110, 0, 105, 0, 116, 0,
-        233, 0, 115, 0, 33, 81, 50, 0, 8, 0, 15, 0, 17, 0, 20, 0, 26, 0, 124, 1, 61, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0,
-        0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 63,
+        98, 112, 108, 105, 115, 116, 48, 48, 211, 1, 2, 3, 4, 5, 6, 81, 52, 82, 49, 97, 85, 99,
+        111, 117, 110, 116, 95, 16, 95, 33, 102, 105, 114, 115, 116, 44, 115, 101, 99, 111, 110,
+        100, 44, 46, 46, 46, 33, 33, 83, 97, 109, 112, 108, 101, 32, 116, 101, 120, 116, 32, 111,
+        102, 32, 97, 32, 102, 117, 110, 99, 116, 105, 111, 110, 33, 119, 104, 97, 116, 32, 116,
+        104, 101, 32, 102, 105, 114, 115, 116, 32, 111, 110, 101, 32, 105, 115, 32, 102, 111, 114,
+        33, 119, 104, 97, 116, 32, 116, 104, 101, 32, 111, 116, 104, 101, 114, 115, 32, 97, 114,
+        101, 32, 102, 111, 114, 33, 111, 16, 95, 0, 33, 0, 118, 0, 97, 0, 108, 0, 101, 0, 117, 0,
+        114, 0, 33, 0, 33, 0, 84, 0, 101, 0, 120, 0, 116, 0, 101, 0, 32, 0, 97, 0, 99, 0, 99, 0,
+        101, 0, 110, 0, 116, 0, 117, 0, 233, 0, 32, 0, 58, 0, 32, 0, 233, 0, 32, 0, 224, 0, 32, 0,
+        231, 0, 33, 0, 117, 0, 110, 0, 32, 0, 110, 0, 111, 0, 109, 0, 98, 0, 114, 0, 101, 0, 32, 0,
+        114, 0, 233, 0, 101, 0, 108, 0, 32, 0, 115, 0, 117, 0, 102, 0, 102, 0, 105, 0, 115, 0, 97,
+        0, 109, 0, 109, 0, 101, 0, 110, 0, 116, 0, 32, 0, 108, 0, 111, 0, 110, 0, 103, 0, 32, 0,
+        112, 0, 111, 0, 117, 0, 114, 0, 32, 0, 100, 0, 233, 0, 112, 0, 97, 0, 115, 0, 115, 0, 101,
+        0, 114, 0, 32, 0, 113, 0, 117, 0, 97, 0, 116, 0, 111, 0, 114, 0, 122, 0, 101, 0, 32, 0,
+        117, 0, 110, 0, 105, 0, 116, 0, 233, 0, 115, 0, 33, 81, 50, 0, 8, 0, 15, 0, 17, 0, 20, 0,
+        26, 0, 124, 1, 61, 0, 0, 0, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0, 7, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 1, 63,
     ];
 
     #[test]
@@ -373,10 +418,15 @@ mod tests {
         assert_eq!(help.args, ["first", "second"]);
         assert!(help.repeats);
         assert_eq!(help.description, "Sample text of a function");
-        assert_eq!(help.arg_descriptions, ["what the first one is for", "what the others are for"]);
+        assert_eq!(
+            help.arg_descriptions,
+            ["what the first one is for", "what the others are for"]
+        );
 
         // Two forms: the first one is kept, with its descriptions.
-        let two = parse_entry("!a,b,c!a,d!!Looks things up!first!second!third!other first!other second!").unwrap();
+        let two =
+            parse_entry("!a,b,c!a,d!!Looks things up!first!second!third!other first!other second!")
+                .unwrap();
         assert_eq!(two.args, ["a", "b", "c"]);
         assert_eq!(two.arg_descriptions, ["first", "second", "third"]);
         assert!(!two.repeats);
@@ -402,26 +452,46 @@ mod tests {
     }
 
     fn names(def: &FunctionDef, help: Option<&FunctionHelp>, count: usize) -> Vec<String> {
-        arguments(def, help, count).into_iter().map(|arg| arg.name).collect()
+        arguments(def, help, count)
+            .into_iter()
+            .map(|arg| arg.name)
+            .collect()
     }
 
     #[test]
     fn arguments_are_named_and_repeat() {
         let sum = functions::lookup("SUM").unwrap();
         let numbers = named(&["number1", "number2"], true);
-        assert_eq!(names(sum, Some(&numbers), 4), ["number1", "number2", "number3", "number4"]);
+        assert_eq!(
+            names(sum, Some(&numbers), 4),
+            ["number1", "number2", "number3", "number4"]
+        );
         let args = arguments(sum, Some(&numbers), 3);
         assert!(!args[0].optional && args[1].optional && args[2].optional);
         assert_eq!(args[2].description, "about number2");
-        assert_eq!(syntax(sum, Some(&numbers), Locale::en()), "SUM(number1,number2,...)");
-        assert_eq!(syntax(sum, Some(&numbers), Locale::fr()), "SOMME(number1;number2;...)");
+        assert_eq!(
+            syntax(sum, Some(&numbers), Locale::en()),
+            "SUM(number1,number2,...)"
+        );
+        assert_eq!(
+            syntax(sum, Some(&numbers), Locale::fr()),
+            "SOMME(number1;number2;...)"
+        );
 
         // Pairs repeat together.
         let sumifs = functions::lookup("SUMIFS").unwrap();
         let pairs = named(&["sum_range", "criteria_range", "criteria"], true);
         assert_eq!(
             names(sumifs, Some(&pairs), 7),
-            ["sum_range", "criteria_range", "criteria", "criteria_range2", "criteria2", "criteria_range3", "criteria3"]
+            [
+                "sum_range",
+                "criteria_range",
+                "criteria",
+                "criteria_range2",
+                "criteria2",
+                "criteria_range3",
+                "criteria3"
+            ]
         );
 
         // Without Excel's names: numbered arguments, optional after the
@@ -430,9 +500,15 @@ mod tests {
         let plain = arguments(vlookup, None, 4);
         assert_eq!(plain[0].name, "argument1");
         assert!(!plain[2].optional && plain[3].optional);
-        assert_eq!(syntax(vlookup, None, Locale::en()), "VLOOKUP(argument1,argument2,argument3,argument4)");
+        assert_eq!(
+            syntax(vlookup, None, Locale::en()),
+            "VLOOKUP(argument1,argument2,argument3,argument4)"
+        );
         assert_eq!(syntax(sum, None, Locale::en()), "SUM(argument1,...)");
-        assert_eq!(syntax(functions::lookup("RAND").unwrap(), None, Locale::en()), "RAND()");
+        assert_eq!(
+            syntax(functions::lookup("RAND").unwrap(), None, Locale::en()),
+            "RAND()"
+        );
     }
 
     #[test]
@@ -446,7 +522,10 @@ mod tests {
         let vlookup = functions::lookup("VLOOKUP").unwrap();
         assert_eq!(shown_arguments(vlookup, None, 0), 4);
         assert_eq!(shown_arguments(vlookup, None, 4), 4);
-        assert_eq!(shown_arguments(functions::lookup("RAND").unwrap(), None, 0), 0);
+        assert_eq!(
+            shown_arguments(functions::lookup("RAND").unwrap(), None, 0),
+            0
+        );
     }
 
     /// With Excel on the machine, its texts are found for the engine's
@@ -459,12 +538,22 @@ mod tests {
         }
         for lang in Lang::ALL {
             let table = load(&dir, lang);
-            assert!(table.len() > 250, "{}: {} functions", lang.code(), table.len());
+            assert!(
+                table.len() > 250,
+                "{}: {} functions",
+                lang.code(),
+                table.len()
+            );
             let sum = &table["SUM"];
             assert_eq!(sum.args.len(), 2, "{}", lang.code());
             assert!(sum.repeats && !sum.description.is_empty());
             let vlookup = &table["VLOOKUP"];
-            assert_eq!((vlookup.args.len(), vlookup.arg_descriptions.len()), (4, 4), "{}", lang.code());
+            assert_eq!(
+                (vlookup.args.len(), vlookup.arg_descriptions.len()),
+                (4, 4),
+                "{}",
+                lang.code()
+            );
             assert!(table["RAND"].args.is_empty());
         }
     }

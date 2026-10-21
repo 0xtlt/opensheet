@@ -65,7 +65,9 @@ pub fn bind_keys(cx: &mut App) {
 
 /// Make the window answer the shortcut and the menu item.
 pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Stateful<gpui::Div> {
-    root.on_action(cx.listener(|app, _: &OpenPreferences, window, cx| app.run_command(Cmd::Open, window, cx)))
+    root.on_action(
+        cx.listener(|app, _: &OpenPreferences, window, cx| app.run_command(Cmd::Open, window, cx)),
+    )
 }
 
 // ------------------------------------------------- what the settings change
@@ -110,7 +112,10 @@ pub fn prepare_new_workbook(wb: &mut Workbook) {
 /// "Recalculate workbook before saving": formulas that wait in Manual
 /// mode are calculated before the file is written.
 pub fn before_save(wb: &mut Workbook) {
-    if settings::get().recalc_before_save && wb.calc_mode() == CalcMode::Manual && wb.needs_calculation() {
+    if settings::get().recalc_before_save
+        && wb.calc_mode() == CalcMode::Manual
+        && wb.needs_calculation()
+    {
         wb.calculate_now();
     }
 }
@@ -157,11 +162,18 @@ pub(crate) fn with_fixed_decimal(text: &str, places: i32, decimal_sep: char) -> 
         Some(rest) => ("-", rest),
         None => ("", typed.strip_prefix('+').unwrap_or(typed)),
     };
-    if places == 0 || digits.is_empty() || digits.len() > 15 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+    if places == 0
+        || digits.is_empty()
+        || digits.len() > 15
+        || !digits.bytes().all(|b| b.is_ascii_digit())
+    {
         return None;
     }
     if places < 0 {
-        return Some(format!("{sign}{digits}{}", "0".repeat(places.unsigned_abs() as usize)));
+        return Some(format!(
+            "{sign}{digits}{}",
+            "0".repeat(places.unsigned_abs() as usize)
+        ));
     }
     let places = places as usize;
     // "5" with two places is 0.05.
@@ -177,11 +189,23 @@ impl Feature for Preferences {
 
     /// "Automatically insert a decimal point": the entry is rewritten
     /// before it is stored.
-    fn may_commit(&self, app: &mut ExcelApp, edit: &PendingEdit, _window: &mut Window, cx: &mut Cx) -> Verdict {
+    fn may_commit(
+        &self,
+        app: &mut ExcelApp,
+        edit: &PendingEdit,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) -> Verdict {
         let settings = settings::get();
         if settings.fixed_decimal {
-            if let Some(text) = with_fixed_decimal(edit.text, settings.decimal_places, app.wb.locale.decimal_sep) {
-                app.editor().clone().update(cx, |input, cx| input.set_text(text, cx));
+            if let Some(text) = with_fixed_decimal(
+                edit.text,
+                settings.decimal_places,
+                app.wb.locale.decimal_sep,
+            ) {
+                app.editor()
+                    .clone()
+                    .update(cx, |input, cx| input.set_text(text, cx));
             }
         }
         Verdict::Accept
@@ -233,12 +257,19 @@ mod tests {
     fn a_decimal_point_is_put_into_whole_numbers() {
         assert_eq!(with_fixed_decimal("1234", 2, '.').as_deref(), Some("12.34"));
         assert_eq!(with_fixed_decimal("5", 2, ',').as_deref(), Some("0,05"));
-        assert_eq!(with_fixed_decimal(" -250 ", 2, '.').as_deref(), Some("-2.50"));
+        assert_eq!(
+            with_fixed_decimal(" -250 ", 2, '.').as_deref(),
+            Some("-2.50")
+        );
         assert_eq!(with_fixed_decimal("12", -3, '.').as_deref(), Some("12000"));
         // A point that was typed overrides; text, formulas and dates are
         // left alone.
         for typed in ["12.5", "12,5", "abc", "=12", "1e3", "12/3", "", "-", "12 "] {
-            let expected = if typed == "12 " { Some("0.12".to_string()) } else { None };
+            let expected = if typed == "12 " {
+                Some("0.12".to_string())
+            } else {
+                None
+            };
             assert_eq!(with_fixed_decimal(typed, 2, '.'), expected, "{typed:?}");
         }
         assert_eq!(with_fixed_decimal("12", 0, '.'), None);
@@ -246,11 +277,20 @@ mod tests {
 
     #[test]
     fn return_follows_the_edit_pane() {
-        assert_eq!((enter_direction(false), enter_direction(true)), (Some(Direction::Down), Some(Direction::Up)));
+        assert_eq!(
+            (enter_direction(false), enter_direction(true)),
+            (Some(Direction::Down), Some(Direction::Up))
+        );
         settings::update(|settings| settings.move_direction = Direction::Right);
-        assert_eq!((enter_direction(false), enter_direction(true)), (Some(Direction::Right), Some(Direction::Left)));
+        assert_eq!(
+            (enter_direction(false), enter_direction(true)),
+            (Some(Direction::Right), Some(Direction::Left))
+        );
         settings::update(|settings| settings.move_after_return = false);
-        assert_eq!((enter_direction(false), enter_direction(true)), (None, None));
+        assert_eq!(
+            (enter_direction(false), enter_direction(true)),
+            (None, None)
+        );
     }
 
     #[test]

@@ -28,7 +28,13 @@ use crate::host::{Host, to_script};
 
 /// One thing read from every cell of the range a call is made on, as the
 /// array of rows scripts get, or for the first cell only.
-fn read(h: &mut Host, call: &Call, single: bool, english: bool, cell: fn(&Workbook, usize, u32, u32) -> J) -> Res<Ret> {
+fn read(
+    h: &mut Host,
+    call: &Call,
+    single: bool,
+    english: bool,
+    cell: fn(&Workbook, usize, u32, u32) -> J,
+) -> Res<Ret> {
     let (sheet, mut rect) = this_range(h, call)?;
     if single {
         rect = Rect::cell(rect.r0, rect.c0);
@@ -37,12 +43,24 @@ fn read(h: &mut Host, call: &Call, single: bool, english: bool, cell: fn(&Workbo
     h.calculate();
     let grid = |wb: &mut Workbook| {
         (rect.r0..=rect.r1)
-            .map(|row| J::from((rect.c0..=rect.c1).map(|col| cell(wb, sheet, row, col)).collect::<Vec<J>>()))
+            .map(|row| {
+                J::from(
+                    (rect.c0..=rect.c1)
+                        .map(|col| cell(wb, sheet, row, col))
+                        .collect::<Vec<J>>(),
+                )
+            })
             .collect::<Vec<J>>()
     };
-    let mut rows = if english { h.english(grid) } else { grid(&mut h.wb) };
+    let mut rows = if english {
+        h.english(grid)
+    } else {
+        grid(&mut h.wb)
+    };
     Ok(Ret::Value(if single {
-        rows.pop().and_then(|row| row.as_array().and_then(|r| r.first().cloned())).unwrap_or(J::Null)
+        rows.pop()
+            .and_then(|row| row.as_array().and_then(|r| r.first().cloned()))
+            .unwrap_or(J::Null)
     } else {
         J::from(rows)
     }))
@@ -90,7 +108,13 @@ pub(super) fn type_of(wb: &Workbook, sheet: usize, row: u32, col: u32) -> J {
 pub(super) fn clear_rect(h: &mut Host, c: &Call, sheet: usize, rect: Rect) -> Res<()> {
     let apply = enum_value(c, 0, "ClearApplyTo")?.unwrap_or("All");
     if matches!(apply, "Hyperlinks" | "RemoveHyperlinks") {
-        h.permit(c, &Action::EditCells { sheet, ranges: &[rect] })?;
+        h.permit(
+            c,
+            &Action::EditCells {
+                sheet,
+                ranges: &[rect],
+            },
+        )?;
         h.wb.remove_hyperlinks(sheet, &[rect]);
         if apply == "RemoveHyperlinks" {
             h.wb.unformat_links(sheet, rect);
@@ -102,7 +126,14 @@ pub(super) fn clear_rect(h: &mut Host, c: &Call, sheet: usize, rect: Rect) -> Re
         "Formats" => ClearMode::Formats,
         _ => ClearMode::All,
     };
-    h.permit_edit(c, &Edit::Clear { sheet, ranges: &[rect], mode })?;
+    h.permit_edit(
+        c,
+        &Edit::Clear {
+            sheet,
+            ranges: &[rect],
+            mode,
+        },
+    )?;
     h.wb.clear(sheet, rect, mode);
     if mode != ClearMode::Formats {
         entered(h, sheet, h.wb.clamp_to_used(sheet, rect));
@@ -130,22 +161,44 @@ pub(super) enum Entry {
 /// whose header changed and fill their calculated columns.
 pub(super) fn entered(h: &mut Host, sheet: usize, rect: Rect) {
     h.changed();
-    if !h.wb.sheets[sheet].tables.is_empty() && h.wb.tables_after_edit(sheet, rect) != TableEdit::default() {
+    if !h.wb.sheets[sheet].tables.is_empty()
+        && h.wb.tables_after_edit(sheet, rect) != TableEdit::default()
+    {
         h.restructured();
     }
 }
 
-pub(super) fn write_cell(h: &mut Host, call: &Call, sheet: usize, row: u32, col: u32, value: &J, entry: Entry) -> Res<()> {
+pub(super) fn write_cell(
+    h: &mut Host,
+    call: &Call,
+    sheet: usize,
+    row: u32,
+    col: u32,
+    value: &J,
+    entry: Entry,
+) -> Res<()> {
     match (entry, value) {
         // As in Excel, null leaves the cell as it is.
         (_, J::Null) => {}
         (Entry::Format | Entry::LocalFormat, J::String(code)) => {
-            let code = if entry == Entry::LocalFormat { code_from_locale(code, h.wb.locale) } else { code.clone() };
-            let code = if code.is_empty() { "General".to_string() } else { code };
-            h.wb.update_style(sheet, Rect::cell(row, col), &|style| style.num_fmt = code.as_str().into());
+            let code = if entry == Entry::LocalFormat {
+                code_from_locale(code, h.wb.locale)
+            } else {
+                code.clone()
+            };
+            let code = if code.is_empty() {
+                "General".to_string()
+            } else {
+                code
+            };
+            h.wb.update_style(sheet, Rect::cell(row, col), &|style| {
+                style.num_fmt = code.as_str().into()
+            });
         }
         (Entry::Format | Entry::LocalFormat, _) => return Err(call.invalid()),
-        (_, J::Number(n)) => h.wb.set_value(sheet, row, col, Value::Number(n.as_f64().unwrap_or(0.0))),
+        (_, J::Number(n)) => {
+            h.wb.set_value(sheet, row, col, Value::Number(n.as_f64().unwrap_or(0.0)))
+        }
         (_, J::Bool(b)) => h.wb.set_value(sheet, row, col, Value::Bool(*b)),
         (_, J::String(text)) if text.is_empty() => h.wb.set_value(sheet, row, col, Value::Empty),
         (_, J::String(text)) => {
@@ -153,7 +206,12 @@ pub(super) fn write_cell(h: &mut Host, call: &Call, sheet: usize, row: u32, col:
                 Entry::Local => h.wb.set_cell_text(sheet, row, col, text),
                 _ => h.english(|wb| wb.set_cell_text(sheet, row, col, text)),
             };
-            done.map_err(|error| call.fail(format!("The formula {text} is not valid ({}).", error.message)))?;
+            done.map_err(|error| {
+                call.fail(format!(
+                    "The formula {text} is not valid ({}).",
+                    error.message
+                ))
+            })?;
         }
         _ => return Err(call.invalid()),
     }
@@ -168,8 +226,16 @@ fn write(h: &mut Host, call: &Call, grid: bool, entry: Entry) -> Res<Ret> {
     // One format for whole rows or columns is kept on them, not cell by cell.
     if formats && !grid {
         let code = call.str(0)?;
-        let code = if entry == Entry::LocalFormat { code_from_locale(code, h.wb.locale) } else { code.to_string() };
-        let code = if code.is_empty() { "General".to_string() } else { code };
+        let code = if entry == Entry::LocalFormat {
+            code_from_locale(code, h.wb.locale)
+        } else {
+            code.to_string()
+        };
+        let code = if code.is_empty() {
+            "General".to_string()
+        } else {
+            code
+        };
         h.permit_edit(call, &Edit::Format { sheet })?;
         h.wb.update_style(sheet, rect, &|style| style.num_fmt = code.as_str().into());
         h.changed();
@@ -179,7 +245,10 @@ fn write(h: &mut Host, call: &Call, grid: bool, entry: Entry) -> Res<Ret> {
     let rows = if grid {
         let rows = call.array(0)?;
         let fits = rows.len() == rect.rows() as usize
-            && rows.iter().all(|row| row.as_array().is_some_and(|r| r.len() == rect.cols() as usize));
+            && rows.iter().all(|row| {
+                row.as_array()
+                    .is_some_and(|r| r.len() == rect.cols() as usize)
+            });
         if !fits {
             return Err(call.fail("The number of rows or columns in the input array doesn't match the size or dimensions of the range."));
         }
@@ -190,7 +259,13 @@ fn write(h: &mut Host, call: &Call, grid: bool, entry: Entry) -> Res<Ret> {
     if formats {
         h.permit_edit(call, &Edit::Format { sheet })?;
     } else {
-        h.permit_edit(call, &Edit::Enter { sheet, ranges: &[rect] })?;
+        h.permit_edit(
+            call,
+            &Edit::Enter {
+                sheet,
+                ranges: &[rect],
+            },
+        )?;
         h.spend(call, rect.rows() as u64 * rect.cols() as u64)?;
     }
     // One formula for several cells is entered as with Ctrl+Enter: its
@@ -209,7 +284,9 @@ fn write(h: &mut Host, call: &Call, grid: bool, entry: Entry) -> Res<Ret> {
             };
             write_cell(h, call, sheet, row, col, value, entry)?;
             if rows.is_none() {
-                if let Some(Content::Formula(formula)) = h.wb.cell(sheet, row, col).map(|cell| &cell.content) {
+                if let Some(Content::Formula(formula)) =
+                    h.wb.cell(sheet, row, col).map(|cell| &cell.content)
+                {
                     filled = Some(formula.clone());
                 }
             }
@@ -227,20 +304,27 @@ fn write(h: &mut Host, call: &Call, grid: bool, entry: Entry) -> Res<Ret> {
 
 /// A range of the same sheet from signed coordinates; fails off the sheet.
 fn at(h: &Host, call: &Call, sheet: usize, r0: i64, c0: i64, r1: i64, c1: i64) -> Res<Ret> {
-    let inside = |row: i64, col: i64| (0..MAX_ROWS as i64).contains(&row) && (0..MAX_COLS as i64).contains(&col);
+    let inside = |row: i64, col: i64| {
+        (0..MAX_ROWS as i64).contains(&row) && (0..MAX_COLS as i64).contains(&col)
+    };
     if !inside(r0, c0) || !inside(r1, c1) || r1 < r0 || c1 < c0 {
         return Err(call.invalid());
     }
-    Ok(Ret::Object(h.range(sheet, Rect::new(r0 as u32, c0 as u32, r1 as u32, c1 as u32))))
+    Ok(Ret::Object(h.range(
+        sheet,
+        Rect::new(r0 as u32, c0 as u32, r1 as u32, c1 as u32),
+    )))
 }
 
 fn direction(call: &Call, index: usize) -> Res<Direction> {
-    Ok(match enum_value(call, index, "KeyboardDirection")?.ok_or_else(|| call.invalid())? {
-        "Left" => Direction::Left,
-        "Right" => Direction::Right,
-        "Up" => Direction::Up,
-        _ => Direction::Down,
-    })
+    Ok(
+        match enum_value(call, index, "KeyboardDirection")?.ok_or_else(|| call.invalid())? {
+            "Left" => Direction::Left,
+            "Right" => Direction::Right,
+            "Up" => Direction::Up,
+            _ => Direction::Down,
+        },
+    )
 }
 
 /// Where Ctrl+Arrow lands from the active cell of a range: the cell the
@@ -261,7 +345,12 @@ fn edge(h: &mut Host, call: &Call, sheet: usize, rect: Rect) -> Res<(Direction, 
 }
 
 /// The smallest rectangle around the cells of `rect` that are used.
-pub(super) fn used_within(h: &mut Host, sheet: usize, rect: Rect, values_only: bool) -> Option<Rect> {
+pub(super) fn used_within(
+    h: &mut Host,
+    sheet: usize,
+    rect: Rect,
+    values_only: bool,
+) -> Option<Rect> {
     h.calculate();
     let sh = &h.wb.sheets[sheet];
     let mut out: Option<Rect> = None;
@@ -271,12 +360,20 @@ pub(super) fn used_within(h: &mut Host, sheet: usize, rect: Rect, values_only: b
         }
     };
     for ((row, col), cell) in sh.cells.range((rect.r0, 0)..=(rect.r1, u32::MAX)) {
-        if *col >= rect.c0 && *col <= rect.c1 && !(values_only && matches!(cell.content, Content::Empty)) {
+        if *col >= rect.c0
+            && *col <= rect.c1
+            && !(values_only && matches!(cell.content, Content::Empty))
+        {
             add(Rect::cell(*row, *col));
         }
     }
     for spill in &sh.spills {
-        add(Rect::new(spill.row, spill.col, spill.row + spill.array.rows as u32 - 1, spill.col + spill.array.cols as u32 - 1));
+        add(Rect::new(
+            spill.row,
+            spill.col,
+            spill.row + spill.array.rows as u32 - 1,
+            spill.col + spill.array.cols as u32 - 1,
+        ));
     }
     out
 }
@@ -285,7 +382,9 @@ pub(super) fn used_within(h: &mut Host, sheet: usize, rect: Rect, values_only: b
 
 fn sort_fail(call: &Call, error: SortError) -> super::Fail {
     match error {
-        SortError::MergedCells => call.fail("To do this, all the merged cells need to be the same size."),
+        SortError::MergedCells => {
+            call.fail("To do this, all the merged cells need to be the same size.")
+        }
     }
 }
 
@@ -294,9 +393,17 @@ pub(super) fn sort_levels(call: &Call, fields: &[J]) -> Res<Vec<SortLevel>> {
     fields
         .iter()
         .map(|field| {
-            let key = field.get("key").and_then(J::as_u64).ok_or_else(|| call.invalid())?;
+            let key = field
+                .get("key")
+                .and_then(J::as_u64)
+                .ok_or_else(|| call.invalid())?;
             let text = |name: &str| field.get(name).and_then(J::as_str);
-            let color = || Ok(Some(parse_color(text("color").ok_or_else(|| call.invalid())?).ok_or_else(|| call.invalid())?));
+            let color = || {
+                Ok(Some(
+                    parse_color(text("color").ok_or_else(|| call.invalid())?)
+                        .ok_or_else(|| call.invalid())?,
+                ))
+            };
             let on = match text("sortOn").unwrap_or("Value") {
                 "Value" => SortOn::Values,
                 "CellColor" => SortOn::CellColor(color()?),

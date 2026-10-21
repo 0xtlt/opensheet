@@ -59,7 +59,10 @@ pub struct Sense {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Synonyms {
     /// The entry found (its headword: "run" for "ran") and its meanings.
-    Found { headword: String, senses: Vec<Sense> },
+    Found {
+        headword: String,
+        senses: Vec<Sense>,
+    },
     /// The thesauruses installed do not have the word.
     NotFound,
     /// No thesaurus is installed on this Mac.
@@ -108,7 +111,12 @@ pub trait Translator: Send + Sync {
 
     /// Translate `text` into `to`, from `from` or from the language the
     /// text is found to be in.
-    fn translate(&self, text: &str, from: Option<&str>, to: &str) -> Result<Translation, TranslateError>;
+    fn translate(
+        &self,
+        text: &str,
+        from: Option<&str>,
+        to: &str,
+    ) -> Result<Translation, TranslateError>;
 }
 
 // ----------------------------------------------------------------- services
@@ -124,21 +132,30 @@ pub struct Services {
 /// The checker of a spelling session: the words it is told to ignore are
 /// forgotten with it.
 pub fn spell_checker(app: &ExcelApp) -> Rc<dyn SpellChecker> {
-    match app.ext::<Services>().and_then(|services| services.spelling.clone()) {
+    match app
+        .ext::<Services>()
+        .and_then(|services| services.spelling.clone())
+    {
         Some(checker) => checker,
         None => default_spell_checker(),
     }
 }
 
 pub fn thesaurus(app: &ExcelApp) -> Rc<dyn Thesaurus> {
-    match app.ext::<Services>().and_then(|services| services.thesaurus.clone()) {
+    match app
+        .ext::<Services>()
+        .and_then(|services| services.thesaurus.clone())
+    {
         Some(thesaurus) => thesaurus,
         None => default_thesaurus(),
     }
 }
 
 pub fn translator(app: &ExcelApp) -> Arc<dyn Translator> {
-    match app.ext::<Services>().and_then(|services| services.translator.clone()) {
+    match app
+        .ext::<Services>()
+        .and_then(|services| services.translator.clone())
+    {
         Some(translator) => translator,
         None => default_translator(),
     }
@@ -196,7 +213,11 @@ pub fn interface_language(available: &[String]) -> Option<usize> {
     available
         .iter()
         .position(|language| language == code)
-        .or_else(|| available.iter().position(|language| language.starts_with(code)))
+        .or_else(|| {
+            available
+                .iter()
+                .position(|language| language.starts_with(code))
+        })
 }
 
 // ------------------------------------------------------ translation helper
@@ -216,7 +237,9 @@ impl HelperTranslator {
     #[cfg(not(test))]
     pub fn beside_the_application() -> HelperTranslator {
         let named = std::env::var_os("OPENSHEET_TRANSLATE_HELPER").map(std::path::PathBuf::from);
-        let beside = std::env::current_exe().ok().and_then(|exe| Some(exe.parent()?.join(HELPER_NAME)));
+        let beside = std::env::current_exe()
+            .ok()
+            .and_then(|exe| Some(exe.parent()?.join(HELPER_NAME)));
         HelperTranslator {
             helper: named.or(beside).filter(|path| path.is_file()),
         }
@@ -262,7 +285,10 @@ pub fn parse_helper_answer(answer: &str) -> Result<(String, String), TranslateEr
     let (first, rest) = answer.split_once('\n').unwrap_or((answer, ""));
     let mut words = first.splitn(3, ' ');
     match (words.next(), words.next()) {
-        (Some("ok"), detail) => Ok((detail.unwrap_or_default().to_string(), rest.strip_suffix('\n').unwrap_or(rest).to_string())),
+        (Some("ok"), detail) => Ok((
+            detail.unwrap_or_default().to_string(),
+            rest.strip_suffix('\n').unwrap_or(rest).to_string(),
+        )),
         (Some("error"), Some(code)) => Err(match code {
             "unsupported-system" => TranslateError::UnsupportedSystem,
             "not-installed" => TranslateError::NotInstalled,
@@ -278,10 +304,20 @@ pub fn parse_helper_answer(answer: &str) -> Result<(String, String), TranslateEr
 impl Translator for HelperTranslator {
     fn languages(&self) -> Result<Vec<String>, TranslateError> {
         let (_, list) = parse_helper_answer(&self.run(&["languages"], "")?)?;
-        Ok(list.lines().map(str::trim).filter(|line| !line.is_empty()).map(str::to_string).collect())
+        Ok(list
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect())
     }
 
-    fn translate(&self, text: &str, from: Option<&str>, to: &str) -> Result<Translation, TranslateError> {
+    fn translate(
+        &self,
+        text: &str,
+        from: Option<&str>,
+        to: &str,
+    ) -> Result<Translation, TranslateError> {
         let answer = self.run(&["translate", from.unwrap_or("auto"), to], text)?;
         let (source, text) = parse_helper_answer(&answer)?;
         Ok(Translation { text, source })
@@ -365,7 +401,8 @@ pub mod mac {
     unsafe fn ns_string(text: &str) -> Id {
         unsafe {
             let string: Id = msg_send![class!(NSString), alloc];
-            let string: Id = msg_send![string, initWithBytes: text.as_ptr() length: text.len() encoding: UTF8];
+            let string: Id =
+                msg_send![string, initWithBytes: text.as_ptr() length: text.len() encoding: UTF8];
             msg_send![string, autorelease]
         }
     }
@@ -376,7 +413,11 @@ pub mod mac {
         }
         unsafe {
             let bytes: *const c_char = msg_send![string, UTF8String];
-            if bytes.is_null() { String::new() } else { CStr::from_ptr(bytes).to_string_lossy().into_owned() }
+            if bytes.is_null() {
+                String::new()
+            } else {
+                CStr::from_ptr(bytes).to_string_lossy().into_owned()
+            }
         }
     }
 
@@ -398,7 +439,8 @@ pub mod mac {
     /// "anglais (Royaume-Uni)": a language named in another.
     pub fn language_name(code: &str, in_language: &str) -> Option<String> {
         with_pool(|| unsafe {
-            let locale: Id = msg_send![class!(NSLocale), localeWithLocaleIdentifier: ns_string(in_language)];
+            let locale: Id =
+                msg_send![class!(NSLocale), localeWithLocaleIdentifier: ns_string(in_language)];
             let name: Id = msg_send![locale, localizedStringForLocaleIdentifier: ns_string(code)];
             Some(rust_string(name)).filter(|name| !name.is_empty())
         })
@@ -437,7 +479,12 @@ pub mod mac {
             })
         }
 
-        fn next_misspelling(&self, text: &str, from: usize, language: &str) -> Option<Range<usize>> {
+        fn next_misspelling(
+            &self,
+            text: &str,
+            from: usize,
+            language: &str,
+        ) -> Option<Range<usize>> {
             with_pool(|| unsafe {
                 let start = utf16_of_byte(text, from) as isize;
                 let wrap: BOOL = NO;
@@ -451,7 +498,8 @@ pub mod mac {
                 if range.location == NOT_FOUND || range.length == 0 {
                     return None;
                 }
-                let found = byte_of_utf16(text, range.location)..byte_of_utf16(text, range.location + range.length);
+                let found = byte_of_utf16(text, range.location)
+                    ..byte_of_utf16(text, range.location + range.length);
                 // The checker is not asked to wrap; a word before `from`
                 // would send the caller round in circles.
                 (found.start >= from).then_some(found)
@@ -482,9 +530,13 @@ pub mod mac {
 
         fn unignore(&self, word: &str) {
             with_pool(|| unsafe {
-                let ignored: Id = msg_send![Self::shared(), ignoredWordsInSpellDocumentWithTag: self.tag];
+                let ignored: Id =
+                    msg_send![Self::shared(), ignoredWordsInSpellDocumentWithTag: self.tag];
                 let kept: Id = msg_send![class!(NSMutableArray), array];
-                for other in strings_of(ignored).into_iter().filter(|other| other != word) {
+                for other in strings_of(ignored)
+                    .into_iter()
+                    .filter(|other| other != word)
+                {
                     let _: () = msg_send![kept, addObject: ns_string(&other)];
                 }
                 let _: () = msg_send![Self::shared(), setIgnoredWords: kept inSpellDocumentWithTag: self.tag];
@@ -515,7 +567,8 @@ pub mod mac {
 
     type CopyDictionaries = unsafe extern "C" fn() -> *const c_void;
     type DictionaryText = unsafe extern "C" fn(*const c_void) -> *const c_void;
-    type CopyRecords = unsafe extern "C" fn(*const c_void, *const c_void, isize, isize) -> *const c_void;
+    type CopyRecords =
+        unsafe extern "C" fn(*const c_void, *const c_void, isize, isize) -> *const c_void;
     type RecordData = unsafe extern "C" fn(*const c_void, isize) -> *const c_void;
 
     struct Dcs {
@@ -536,12 +589,24 @@ pub mod mac {
             };
             unsafe {
                 Some(Dcs {
-                    dictionaries: std::mem::transmute::<*mut c_void, CopyDictionaries>(find(c"DCSCopyAvailableDictionaries")?),
-                    identifier: std::mem::transmute::<*mut c_void, DictionaryText>(find(c"DCSDictionaryGetIdentifier")?),
-                    name: std::mem::transmute::<*mut c_void, DictionaryText>(find(c"DCSDictionaryGetName")?),
-                    url: std::mem::transmute::<*mut c_void, DictionaryText>(find(c"DCSDictionaryGetURL")?),
-                    records: std::mem::transmute::<*mut c_void, CopyRecords>(find(c"DCSCopyRecordsForSearchString")?),
-                    data: std::mem::transmute::<*mut c_void, RecordData>(find(c"DCSRecordCopyData")?),
+                    dictionaries: std::mem::transmute::<*mut c_void, CopyDictionaries>(find(
+                        c"DCSCopyAvailableDictionaries",
+                    )?),
+                    identifier: std::mem::transmute::<*mut c_void, DictionaryText>(find(
+                        c"DCSDictionaryGetIdentifier",
+                    )?),
+                    name: std::mem::transmute::<*mut c_void, DictionaryText>(find(
+                        c"DCSDictionaryGetName",
+                    )?),
+                    url: std::mem::transmute::<*mut c_void, DictionaryText>(find(
+                        c"DCSDictionaryGetURL",
+                    )?),
+                    records: std::mem::transmute::<*mut c_void, CopyRecords>(find(
+                        c"DCSCopyRecordsForSearchString",
+                    )?),
+                    data: std::mem::transmute::<*mut c_void, RecordData>(find(
+                        c"DCSRecordCopyData",
+                    )?),
                 })
             }
         }
@@ -549,7 +614,10 @@ pub mod mac {
         /// Run `f` on each thesaurus that is installed (a dictionary of
         /// the catalogue that was not downloaded has no place on disk),
         /// until it answers.
-        fn each_thesaurus<R>(&self, mut f: impl FnMut(*const c_void, String) -> Option<R>) -> Option<R> {
+        fn each_thesaurus<R>(
+            &self,
+            mut f: impl FnMut(*const c_void, String) -> Option<R>,
+        ) -> Option<R> {
             unsafe {
                 let set = (self.dictionaries)();
                 if set.is_null() {
@@ -563,7 +631,13 @@ pub mod mac {
                 let mut found: Vec<(String, *const c_void, String)> = all
                     .into_iter()
                     .filter(|dictionary| !(self.url)(*dictionary).is_null())
-                    .map(|dictionary| (text((self.identifier)(dictionary)), dictionary, text((self.name)(dictionary))))
+                    .map(|dictionary| {
+                        (
+                            text((self.identifier)(dictionary)),
+                            dictionary,
+                            text((self.name)(dictionary)),
+                        )
+                    })
                     .filter(|(identifier, _, name)| super::is_thesaurus(identifier, name))
                     .collect();
                 found.sort();
@@ -643,7 +717,10 @@ pub mod mac {
 /// Writer's Thesaurus and a Chinese one, and names them so.
 pub fn is_thesaurus(identifier: &str, name: &str) -> bool {
     let (identifier, name) = (identifier.to_lowercase(), name.to_lowercase());
-    identifier.ends_with(".ote") || identifier.ends_with(".oawt") || identifier.ends_with(".thes") || name.contains("thesaurus")
+    identifier.ends_with(".ote")
+        || identifier.ends_with(".oawt")
+        || identifier.ends_with(".thes")
+        || name.contains("thesaurus")
 }
 
 /// Read an entry of one of Apple's thesaurus dictionaries (XHTML whose
@@ -669,7 +746,12 @@ pub fn parse_thesaurus_entry(xml: &str) -> (String, Vec<Sense>) {
     // gathered in it so far, and whether it is a piece of the one around
     // it (its text then goes to that one).
     let mut stack: Vec<(Part, String, bool)> = Vec::new();
-    let is_word = |part: Part| matches!(part, Part::Pos | Part::Example | Part::Synonym | Part::Antonym);
+    let is_word = |part: Part| {
+        matches!(
+            part,
+            Part::Pos | Part::Example | Part::Synonym | Part::Antonym
+        )
+    };
     let mut rest = xml;
     // Only the body is the entry.
     if let Some(body) = rest.find("<body") {
@@ -709,7 +791,11 @@ pub fn parse_thesaurus_entry(xml: &str) -> (String, Vec<Sense>) {
                 }
                 Part::Synonym | Part::Antonym if !word.is_empty() => {
                     if let Some(sense) = senses.last_mut() {
-                        let list = if part == Part::Synonym { &mut sense.synonyms } else { &mut sense.antonyms };
+                        let list = if part == Part::Synonym {
+                            &mut sense.synonyms
+                        } else {
+                            &mut sense.antonyms
+                        };
                         if !list.contains(&word) {
                             list.push(word);
                         }
@@ -790,9 +876,9 @@ pub mod fake {
     //! Services that never leave the process: what a window gets in a
     //! test, and what a system other than macOS has.
 
-    use super::{SpellChecker, Synonyms, Thesaurus};
     #[cfg(test)]
     use super::{Sense, TranslateError, Translation, Translator};
+    use super::{SpellChecker, Synonyms, Thesaurus};
     use std::cell::RefCell;
     use std::collections::{BTreeMap, BTreeSet};
     use std::ops::Range;
@@ -816,7 +902,12 @@ pub mod fake {
                 known: RefCell::new(words.iter().map(|word| word.to_lowercase()).collect()),
                 guesses: guesses
                     .iter()
-                    .map(|(word, list)| (word.to_string(), list.iter().map(|guess| guess.to_string()).collect()))
+                    .map(|(word, list)| {
+                        (
+                            word.to_string(),
+                            list.iter().map(|guess| guess.to_string()).collect(),
+                        )
+                    })
                     .collect(),
                 strict: true,
                 ..Words::default()
@@ -836,10 +927,18 @@ pub mod fake {
             vec!["en".to_string(), "fr".to_string()]
         }
 
-        fn next_misspelling(&self, text: &str, from: usize, _language: &str) -> Option<Range<usize>> {
+        fn next_misspelling(
+            &self,
+            text: &str,
+            from: usize,
+            _language: &str,
+        ) -> Option<Range<usize>> {
             let mut start = None;
             let from = from.min(text.len());
-            let ends = text[from..].char_indices().map(|(at, ch)| (from + at, Some(ch))).chain([(text.len(), None)]);
+            let ends = text[from..]
+                .char_indices()
+                .map(|(at, ch)| (from + at, Some(ch)))
+                .chain([(text.len(), None)]);
             for (at, ch) in ends {
                 let in_word = ch.is_some_and(|ch| ch.is_alphanumeric() || ch == '\'');
                 match (start, in_word) {
@@ -921,11 +1020,22 @@ pub mod fake {
         fn languages(&self) -> Result<Vec<String>, TranslateError> {
             match &self.0 {
                 Some(error) => Err(error.clone()),
-                None => Ok(vec!["de".to_string(), "en".to_string(), "es".to_string(), "fr".to_string(), "it".to_string()]),
+                None => Ok(vec![
+                    "de".to_string(),
+                    "en".to_string(),
+                    "es".to_string(),
+                    "fr".to_string(),
+                    "it".to_string(),
+                ]),
             }
         }
 
-        fn translate(&self, text: &str, from: Option<&str>, to: &str) -> Result<Translation, TranslateError> {
+        fn translate(
+            &self,
+            text: &str,
+            from: Option<&str>,
+            to: &str,
+        ) -> Result<Translation, TranslateError> {
             match &self.0 {
                 Some(error) => Err(error.clone()),
                 None => Ok(Translation {
@@ -944,26 +1054,59 @@ mod tests {
     #[test]
     fn offsets_convert_between_bytes_and_utf16() {
         let text = "é𝄞a";
-        assert_eq!([0, 1, 3, 4].map(|utf16| byte_of_utf16(text, utf16)), [0, 2, 6, 7]);
-        assert_eq!([0, 2, 6, 7].map(|byte| utf16_of_byte(text, byte)), [0, 1, 3, 4]);
+        assert_eq!(
+            [0, 1, 3, 4].map(|utf16| byte_of_utf16(text, utf16)),
+            [0, 2, 6, 7]
+        );
+        assert_eq!(
+            [0, 2, 6, 7].map(|byte| utf16_of_byte(text, byte)),
+            [0, 1, 3, 4]
+        );
         assert_eq!(byte_of_utf16(text, 99), text.len());
     }
 
     #[test]
     fn helper_answers_are_read() {
-        assert_eq!(parse_helper_answer("ok en\nBonjour\nle monde\n"), Ok(("en".to_string(), "Bonjour\nle monde".to_string())));
-        assert_eq!(parse_helper_answer("ok\nde\nfr\n"), Ok((String::new(), "de\nfr".to_string())));
-        assert_eq!(parse_helper_answer("error not-installed\n"), Err(TranslateError::NotInstalled));
-        assert_eq!(parse_helper_answer("error unsupported-system\n"), Err(TranslateError::UnsupportedSystem));
-        assert_eq!(parse_helper_answer("error unsupported-pair en xx\n"), Err(TranslateError::UnsupportedPair));
-        assert_eq!(parse_helper_answer("error unknown-language\n"), Err(TranslateError::UnknownLanguage));
-        assert_eq!(parse_helper_answer("error failed The model is busy\n"), Err(TranslateError::Failed("The model is busy".to_string())));
-        assert_eq!(parse_helper_answer(""), Err(TranslateError::Failed(String::new())));
+        assert_eq!(
+            parse_helper_answer("ok en\nBonjour\nle monde\n"),
+            Ok(("en".to_string(), "Bonjour\nle monde".to_string()))
+        );
+        assert_eq!(
+            parse_helper_answer("ok\nde\nfr\n"),
+            Ok((String::new(), "de\nfr".to_string()))
+        );
+        assert_eq!(
+            parse_helper_answer("error not-installed\n"),
+            Err(TranslateError::NotInstalled)
+        );
+        assert_eq!(
+            parse_helper_answer("error unsupported-system\n"),
+            Err(TranslateError::UnsupportedSystem)
+        );
+        assert_eq!(
+            parse_helper_answer("error unsupported-pair en xx\n"),
+            Err(TranslateError::UnsupportedPair)
+        );
+        assert_eq!(
+            parse_helper_answer("error unknown-language\n"),
+            Err(TranslateError::UnknownLanguage)
+        );
+        assert_eq!(
+            parse_helper_answer("error failed The model is busy\n"),
+            Err(TranslateError::Failed("The model is busy".to_string()))
+        );
+        assert_eq!(
+            parse_helper_answer(""),
+            Err(TranslateError::Failed(String::new()))
+        );
         // No helper: said without running anything.
         let none = HelperTranslator { helper: None };
         assert!(!none.available());
         assert_eq!(none.languages(), Err(TranslateError::NoHelper));
-        assert_eq!(none.translate("a", None, "fr"), Err(TranslateError::NoHelper));
+        assert_eq!(
+            none.translate("a", None, "fr"),
+            Err(TranslateError::NoHelper)
+        );
     }
 
     /// An entry shaped like those of the Oxford Thesaurus of English.
@@ -982,24 +1125,50 @@ mod tests {
         assert_eq!(
             senses,
             vec![
-                sense("adjective", "Melissa looked happy & excited", &["contented", "cheerful", "in good spirits", "chirpy"], &["sad"]),
+                sense(
+                    "adjective",
+                    "Melissa looked happy & excited",
+                    &["contented", "cheerful", "in good spirits", "chirpy"],
+                    &["sad"]
+                ),
                 sense("adjective", "", &["willing", "glad"], &[]),
                 sense("noun", "", &["joy"], &[]),
             ]
         );
         // Anything else has no meanings.
-        assert_eq!(parse_thesaurus_entry("<html><body><p>nothing</p></body></html>").1, Vec::new());
+        assert_eq!(
+            parse_thesaurus_entry("<html><body><p>nothing</p></body></html>").1,
+            Vec::new()
+        );
         assert_eq!(parse_thesaurus_entry("").1, Vec::new());
-        assert_eq!(parse_thesaurus_entry("<span class=\"syn\">cut off").1, Vec::new());
+        assert_eq!(
+            parse_thesaurus_entry("<span class=\"syn\">cut off").1,
+            Vec::new()
+        );
     }
 
     #[test]
     fn thesauruses_are_told_from_dictionaries() {
-        assert!(is_thesaurus("com.apple.dictionary.OTE", "Oxford Thesaurus of English"));
-        assert!(is_thesaurus("com.apple.dictionary.OAWT", "Oxford American Writer’s Thesaurus"));
-        assert!(is_thesaurus("com.apple.dictionary.zh_CN.thes", "现代汉语同义词典"));
-        assert!(!is_thesaurus("com.apple.dictionary.NOAD", "New Oxford American Dictionary"));
-        assert!(!is_thesaurus("com.apple.dictionary.fr.Multi", "Multidictionnaire de la langue française"));
+        assert!(is_thesaurus(
+            "com.apple.dictionary.OTE",
+            "Oxford Thesaurus of English"
+        ));
+        assert!(is_thesaurus(
+            "com.apple.dictionary.OAWT",
+            "Oxford American Writer’s Thesaurus"
+        ));
+        assert!(is_thesaurus(
+            "com.apple.dictionary.zh_CN.thes",
+            "现代汉语同义词典"
+        ));
+        assert!(!is_thesaurus(
+            "com.apple.dictionary.NOAD",
+            "New Oxford American Dictionary"
+        ));
+        assert!(!is_thesaurus(
+            "com.apple.dictionary.fr.Multi",
+            "Multidictionnaire de la langue française"
+        ));
     }
 
     #[test]
@@ -1012,7 +1181,10 @@ mod tests {
         checker.ignore("catt");
         assert_eq!(checker.next_misspelling(text, 0, "en"), None);
         // One that knows nothing in particular accepts everything.
-        assert_eq!(fake::Words::default().next_misspelling("zzzz", 0, "en"), None);
+        assert_eq!(
+            fake::Words::default().next_misspelling("zzzz", 0, "en"),
+            None
+        );
     }
 
     // ---- the real system. These call macOS; each is skipped, saying so,
@@ -1029,28 +1201,45 @@ mod tests {
         };
         let text = "This is a tset of speling.";
         let Some(first) = checker.next_misspelling(text, 0, english) else {
-            eprintln!("skipped: the system checker found nothing (no spelling service in this session)");
+            eprintln!(
+                "skipped: the system checker found nothing (no spelling service in this session)"
+            );
             return;
         };
         assert_eq!(&text[first.clone()], "tset");
-        assert!(checker.guesses(text, first.clone(), english).iter().any(|guess| guess == "test"));
-        let second = checker.next_misspelling(text, first.end, english).expect("a second word");
+        assert!(
+            checker
+                .guesses(text, first.clone(), english)
+                .iter()
+                .any(|guess| guess == "test")
+        );
+        let second = checker
+            .next_misspelling(text, first.end, english)
+            .expect("a second word");
         assert_eq!(&text[second.clone()], "speling");
         assert_eq!(checker.next_misspelling(text, second.end, english), None);
         // Ignored words are passed over, until the checker goes.
         checker.ignore("tset");
         assert_eq!(checker.next_misspelling(text, 0, english), Some(second));
         checker.unignore("tset");
-        assert_eq!(checker.next_misspelling(text, 0, english), Some(first.clone()));
+        assert_eq!(
+            checker.next_misspelling(text, 0, english),
+            Some(first.clone())
+        );
         checker.ignore("tset");
         drop(checker);
         let fresh = mac::SystemSpellChecker::new();
         assert_eq!(fresh.next_misspelling(text, 0, english), Some(first));
         // Offsets are bytes, whatever comes before the word.
         let accented = "Café 𝄞 speling";
-        let found = fresh.next_misspelling(accented, 0, english).map(|range| &accented[range]);
+        let found = fresh
+            .next_misspelling(accented, 0, english)
+            .map(|range| &accented[range]);
         assert_eq!(found, Some("speling"));
-        assert!(mac::language_name("en_GB", "fr").is_some_and(|name| name.to_lowercase().contains("anglais")));
+        assert!(
+            mac::language_name("en_GB", "fr")
+                .is_some_and(|name| name.to_lowercase().contains("anglais"))
+        );
     }
 
     #[cfg(target_os = "macos")]
@@ -1063,7 +1252,10 @@ mod tests {
             assert_eq!(thesaurus.lookup("happy"), Synonyms::NoThesaurus);
             return;
         }
-        if !sources.iter().any(|name| name.contains("English") || name.contains("American")) {
+        if !sources
+            .iter()
+            .any(|name| name.contains("English") || name.contains("American"))
+        {
             eprintln!("skipped: no English thesaurus among {sources:?}");
             return;
         }
@@ -1071,23 +1263,41 @@ mod tests {
             panic!("no entry for \"happy\" in {sources:?}");
         };
         assert_eq!(headword, "happy");
-        assert!(senses[0].part_of_speech.starts_with("adj"), "{:?}", senses[0]);
-        assert!(senses.iter().any(|sense| sense.synonyms.iter().any(|word| word == "cheerful")));
-        assert!(senses.iter().any(|sense| sense.antonyms.iter().any(|word| word == "sad")));
+        assert!(
+            senses[0].part_of_speech.starts_with("adj"),
+            "{:?}",
+            senses[0]
+        );
+        assert!(
+            senses
+                .iter()
+                .any(|sense| sense.synonyms.iter().any(|word| word == "cheerful"))
+        );
+        assert!(
+            senses
+                .iter()
+                .any(|sense| sense.antonyms.iter().any(|word| word == "sad"))
+        );
         assert_eq!(thesaurus.lookup("zzzqxv"), Synonyms::NotFound);
     }
 
     /// The helper, when `scripts/build_translate_helper.sh` built it for
     /// this profile.
     fn built_helper() -> Option<HelperTranslator> {
-        let dir = std::env::current_exe().ok()?.parent()?.parent()?.to_path_buf();
+        let dir = std::env::current_exe()
+            .ok()?
+            .parent()?
+            .parent()?
+            .to_path_buf();
         Some(HelperTranslator::at(dir.join(HELPER_NAME))).filter(HelperTranslator::available)
     }
 
     #[test]
     fn the_system_translator_translates() {
         let Some(translator) = built_helper() else {
-            eprintln!("skipped: the translation helper is not built (scripts/build_translate_helper.sh)");
+            eprintln!(
+                "skipped: the translation helper is not built (scripts/build_translate_helper.sh)"
+            );
             return;
         };
         let languages = match translator.languages() {
@@ -1097,21 +1307,34 @@ mod tests {
                 return;
             }
         };
-        assert!(languages.iter().any(|language| language == "fr"), "{languages:?}");
+        assert!(
+            languages.iter().any(|language| language == "fr"),
+            "{languages:?}"
+        );
         match translator.translate("Good morning", Some("en"), "fr") {
             Ok(translation) => {
                 assert_eq!(translation.source, "en");
-                assert!(translation.text.to_lowercase().contains("bonjour"), "{translation:?}");
+                assert!(
+                    translation.text.to_lowercase().contains("bonjour"),
+                    "{translation:?}"
+                );
             }
-            Err(TranslateError::NotInstalled) => eprintln!("skipped: English and French are not downloaded on this Mac"),
+            Err(TranslateError::NotInstalled) => {
+                eprintln!("skipped: English and French are not downloaded on this Mac")
+            }
             Err(error) => panic!("{error:?}"),
         }
         // The language is found when none is given.
         match translator.translate("Où est la gare ?", None, "en") {
             Ok(translation) => assert_eq!(translation.source, "fr"),
-            Err(TranslateError::NotInstalled) => eprintln!("skipped: French and English are not downloaded on this Mac"),
+            Err(TranslateError::NotInstalled) => {
+                eprintln!("skipped: French and English are not downloaded on this Mac")
+            }
             Err(error) => panic!("{error:?}"),
         }
-        assert_eq!(translator.translate("Good morning", Some("en"), "xx-nowhere"), Err(TranslateError::UnsupportedPair));
+        assert_eq!(
+            translator.translate("Good morning", Some("en"), "xx-nowhere"),
+            Err(TranslateError::UnsupportedPair)
+        );
     }
 }

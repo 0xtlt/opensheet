@@ -23,8 +23,8 @@ pub use elements::{AxisId, ChartElement, ChartLayout, Outline};
 pub use scale::{Fit, Scale};
 
 use crate::chart::{
-    Chart, ChartData, ChartKind, ChartTitle, Dash, Family, Fill, LegendPos, Line, MarkerShape, Series, TextFormat,
-    TrendKind,
+    Chart, ChartData, ChartKind, ChartTitle, Dash, Family, Fill, LegendPos, Line, MarkerShape,
+    Series, TextFormat, TrendKind,
 };
 use crate::format;
 use crate::locale::Locale;
@@ -53,7 +53,10 @@ pub struct Ink {
 
 impl Ink {
     pub fn solid(color: Color) -> Ink {
-        Ink { color, opacity: 1.0 }
+        Ink {
+            color,
+            opacity: 1.0,
+        }
     }
 }
 
@@ -155,7 +158,14 @@ pub trait TextMeasure {
     /// The same for text in italics or in a font of its own (`family`;
     /// `None` = the font of the chart). Measurers that know one font only
     /// answer as `width` does.
-    fn width_styled(&self, text: &str, size: f32, bold: bool, italic: bool, family: Option<&str>) -> f32 {
+    fn width_styled(
+        &self,
+        text: &str,
+        size: f32,
+        bold: bool,
+        italic: bool,
+        family: Option<&str>,
+    ) -> f32 {
         let _ = (italic, family);
         self.width(text, size, bold)
     }
@@ -182,7 +192,14 @@ impl Default for Labels<'static> {
         Labels {
             placeholder_title: "Chart Title",
             series_prefix: "Series",
-            trend_names: ["Linear", "Expon.", "Log.", "Poly.", "Power", "per. Mov. Avg."],
+            trend_names: [
+                "Linear",
+                "Expon.",
+                "Log.",
+                "Poly.",
+                "Power",
+                "per. Mov. Avg.",
+            ],
             unit_names: ["Hundreds", "Thousands", "Millions", "Billions", "Trillions"],
         }
     }
@@ -304,7 +321,14 @@ pub(crate) struct Painter<'a> {
 
 /// Points of a circle, for shapes that are clipped or mixed with straight
 /// edges; whole discs are drawn with Bézier arcs instead.
-pub(crate) fn arc_points(cx: f32, cy: f32, rx: f32, ry: f32, from: f32, to: f32) -> Vec<(f32, f32)> {
+pub(crate) fn arc_points(
+    cx: f32,
+    cy: f32,
+    rx: f32,
+    ry: f32,
+    from: f32,
+    to: f32,
+) -> Vec<(f32, f32)> {
     let steps = (((to - from).abs() / 0.04).ceil() as usize).max(2);
     (0..=steps)
         .map(|k| {
@@ -316,7 +340,15 @@ pub(crate) fn arc_points(cx: f32, cy: f32, rx: f32, ry: f32, from: f32, to: f32)
 
 /// Bézier segments drawing the arc of an ellipse from angle `from` to
 /// `to` (radians, clockwise on screen), starting from the current point.
-pub(crate) fn arc_segs(segs: &mut Vec<Seg>, cx: f32, cy: f32, rx: f32, ry: f32, from: f32, to: f32) {
+pub(crate) fn arc_segs(
+    segs: &mut Vec<Seg>,
+    cx: f32,
+    cy: f32,
+    rx: f32,
+    ry: f32,
+    from: f32,
+    to: f32,
+) {
     let pieces = (((to - from).abs() / std::f32::consts::FRAC_PI_2).ceil() as usize).max(1);
     let step = (to - from) / pieces as f32;
     // Distance of the control points for an arc of `step` radians.
@@ -341,7 +373,11 @@ pub(crate) fn arc_segs(segs: &mut Vec<Seg>, cx: f32, cy: f32, rx: f32, ry: f32, 
 pub(crate) fn shade(color: Color, amount: f32) -> Color {
     let ch = |v: u8| -> u32 {
         let v = v as f32;
-        let out = if amount >= 0.0 { v + (255.0 - v) * amount } else { v * (1.0 + amount) };
+        let out = if amount >= 0.0 {
+            v + (255.0 - v) * amount
+        } else {
+            v * (1.0 + amount)
+        };
         out.round().clamp(0.0, 255.0) as u32
     };
     Color((ch(color.r()) << 16) | (ch(color.g()) << 8) | ch(color.b()))
@@ -359,7 +395,9 @@ pub(crate) fn fmt_value(v: f64, code: &str, locale: &Locale) -> String {
 pub(crate) fn clip_polygon(points: &[(f32, f32)], rect: (f32, f32, f32, f32)) -> Vec<(f32, f32)> {
     let (x0, y0, x1, y1) = rect;
     // One pass per edge of the rectangle (Sutherland–Hodgman).
-    let pass = |input: Vec<(f32, f32)>, inside: &dyn Fn((f32, f32)) -> bool, cut: &dyn Fn((f32, f32), (f32, f32)) -> (f32, f32)| {
+    let pass = |input: Vec<(f32, f32)>,
+                inside: &dyn Fn((f32, f32)) -> bool,
+                cut: &dyn Fn((f32, f32), (f32, f32)) -> (f32, f32)| {
         let mut out = Vec::with_capacity(input.len() + 4);
         for i in 0..input.len() {
             let a = input[i];
@@ -376,8 +414,12 @@ pub(crate) fn clip_polygon(points: &[(f32, f32)], rect: (f32, f32, f32, f32)) ->
         }
         out
     };
-    let at_x = |x: f32| move |a: (f32, f32), b: (f32, f32)| (x, a.1 + (b.1 - a.1) * (x - a.0) / (b.0 - a.0));
-    let at_y = |y: f32| move |a: (f32, f32), b: (f32, f32)| (a.0 + (b.0 - a.0) * (y - a.1) / (b.1 - a.1), y);
+    let at_x = |x: f32| {
+        move |a: (f32, f32), b: (f32, f32)| (x, a.1 + (b.1 - a.1) * (x - a.0) / (b.0 - a.0))
+    };
+    let at_y = |y: f32| {
+        move |a: (f32, f32), b: (f32, f32)| (a.0 + (b.0 - a.0) * (y - a.1) / (b.1 - a.1), y)
+    };
     let mut pts = points.to_vec();
     pts = pass(pts, &|p| p.0 >= x0, &at_x(x0));
     pts = pass(pts, &|p| p.0 <= x1, &at_x(x1));
@@ -386,7 +428,10 @@ pub(crate) fn clip_polygon(points: &[(f32, f32)], rect: (f32, f32, f32, f32)) ->
 }
 
 /// The pieces of a polyline that lie inside a rectangle.
-pub(crate) fn clip_polyline(points: &[(f32, f32)], rect: (f32, f32, f32, f32)) -> Vec<Vec<(f32, f32)>> {
+pub(crate) fn clip_polyline(
+    points: &[(f32, f32)],
+    rect: (f32, f32, f32, f32),
+) -> Vec<Vec<(f32, f32)>> {
     let (x0, y0, x1, y1) = rect;
     let mut out: Vec<Vec<(f32, f32)>> = Vec::new();
     let mut run: Vec<(f32, f32)> = Vec::new();
@@ -396,7 +441,12 @@ pub(crate) fn clip_polyline(points: &[(f32, f32)], rect: (f32, f32, f32, f32)) -
         let (dx, dy) = (b.0 - a.0, b.1 - a.1);
         let (mut t0, mut t1) = (0.0f32, 1.0f32);
         let mut inside = true;
-        for (p, q) in [(-dx, a.0 - x0), (dx, x1 - a.0), (-dy, a.1 - y0), (dy, y1 - a.1)] {
+        for (p, q) in [
+            (-dx, a.0 - x0),
+            (dx, x1 - a.0),
+            (-dy, a.1 - y0),
+            (dy, y1 - a.1),
+        ] {
             if p == 0.0 {
                 inside &= q >= 0.0;
             } else if p < 0.0 {
@@ -449,7 +499,10 @@ pub(crate) fn smooth_points(points: &[(f32, f32)]) -> Vec<(f32, f32)> {
             let t = k as f32 / STEPS as f32;
             let (t2, t3) = (t * t, t * t * t);
             let blend = |a: f32, b: f32, c: f32, d: f32| {
-                0.5 * (2.0 * b + (c - a) * t + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2 + (3.0 * b - a - 3.0 * c + d) * t3)
+                0.5 * (2.0 * b
+                    + (c - a) * t
+                    + (2.0 * a - 5.0 * b + 4.0 * c - d) * t2
+                    + (3.0 * b - a - 3.0 * c + d) * t3)
             };
             out.push((blend(p0.0, p1.0, p2.0, p3.0), blend(p0.1, p1.1, p2.1, p3.1)));
         }
@@ -479,12 +532,26 @@ impl Painter<'_> {
 
     /// The font of the data labels of a series.
     pub fn label_face(&self, series: usize) -> Face {
-        let format = self.chart.series.get(series).and_then(|s| self.chart.labels_for(s)).map(|l| &l.text);
-        self.face(format.unwrap_or(&self.chart.label_options.text), LABEL_POINTS)
+        let format = self
+            .chart
+            .series
+            .get(series)
+            .and_then(|s| self.chart.labels_for(s))
+            .map(|l| &l.text);
+        self.face(
+            format.unwrap_or(&self.chart.label_options.text),
+            LABEL_POINTS,
+        )
     }
 
     pub fn width_of(&self, text: &str, face: &Face) -> f32 {
-        self.measure.width_styled(text, face.size, face.bold, face.italic, face.family.as_deref())
+        self.measure.width_styled(
+            text,
+            face.size,
+            face.bold,
+            face.italic,
+            face.family.as_deref(),
+        )
     }
 
     /// Text in a font, its top-left corner (or top-centre, top-right, as
@@ -525,17 +592,31 @@ impl Painter<'_> {
     /// The data label of a point: written in the font of the labels of
     /// its series, shifted by as much as it was dragged, and remembered
     /// as the label of that point.
-    pub fn data_label(&mut self, series: usize, point: usize, text: &str, x: f32, top: f32, anchor: TextAnchor) {
+    pub fn data_label(
+        &mut self,
+        series: usize,
+        point: usize,
+        text: &str,
+        x: f32,
+        top: f32,
+        anchor: TextAnchor,
+    ) {
         let face = self.label_face(series);
         let (dx, dy) = self.label_shift(series, point);
         self.tag(ChartElement::DataLabels(series as u32));
-        self.tagger.label(self.out.len(), series as u32, point as u32);
+        self.tagger
+            .label(self.out.len(), series as u32, point as u32);
         self.write(text, x + dx, top + dy, &face, anchor);
     }
 
     /// How far the label of a point was dragged, in pixels.
     pub fn label_shift(&self, series: usize, point: usize) -> (f32, f32) {
-        match self.chart.series.get(series).and_then(|s| s.label_offset(point)) {
+        match self
+            .chart
+            .series
+            .get(series)
+            .and_then(|s| s.label_offset(point))
+        {
             Some((dx, dy)) => (dx as f32 * self.size.0, dy as f32 * self.size.1),
             None => (0.0, 0.0),
         }
@@ -543,7 +624,11 @@ impl Painter<'_> {
 
     /// The rectangle a manual layout describes, in pixels: (x0, y0, x1,
     /// y1), the size being `natural` where the layout leaves it alone.
-    pub fn manual_rect(&self, m: &crate::chart::ManualLayout, natural: (f32, f32)) -> (f32, f32, f32, f32) {
+    pub fn manual_rect(
+        &self,
+        m: &crate::chart::ManualLayout,
+        natural: (f32, f32),
+    ) -> (f32, f32, f32, f32) {
         let (w, h) = self.size;
         let x = m.x as f32 * w;
         let y = m.y as f32 * h;
@@ -583,7 +668,15 @@ impl Painter<'_> {
         self.rect_styled(x0, y0, x1, y1, Some(Ink::solid(color)), None);
     }
 
-    pub fn rect_styled(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, fill: Option<Ink>, stroke: Option<Stroke>) {
+    pub fn rect_styled(
+        &mut self,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        fill: Option<Ink>,
+        stroke: Option<Stroke>,
+    ) {
         if fill.is_none() && stroke.is_none() {
             return;
         }
@@ -601,7 +694,14 @@ impl Painter<'_> {
     /// it. There is no blur to draw with: a soft edge is made of a few
     /// rectangles of growing size, each letting most of what is under
     /// it show.
-    pub fn rect_effects(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, effects: &crate::drawing::Effects) {
+    pub fn rect_effects(
+        &mut self,
+        x0: f32,
+        y0: f32,
+        x1: f32,
+        y1: f32,
+        effects: &crate::drawing::Effects,
+    ) {
         const LAYERS: usize = 6;
         let points = 96.0 / 72.0 * self.z;
         let (x0, x1, y0, y1) = (x0.min(x1), x0.max(x1), y0.min(y1), y0.max(y1));
@@ -626,7 +726,13 @@ impl Painter<'_> {
                     color: glow.color,
                     opacity: opacity.min(1.0),
                 };
-                layer(&mut self.out, reach * i as f32 / LAYERS as f32, 0.0, 0.0, ink);
+                layer(
+                    &mut self.out,
+                    reach * i as f32 / LAYERS as f32,
+                    0.0,
+                    0.0,
+                    ink,
+                );
             }
         }
         if let Some(shadow) = &effects.shadow {
@@ -639,18 +745,34 @@ impl Painter<'_> {
             let layers = if blur > 0.0 { LAYERS } else { 1 };
             for i in (0..layers).rev() {
                 // From the blur outside the edge to as much inside it.
-                let spread = if layers > 1 { blur * (2.0 * i as f32 / (layers - 1) as f32 - 1.0) / 2.0 } else { 0.0 };
+                let spread = if layers > 1 {
+                    blur * (2.0 * i as f32 / (layers - 1) as f32 - 1.0) / 2.0
+                } else {
+                    0.0
+                };
                 let ink = Ink {
                     color: shadow.color,
                     opacity: opacity / layers as f32,
                 };
-                layer(&mut self.out, larger + spread, distance * cos, distance * sin, ink);
+                layer(
+                    &mut self.out,
+                    larger + spread,
+                    distance * cos,
+                    distance * sin,
+                    ink,
+                );
             }
         }
     }
 
     pub fn line(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, stroke: Stroke) {
-        self.out.push(Prim::Line { x0, y0, x1, y1, stroke });
+        self.out.push(Prim::Line {
+            x0,
+            y0,
+            x1,
+            y1,
+            stroke,
+        });
     }
 
     /// A one-pixel horizontal rule whose top edge is `y`.
@@ -688,7 +810,15 @@ impl Painter<'_> {
         });
     }
 
-    pub fn ellipse(&mut self, cx: f32, cy: f32, rx: f32, ry: f32, fill: Option<Ink>, stroke: Option<Stroke>) {
+    pub fn ellipse(
+        &mut self,
+        cx: f32,
+        cy: f32,
+        rx: f32,
+        ry: f32,
+        fill: Option<Ink>,
+        stroke: Option<Stroke>,
+    ) {
         let mut segs = vec![Seg::Move(cx + rx, cy)];
         arc_segs(&mut segs, cx, cy, rx, ry, 0.0, std::f32::consts::TAU);
         segs.push(Seg::Close);
@@ -701,7 +831,15 @@ impl Painter<'_> {
 
     /// Text with its top-left corner (or top-centre, top-right, as
     /// `anchor` says) at (x, top).
-    pub fn text(&mut self, text: &str, x: f32, top: f32, size: f32, color: Color, anchor: TextAnchor) {
+    pub fn text(
+        &mut self,
+        text: &str,
+        x: f32,
+        top: f32,
+        size: f32,
+        color: Color,
+        anchor: TextAnchor,
+    ) {
         self.out.push(Prim::Text(TextRun {
             text: text.replace(['\n', '\r'], " "),
             x,
@@ -729,10 +867,18 @@ impl Painter<'_> {
             MarkerShape::Square => self.rect_styled(cx - r, cy - r, cx + r, cy + r, fill, outline),
             MarkerShape::Diamond => {
                 let d = r * 1.2;
-                self.polygon(&[(cx, cy - d), (cx + d, cy), (cx, cy + d), (cx - d, cy)], fill, outline);
+                self.polygon(
+                    &[(cx, cy - d), (cx + d, cy), (cx, cy + d), (cx - d, cy)],
+                    fill,
+                    outline,
+                );
             }
             MarkerShape::Triangle => {
-                self.polygon(&[(cx, cy - r), (cx + r, cy + r), (cx - r, cy + r)], fill, outline);
+                self.polygon(
+                    &[(cx, cy - r), (cx + r, cy + r), (cx - r, cy + r)],
+                    fill,
+                    outline,
+                );
             }
             MarkerShape::X => {
                 self.line(cx - r, cy - r, cx + r, cy + r, stroke);
@@ -748,7 +894,13 @@ impl Painter<'_> {
                 self.line(cx, cy - r, cx, cy + r, stroke);
             }
             MarkerShape::Dash => self.rect(cx - r, cy - r * 0.3, cx + r, cy + r * 0.3, m.fill),
-            MarkerShape::Dot => self.rect(cx - r * 0.5, cy - r * 0.3, cx + r * 0.5, cy + r * 0.3, m.fill),
+            MarkerShape::Dot => self.rect(
+                cx - r * 0.5,
+                cy - r * 0.3,
+                cx + r * 0.5,
+                cy + r * 0.3,
+                m.fill,
+            ),
         }
     }
 
@@ -762,8 +914,17 @@ impl Painter<'_> {
     /// The stroke a `Line` asks for, given what "automatic" means where
     /// it is used: whether there is a line at all, its colour, its width
     /// in points.
-    pub fn stroke(&self, line: &Line, auto_shown: bool, auto_color: Color, auto_width: f32) -> Option<Stroke> {
-        if !line.shown.unwrap_or(auto_shown || line.color.is_some() || line.width.is_some()) {
+    pub fn stroke(
+        &self,
+        line: &Line,
+        auto_shown: bool,
+        auto_color: Color,
+        auto_width: f32,
+    ) -> Option<Stroke> {
+        if !line
+            .shown
+            .unwrap_or(auto_shown || line.color.is_some() || line.width.is_some())
+        {
             return None;
         }
         let width = line.width.unwrap_or(auto_width).clamp(0.0, 100.0) * PT * self.z;
@@ -777,14 +938,26 @@ impl Painter<'_> {
     pub fn look(&self, index: usize) -> Look {
         let series = &self.chart.series[index];
         let kind = self.chart.series_kind(series);
-        let color = self.data.series.get(index).map_or_else(|| self.data.palette_color(index), |s| s.color);
-        let lined = matches!(kind.family(), Family::Line | Family::Scatter | Family::Radar);
+        let color = self
+            .data
+            .series
+            .get(index)
+            .map_or_else(|| self.data.palette_color(index), |s| s.color);
+        let lined = matches!(
+            kind.family(),
+            Family::Line | Family::Scatter | Family::Radar
+        );
         let line = if lined && series.line_shown(kind) {
             // Lines never get thinner than a pixel and a half on screen.
-            self.stroke(&series.line, true, color, kind.default_line_width()).map(|s| Stroke {
-                width: if series.line.width.is_none() { s.width.max(1.5) } else { s.width },
-                ..s
-            })
+            self.stroke(&series.line, true, color, kind.default_line_width())
+                .map(|s| Stroke {
+                    width: if series.line.width.is_none() {
+                        s.width.max(1.5)
+                    } else {
+                        s.width
+                    },
+                    ..s
+                })
         } else {
             None
         };
@@ -793,7 +966,12 @@ impl Painter<'_> {
         } else {
             // Slices are kept apart by a white line.
             let round = kind.is_round();
-            self.stroke(&series.line, round, Color::WHITE, if round { 1.5 } else { 0.75 })
+            self.stroke(
+                &series.line,
+                round,
+                Color::WHITE,
+                if round { 1.5 } else { 0.75 },
+            )
         };
         let marker = series.marker_for(kind);
         let marker = (lined && marker.shape != MarkerShape::None).then(|| MarkerLook {
@@ -826,7 +1004,10 @@ impl Painter<'_> {
         if self.varied() {
             return self.data.palette_color(point);
         }
-        self.data.series.get(series).map_or_else(|| self.data.palette_color(series), |s| s.color)
+        self.data
+            .series
+            .get(series)
+            .map_or_else(|| self.data.palette_color(series), |s| s.color)
     }
 
     pub fn trend_name(&self, series: usize, kind: TrendKind, name: &Option<String>) -> String {
@@ -848,12 +1029,21 @@ impl Painter<'_> {
     /// The stroke of a trendline: the colour of its series, 1.5 pt, round
     /// dots, unless it says otherwise.
     pub fn trend_stroke(&self, series: usize, line: &Line) -> Stroke {
-        let color = self.data.series.get(series).map_or_else(|| self.data.palette_color(series), |s| s.color);
+        let color = self
+            .data
+            .series
+            .get(series)
+            .map_or_else(|| self.data.palette_color(series), |s| s.color);
         let auto = Line {
-            dash: if *line == Line::default() { Dash::RoundDot } else { line.dash },
+            dash: if *line == Line::default() {
+                Dash::RoundDot
+            } else {
+                line.dash
+            },
             ..line.clone()
         };
-        self.stroke(&auto, true, color, 1.5).unwrap_or(Stroke::new(color, 2.0 * self.z))
+        self.stroke(&auto, true, color, 1.5)
+            .unwrap_or(Stroke::new(color, 2.0 * self.z))
     }
 
     /// The entries of the legend, those removed from it left out, each
@@ -864,13 +1054,18 @@ impl Painter<'_> {
         if self.varied() {
             let n = self.data.series.first().map_or(0, |s| s.values.len());
             for i in 0..n {
-                entries.push((self.data.category_name(i), Key::Swatch(self.point_color(0, i))));
+                entries.push((
+                    self.data.category_name(i),
+                    Key::Swatch(self.point_color(0, i)),
+                ));
             }
         } else {
             for i in 0..self.data.series.len().min(chart.series.len()) {
                 let look = self.look(i);
                 let key = match look.kind.family() {
-                    Family::Line | Family::Scatter | Family::Radar if look.kind != ChartKind::RadarFilled => {
+                    Family::Line | Family::Scatter | Family::Radar
+                        if look.kind != ChartKind::RadarFilled =>
+                    {
                         Key::Line(look.line, look.marker)
                     }
                     _ => Key::Swatch(look.color),
@@ -882,7 +1077,10 @@ impl Painter<'_> {
             for (i, s) in chart.series.iter().enumerate().take(self.data.series.len()) {
                 for t in &s.trendlines {
                     let stroke = self.trend_stroke(i, &t.line);
-                    entries.push((self.trend_name(i, t.kind, &t.name), Key::Line(Some(stroke), None)));
+                    entries.push((
+                        self.trend_name(i, t.kind, &t.name),
+                        Key::Line(Some(stroke), None),
+                    ));
                 }
             }
         }
@@ -900,7 +1098,9 @@ impl Painter<'_> {
             && !self.varied()
         {
             let series = chart.series.len().min(self.data.series.len()) as u32;
-            let shown = (0..series).filter(|i| !chart.legend_hidden.contains(i)).count();
+            let shown = (0..series)
+                .filter(|i| !chart.legend_hidden.contains(i))
+                .count();
             entries[..shown].reverse();
         }
         entries
@@ -948,11 +1148,17 @@ impl Painter<'_> {
             Fill::None => None,
             Fill::Solid(color) => Some(Ink::solid(color)),
         };
-        let frame = self.stroke(&chart.chart_area.border, true, GRIDLINE, 0.75).map(|s| Stroke {
-            // The automatic frame is a hairline whatever the zoom.
-            width: if chart.chart_area.border.width.is_none() { 1.0 } else { s.width },
-            ..s
-        });
+        let frame = self
+            .stroke(&chart.chart_area.border, true, GRIDLINE, 0.75)
+            .map(|s| Stroke {
+                // The automatic frame is a hairline whatever the zoom.
+                width: if chart.chart_area.border.width.is_none() {
+                    1.0
+                } else {
+                    s.width
+                },
+                ..s
+            });
         self.rect_effects(0.0, 0.0, w, h, &chart.chart_area.effects);
         self.rect_styled(0.0, 0.0, w, h, area_fill, frame);
 
@@ -983,17 +1189,29 @@ impl Painter<'_> {
 
         // Legend: measured now, so that the plot knows the room left, and
         // drawn after the plot when it lies over it.
-        let entries = if chart.legend == LegendPos::None { Vec::new() } else { self.legend_entries() };
+        let entries = if chart.legend == LegendPos::None {
+            Vec::new()
+        } else {
+            self.legend_entries()
+        };
         let legend_face = self.face(&chart.legend_text, LABEL_POINTS);
         let label_h = legend_face.h;
         let mut placed: Vec<(usize, f32, f32)> = Vec::new();
         // A swatch for shapes, a piece of line for lines; next to lines a
         // swatch is as wide as they are, as in Excel's legends.
         let swatch = (7.0 * z).round().max(4.0);
-        let lined = entries.iter().any(|(_, key, _)| matches!(key, Key::Line(..)));
-        let marks: Vec<f32> = entries.iter().map(|_| if lined { 18.0 * z } else { swatch }).collect();
+        let lined = entries
+            .iter()
+            .any(|(_, key, _)| matches!(key, Key::Line(..)));
+        let marks: Vec<f32> = entries
+            .iter()
+            .map(|_| if lined { 18.0 * z } else { swatch })
+            .collect();
         if !entries.is_empty() {
-            let widths: Vec<f32> = entries.iter().map(|(name, ..)| self.width_of(name, &legend_face)).collect();
+            let widths: Vec<f32> = entries
+                .iter()
+                .map(|(name, ..)| self.width_of(name, &legend_face))
+                .collect();
             let entry_gap = 14.0 * z;
             let entry_w = |i: usize| widths[i] + marks[i] + 4.0 * z;
             let reserve = !chart.legend_overlay;
@@ -1006,7 +1224,11 @@ impl Painter<'_> {
                     for i in 0..entries.len() {
                         let ew = entry_w(i);
                         let last = rows.last_mut().expect("at least one row");
-                        let needed = if last.is_empty() { ew } else { row_w + entry_gap + ew };
+                        let needed = if last.is_empty() {
+                            ew
+                        } else {
+                            row_w + entry_gap + ew
+                        };
                         if needed > available && !last.is_empty() {
                             rows.push(vec![i]);
                             row_w = ew;
@@ -1033,8 +1255,8 @@ impl Painter<'_> {
                         y
                     };
                     for row in &rows {
-                        let total: f32 =
-                            row.iter().map(|i| entry_w(*i)).sum::<f32>() + entry_gap * (row.len() as f32 - 1.0);
+                        let total: f32 = row.iter().map(|i| entry_w(*i)).sum::<f32>()
+                            + entry_gap * (row.len() as f32 - 1.0);
                         let mut x = ((w - total) / 2.0).max(pad);
                         for i in row {
                             // An entry wider than the chart is left out.
@@ -1086,18 +1308,32 @@ impl Painter<'_> {
                 let pitch = (label_h * 1.2).round();
                 let upright = !matches!(chart.legend, LegendPos::Bottom | LegendPos::Top);
                 let natural = if upright {
-                    ((0..entries.len()).map(entry_w).fold(0.0f32, f32::max), pitch * (entries.len() as f32 - 1.0) + label_h)
+                    (
+                        (0..entries.len()).map(entry_w).fold(0.0f32, f32::max),
+                        pitch * (entries.len() as f32 - 1.0) + label_h,
+                    )
                 } else {
-                    ((0..entries.len()).map(entry_w).sum::<f32>() + entry_gap * (entries.len() as f32 - 1.0), label_h)
+                    (
+                        (0..entries.len()).map(entry_w).sum::<f32>()
+                            + entry_gap * (entries.len() as f32 - 1.0),
+                        label_h,
+                    )
                 };
-                let frame = self.manual_rect(m, (natural.0 + 2.0 * FRAME_PAD, natural.1 + 2.0 * FRAME_PAD));
+                let frame = self.manual_rect(
+                    m,
+                    (natural.0 + 2.0 * FRAME_PAD, natural.1 + 2.0 * FRAME_PAD),
+                );
                 let inner_w = frame.2 - frame.0 - 2.0 * FRAME_PAD;
                 let mut rows: Vec<Vec<usize>> = vec![Vec::new()];
                 let mut row_w = 0.0f32;
                 for i in 0..entries.len() {
                     let ew = entry_w(i);
                     let last = rows.last_mut().expect("at least one row");
-                    let needed = if last.is_empty() { ew } else { row_w + entry_gap + ew };
+                    let needed = if last.is_empty() {
+                        ew
+                    } else {
+                        row_w + entry_gap + ew
+                    };
                     // Half a pixel of slack: the box may be the very one
                     // the entries were measured for.
                     if needed > inner_w + 0.5 && !last.is_empty() {
@@ -1110,7 +1346,9 @@ impl Painter<'_> {
                 }
                 let step = pitch;
                 let block_h = step * (rows.len() as f32 - 1.0) + label_h;
-                let mut y = frame.1 + FRAME_PAD + ((frame.3 - frame.1 - 2.0 * FRAME_PAD - block_h) / 2.0).max(0.0);
+                let mut y = frame.1
+                    + FRAME_PAD
+                    + ((frame.3 - frame.1 - 2.0 * FRAME_PAD - block_h) / 2.0).max(0.0);
                 for row in &rows {
                     let mut x = frame.0 + FRAME_PAD;
                     for i in row {
@@ -1133,7 +1371,8 @@ impl Painter<'_> {
             .as_ref()
             .filter(|m| m.w.is_some_and(|v| v > 0.0) && m.h.is_some_and(|v| v > 0.0))
             .map(|m| self.manual_rect(m, (0.0, 0.0)));
-        let cartesian = !chart.kind.is_round() && !chart.kind.is_3d() && chart.kind.family() != Family::Radar;
+        let cartesian =
+            !chart.kind.is_round() && !chart.kind.is_3d() && chart.kind.family() != Family::Radar;
         let inner = manual_plot.filter(|_| cartesian && !chart.plot_layout_outer);
         if let Some(outer) = manual_plot.filter(|_| inner.is_none()) {
             (left, top, right, bottom) = outer;
@@ -1158,7 +1397,13 @@ impl Painter<'_> {
             let (name, key, number) = &entries[i];
             self.tag(ChartElement::LegendEntry(*number));
             self.draw_key(key, x, y + label_h / 2.0, marks[i]);
-            self.write(name, x + marks[i] + 4.0 * z, y, &legend_face, TextAnchor::Start);
+            self.write(
+                name,
+                x + marks[i] + 4.0 * z,
+                y,
+                &legend_face,
+                TextAnchor::Start,
+            );
         }
         self.tag(ChartElement::ChartArea);
     }
@@ -1180,7 +1425,9 @@ pub(crate) fn groups(chart: &Chart, data: &ChartData) -> Vec<Group> {
         let kind = chart.series_kind(s);
         // Lines with and without markers are one group: they stack together.
         let same = |g: &Group| {
-            g.kind.family() == kind.family() && g.kind.grouping() == kind.grouping() && g.secondary == chart.on_secondary(s)
+            g.kind.family() == kind.family()
+                && g.kind.grouping() == kind.grouping()
+                && g.secondary == chart.on_secondary(s)
         };
         match out.iter_mut().find(|g| same(g)) {
             Some(group) => group.series.push(i),
@@ -1196,7 +1443,13 @@ pub(crate) fn groups(chart: &Chart, data: &ChartData) -> Vec<Group> {
 
 /// The text of a data label: the parts the options ask for, in Excel's
 /// order, joined by the separator.
-pub(crate) fn label_text(p: &Painter, series: usize, point: usize, percent: Option<f64>, labels: &crate::chart::DataLabels) -> String {
+pub(crate) fn label_text(
+    p: &Painter,
+    series: usize,
+    point: usize,
+    percent: Option<f64>,
+    labels: &crate::chart::DataLabels,
+) -> String {
     let sd = &p.data.series[series];
     let locale = p.options.locale;
     let xy = p.chart.kind.is_xy();
@@ -1222,7 +1475,11 @@ pub(crate) fn label_text(p: &Painter, series: usize, point: usize, percent: Opti
     if labels.percent
         && let Some(share) = percent
     {
-        parts.push(fmt_value(share, labels.number_format.as_deref().unwrap_or("0%"), locale));
+        parts.push(fmt_value(
+            share,
+            labels.number_format.as_deref().unwrap_or("0%"),
+            locale,
+        ));
     }
     if labels.bubble_size
         && let Some(Some(v)) = sd.sizes.get(point)
@@ -1236,7 +1493,11 @@ pub(crate) fn label_text(p: &Painter, series: usize, point: usize, percent: Opti
 /// The series' own formatting of a point, for callers that have the
 /// series at hand.
 pub(crate) fn explosion_of(series: &Series, point: usize) -> u32 {
-    series.point(point).and_then(|p| p.explosion).unwrap_or(series.explosion).min(400)
+    series
+        .point(point)
+        .and_then(|p| p.explosion)
+        .unwrap_or(series.explosion)
+        .min(400)
 }
 
 #[cfg(test)]

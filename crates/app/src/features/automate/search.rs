@@ -35,7 +35,9 @@ pub(crate) fn find_all(text: &str, query: &str, options: Options) -> Vec<Range<u
         let mut end = Some(at);
         for wanted in query.chars() {
             end = match rest.next() {
-                Some((offset, ch)) if same(ch, wanted, options.match_case) => Some(at + offset + ch.len_utf8()),
+                Some((offset, ch)) if same(ch, wanted, options.match_case) => {
+                    Some(at + offset + ch.len_utf8())
+                }
                 _ => None,
             };
             if end.is_none() {
@@ -44,7 +46,8 @@ pub(crate) fn find_all(text: &str, query: &str, options: Options) -> Vec<Range<u
         }
         let whole = |end: usize| {
             !options.whole_word
-                || (!text[..at].chars().next_back().is_some_and(is_word) && !text[end..].chars().next().is_some_and(is_word))
+                || (!text[..at].chars().next_back().is_some_and(is_word)
+                    && !text[end..].chars().next().is_some_and(is_word))
         };
         match end.filter(|end| whole(*end)) {
             Some(end) => {
@@ -59,7 +62,11 @@ pub(crate) fn find_all(text: &str, query: &str, options: Options) -> Vec<Range<u
 
 /// The text with every match replaced: the part that changes (from the
 /// first match to the end of the last) and what it becomes.
-pub(crate) fn replace_all(text: &str, matches: &[Range<usize>], replacement: &str) -> Option<(Range<usize>, String)> {
+pub(crate) fn replace_all(
+    text: &str,
+    matches: &[Range<usize>],
+    replacement: &str,
+) -> Option<(Range<usize>, String)> {
     let (first, last) = (matches.first()?, matches.last()?);
     let mut out = String::new();
     let mut from = first.start;
@@ -79,9 +86,15 @@ pub(crate) fn next_match(matches: &[Range<usize>], caret: usize, forward: bool) 
         return None;
     }
     Some(if forward {
-        matches.iter().position(|range| range.start >= caret).unwrap_or(0)
+        matches
+            .iter()
+            .position(|range| range.start >= caret)
+            .unwrap_or(0)
     } else {
-        matches.iter().rposition(|range| range.end <= caret).unwrap_or(matches.len() - 1)
+        matches
+            .iter()
+            .rposition(|range| range.end <= caret)
+            .unwrap_or(matches.len() - 1)
     })
 }
 
@@ -99,14 +112,17 @@ fn code_mask(text: &str) -> Vec<bool> {
                 }
             }
             b'/' if bytes.get(i + 1) == Some(&b'*') => {
-                let end = text[i + 2..].find("*/").map_or(bytes.len(), |at| i + 2 + at + 2);
+                let end = text[i + 2..]
+                    .find("*/")
+                    .map_or(bytes.len(), |at| i + 2 + at + 2);
                 mask[i..end].fill(false);
                 i = end;
             }
             quote @ (b'"' | b'\'' | b'`') => {
                 mask[i] = false;
                 i += 1;
-                while i < bytes.len() && bytes[i] != quote && !(bytes[i] == b'\n' && quote != b'`') {
+                while i < bytes.len() && bytes[i] != quote && !(bytes[i] == b'\n' && quote != b'`')
+                {
                     mask[i] = false;
                     if bytes[i] == b'\\' && i + 1 < bytes.len() {
                         mask[i + 1] = false;
@@ -131,8 +147,14 @@ fn code_mask(text: &str) -> Vec<bool> {
 pub(crate) fn bracket_pair(text: &str, caret: usize) -> Option<(usize, usize)> {
     let bytes = text.as_bytes();
     let code = code_mask(text);
-    let bracket = |at: usize| code.get(at).copied().unwrap_or(false) && matches!(bytes[at], b'(' | b')' | b'[' | b']' | b'{' | b'}');
-    let at = caret.checked_sub(1).filter(|at| bracket(*at)).or(Some(caret).filter(|at| bracket(*at)))?;
+    let bracket = |at: usize| {
+        code.get(at).copied().unwrap_or(false)
+            && matches!(bytes[at], b'(' | b')' | b'[' | b']' | b'{' | b'}')
+    };
+    let at = caret
+        .checked_sub(1)
+        .filter(|at| bracket(*at))
+        .or(Some(caret).filter(|at| bracket(*at)))?;
     let (open, close, forward) = match bytes[at] {
         b'(' => (b'(', b')', true),
         b'[' => (b'[', b']', true),
@@ -142,12 +164,20 @@ pub(crate) fn bracket_pair(text: &str, caret: usize) -> Option<(usize, usize)> {
         _ => (b'{', b'}', false),
     };
     let mut depth = 0usize;
-    let mut places: Box<dyn Iterator<Item = usize>> = if forward { Box::new(at..bytes.len()) } else { Box::new((0..=at).rev()) };
+    let mut places: Box<dyn Iterator<Item = usize>> = if forward {
+        Box::new(at..bytes.len())
+    } else {
+        Box::new((0..=at).rev())
+    };
     places.find_map(|place| {
         if !code[place] {
             return None;
         }
-        let (deeper, shallower) = if forward { (open, close) } else { (close, open) };
+        let (deeper, shallower) = if forward {
+            (open, close)
+        } else {
+            (close, open)
+        };
         if bytes[place] == deeper {
             depth += 1;
         } else if bytes[place] == shallower {
@@ -165,13 +195,23 @@ mod tests {
     use super::*;
 
     fn found(text: &str, query: &str, match_case: bool, whole_word: bool) -> Vec<Range<usize>> {
-        find_all(text, query, Options { match_case, whole_word })
+        find_all(
+            text,
+            query,
+            Options {
+                match_case,
+                whole_word,
+            },
+        )
     }
 
     #[test]
     fn words_are_found_with_and_without_case_and_as_whole_words() {
         let text = "let range = sheet.getRange(\"A1\");\nRANGE.range";
-        assert_eq!(found(text, "range", false, false), [4..9, 21..26, 34..39, 40..45]);
+        assert_eq!(
+            found(text, "range", false, false),
+            [4..9, 21..26, 34..39, 40..45]
+        );
         assert_eq!(found(text, "range", true, false), [4..9, 40..45]);
         assert_eq!(found(text, "range", false, true), [4..9, 34..39, 40..45]);
         assert!(found(text, "Range", true, true).is_empty());
@@ -198,7 +238,10 @@ mod tests {
     fn everything_is_replaced_in_one_change() {
         let text = "a cat, a Cat, a dog";
         let matches = found(text, "cat", false, false);
-        assert_eq!(replace_all(text, &matches, "bird"), Some((2..12, "bird, a bird".to_string())));
+        assert_eq!(
+            replace_all(text, &matches, "bird"),
+            Some((2..12, "bird, a bird".to_string()))
+        );
         assert_eq!(replace_all(text, &[], "bird"), None);
     }
 

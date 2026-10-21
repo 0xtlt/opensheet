@@ -26,8 +26,8 @@ mod tabs;
 mod ui_tests;
 
 use super::{
-    Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuSection, MenuTarget, ObjectInfo, ObjectVerb, Painter,
-    Placement, ZMove, Zone, ZoneEvent, ZoneResponse, object_id, pivot,
+    Command, ContextMenu, ContextTab, Cx, Feature, Intent, MenuSection, MenuTarget, ObjectInfo,
+    ObjectVerb, Painter, Placement, ZMove, Zone, ZoneEvent, ZoneResponse, object_id, pivot,
 };
 use crate::app::{ExcelApp, MenuEntry, Popup, PopupKind};
 use crate::i18n::t;
@@ -83,7 +83,8 @@ impl Command for Cmd {
             Cmd::InsertTimeline | Cmd::FilterConnections => in_pivot,
             Cmd::ReportConnections => {
                 selected_timeline(app).is_some()
-                    || selected_slicer(app).is_some_and(|s| matches!(s.source, SlicerSource::Pivot { .. }))
+                    || selected_slicer(app)
+                        .is_some_and(|s| matches!(s.source, SlicerSource::Pivot { .. }))
             }
             Cmd::SlicerSettings | Cmd::MultiSelect => selected_slicer(app).is_some(),
             Cmd::Styles => selected_slicer(app).is_some() || selected_timeline(app).is_some(),
@@ -125,12 +126,18 @@ impl Command for Cmd {
                     cx.notify();
                 }
             }
-            Cmd::ShowHeader => edit_timeline(app, self.label(), cx, |t| t.show_header = !t.show_header),
-            Cmd::ShowScrollbar => edit_timeline(app, self.label(), cx, |t| t.show_scrollbar = !t.show_scrollbar),
-            Cmd::ShowSelectionLabel => {
-                edit_timeline(app, self.label(), cx, |t| t.show_selection_label = !t.show_selection_label)
+            Cmd::ShowHeader => {
+                edit_timeline(app, self.label(), cx, |t| t.show_header = !t.show_header)
             }
-            Cmd::ShowTimeLevel => edit_timeline(app, self.label(), cx, |t| t.show_time_level = !t.show_time_level),
+            Cmd::ShowScrollbar => edit_timeline(app, self.label(), cx, |t| {
+                t.show_scrollbar = !t.show_scrollbar
+            }),
+            Cmd::ShowSelectionLabel => edit_timeline(app, self.label(), cx, |t| {
+                t.show_selection_label = !t.show_selection_label
+            }),
+            Cmd::ShowTimeLevel => edit_timeline(app, self.label(), cx, |t| {
+                t.show_time_level = !t.show_time_level
+            }),
         }
     }
 }
@@ -141,7 +148,11 @@ impl Command for Cmd {
 #[derive(Clone, Debug, PartialEq)]
 enum Press {
     /// On a button of a slicer: the item pressed, and how.
-    Buttons { slicer: u32, from: usize, pick: Pick },
+    Buttons {
+        slicer: u32,
+        from: usize,
+        pick: Pick,
+    },
     /// On the thumb of a slicer's scroll bar: where, and the first row
     /// shown then.
     Thumb { slicer: u32, y: f32, row: u32 },
@@ -202,18 +213,29 @@ pub(super) struct TimelineZone {
 
 /// The selected slicer of the current sheet.
 pub(crate) fn selected_slicer(app: &ExcelApp) -> Option<&Slicer> {
-    let id = app.object_sel.filter(|id| id.owner == super::index_of(&Slicers) && id.id & TIMELINE == 0)?;
-    app.wb.sheets[app.sheet].slicers.iter().find(|s| s.id == id.id)
+    let id = app
+        .object_sel
+        .filter(|id| id.owner == super::index_of(&Slicers) && id.id & TIMELINE == 0)?;
+    app.wb.sheets[app.sheet]
+        .slicers
+        .iter()
+        .find(|s| s.id == id.id)
 }
 
 /// The selected timeline of the current sheet.
 pub(crate) fn selected_timeline(app: &ExcelApp) -> Option<&Timeline> {
-    let id = app.object_sel.filter(|id| id.owner == super::index_of(&Slicers) && id.id & TIMELINE != 0)?;
-    app.wb.sheets[app.sheet].timelines.iter().find(|t| t.id == id.id & !TIMELINE)
+    let id = app
+        .object_sel
+        .filter(|id| id.owner == super::index_of(&Slicers) && id.id & TIMELINE != 0)?;
+    app.wb.sheets[app.sheet]
+        .timelines
+        .iter()
+        .find(|t| t.id == id.id & !TIMELINE)
 }
 
 fn multi_select(app: &ExcelApp, id: u32) -> bool {
-    app.ext::<SlicerUi>().is_some_and(|ui| ui.multi.contains(&id))
+    app.ext::<SlicerUi>()
+        .is_some_and(|ui| ui.multi.contains(&id))
 }
 
 /// The buttons of a slicer, worked out once per state of the workbook.
@@ -228,7 +250,9 @@ fn items_of(app: &ExcelApp, id: u32) -> Rc<Vec<SlicerItem>> {
         return items.clone();
     }
     let items = Rc::new(app.wb.slicer_items(id));
-    ui.items.borrow_mut().insert(id, (generation, items.clone()));
+    ui.items
+        .borrow_mut()
+        .insert(id, (generation, items.clone()));
     items
 }
 
@@ -240,7 +264,12 @@ fn first_row(app: &ExcelApp, slicer: &Slicer) -> u32 {
 }
 
 /// Change the selected slicer, as one undo step.
-pub(crate) fn edit_slicer(app: &mut ExcelApp, label: &str, cx: &mut Cx, f: impl FnOnce(&mut Slicer)) {
+pub(crate) fn edit_slicer(
+    app: &mut ExcelApp,
+    label: &str,
+    cx: &mut Cx,
+    f: impl FnOnce(&mut Slicer),
+) {
     let Some(id) = selected_slicer(app).map(|s| s.id) else {
         return;
     };
@@ -251,11 +280,19 @@ pub(crate) fn edit_slicer(app: &mut ExcelApp, label: &str, cx: &mut Cx, f: impl 
 }
 
 /// Change the selected timeline, as one undo step.
-pub(crate) fn edit_timeline(app: &mut ExcelApp, label: &str, cx: &mut Cx, f: impl FnOnce(&mut Timeline)) {
+pub(crate) fn edit_timeline(
+    app: &mut ExcelApp,
+    label: &str,
+    cx: &mut Cx,
+    f: impl FnOnce(&mut Timeline),
+) {
     let Some(id) = selected_timeline(app).map(|t| t.id) else {
         return;
     };
-    if app.may(Intent::EditObject(Some(object_id(&Slicers, id | TIMELINE))), cx) {
+    if app.may(
+        Intent::EditObject(Some(object_id(&Slicers, id | TIMELINE))),
+        cx,
+    ) {
         app.wb.update_timeline(id, f);
         app.commit(label, cx);
     }
@@ -270,7 +307,13 @@ fn filter_intent(app: &ExcelApp, id: u32) -> Intent {
 }
 
 /// Show exactly these items in what a slicer filters (none: all of them).
-pub(crate) fn select_items(app: &mut ExcelApp, id: u32, selected: Vec<u32>, window: &mut Window, cx: &mut Cx) {
+pub(crate) fn select_items(
+    app: &mut ExcelApp,
+    id: u32,
+    selected: Vec<u32>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if !app.may(filter_intent(app, id), cx) {
         return;
     }
@@ -279,11 +322,19 @@ pub(crate) fn select_items(app: &mut ExcelApp, id: u32, selected: Vec<u32>, wind
     } else {
         t("Slicer Selection", "Sélection de segment")
     };
-    pivot::run_op(app, label, window, cx, move |app, overwrite| app.wb.slicer_select(id, &selected, overwrite));
+    pivot::run_op(app, label, window, cx, move |app, overwrite| {
+        app.wb.slicer_select(id, &selected, overwrite)
+    });
 }
 
 /// Limit the field of a timeline to these days (`None`: all periods).
-pub(crate) fn select_days(app: &mut ExcelApp, id: u32, days: Option<(f64, f64)>, window: &mut Window, cx: &mut Cx) {
+pub(crate) fn select_days(
+    app: &mut ExcelApp,
+    id: u32,
+    days: Option<(f64, f64)>,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     if !app.may(Intent::UsePivotTable, cx) {
         return;
     }
@@ -292,12 +343,17 @@ pub(crate) fn select_days(app: &mut ExcelApp, id: u32, days: Option<(f64, f64)>,
     } else {
         t("Timeline Selection", "Sélection de chronologie")
     };
-    pivot::run_op(app, label, window, cx, move |app, overwrite| app.wb.timeline_select(id, days, overwrite));
+    pivot::run_op(app, label, window, cx, move |app, overwrite| {
+        app.wb.timeline_select(id, days, overwrite)
+    });
 }
 
 /// The level a timeline shows, as one undo step.
 fn set_level(app: &mut ExcelApp, id: u32, level: TimeLevel, cx: &mut Cx) {
-    if app.may(Intent::EditObject(Some(object_id(&Slicers, id | TIMELINE))), cx) {
+    if app.may(
+        Intent::EditObject(Some(object_id(&Slicers, id | TIMELINE))),
+        cx,
+    ) {
         app.wb.update_timeline(id, |t| t.level = level);
         // The band starts over where the selection is.
         app.ext_mut::<SlicerUi>().band_scroll.remove(&id);
@@ -315,7 +371,12 @@ fn cascade(app: &ExcelApp, size: (f32, f32), rank: usize) -> ((u32, u32), (f32, 
 
 /// Put slicers for these fields of a PivotTable (or columns of a table)
 /// on the current sheet, as one undo step.
-pub(crate) fn insert_slicers(app: &mut ExcelApp, source: dialogs::Source, fields: &[usize], cx: &mut Cx) {
+pub(crate) fn insert_slicers(
+    app: &mut ExcelApp,
+    source: dialogs::Source,
+    fields: &[usize],
+    cx: &mut Cx,
+) {
     if fields.is_empty() || !app.may(Intent::EditObject(None), cx) {
         return;
     }
@@ -363,20 +424,33 @@ pub(crate) fn insert_timelines(app: &mut ExcelApp, pivot: u32, fields: &[usize],
 /// The slicer as it was last painted, when it is on screen.
 #[cfg(test)]
 pub(super) fn painted_slicer(app: &ExcelApp, id: u32) -> Option<&SlicerZone> {
-    app.zones.iter().find_map(|zone| zone.payload::<SlicerZone>().filter(|z| z.id == id))
+    app.zones
+        .iter()
+        .find_map(|zone| zone.payload::<SlicerZone>().filter(|z| z.id == id))
 }
 
 #[cfg(test)]
 pub(super) fn painted_timeline(app: &ExcelApp, id: u32) -> Option<&TimelineZone> {
-    app.zones.iter().find_map(|zone| zone.payload::<TimelineZone>().filter(|z| z.id == id))
+    app.zones
+        .iter()
+        .find_map(|zone| zone.payload::<TimelineZone>().filter(|z| z.id == id))
 }
 
 // ------------------------------------------------------------------- presses
 
 /// A press on a slicer. `None`: on nothing of its own (the slicer is then
 /// selected and moved like any object).
-fn press_slicer(app: &mut ExcelApp, hit: &SlicerZone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> Option<ZoneResponse> {
-    let (x, y) = ((ev.x - hit.origin.0) / hit.zoom, (ev.y - hit.origin.1) / hit.zoom);
+fn press_slicer(
+    app: &mut ExcelApp,
+    hit: &SlicerZone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<ZoneResponse> {
+    let (x, y) = (
+        (ev.x - hit.origin.0) / hit.zoom,
+        (ev.y - hit.origin.1) / hit.zoom,
+    );
     let id = hit.id;
     let object = object_id(&Slicers, id);
     if hit.layout.clear.is_some_and(|b| logic::inside(b, x, y)) {
@@ -403,14 +477,20 @@ fn press_slicer(app: &mut ExcelApp, hit: &SlicerZone, ev: &ZoneEvent, window: &m
         // A click beside the thumb turns a page.
         let page = hit.layout.rows_shown.max(1);
         let hidden = hit.layout.rows.saturating_sub(hit.layout.rows_shown);
-        let to = if y < thumb.1 { row.saturating_sub(page) } else { (row + page).min(hidden) };
+        let to = if y < thumb.1 {
+            row.saturating_sub(page)
+        } else {
+            (row + page).min(hidden)
+        };
         app.ext_mut::<SlicerUi>().first_row.insert(id, to);
         return Some(ZoneResponse::Handled);
     }
     let index = hit.layout.button_at(x, y)?;
     app.select_object(Some(object), cx);
     let toggling = ev.modifiers.platform || ev.modifiers.control || multi_select(app, id);
-    let anchor = app.ext::<SlicerUi>().and_then(|ui| ui.last_item.get(&id).copied());
+    let anchor = app
+        .ext::<SlicerUi>()
+        .and_then(|ui| ui.last_item.get(&id).copied());
     let (from, pick) = match (ev.modifiers.shift, anchor) {
         (true, Some(anchor)) => (anchor, Pick::Through(anchor)),
         _ if toggling => (index, Pick::Toggle),
@@ -418,13 +498,27 @@ fn press_slicer(app: &mut ExcelApp, hit: &SlicerZone, ev: &ZoneEvent, window: &m
     };
     let ui = app.ext_mut::<SlicerUi>();
     ui.pending_items = Some((id, logic::picked(&hit.items, index, pick)));
-    ui.press = Some(Press::Buttons { slicer: id, from, pick });
-    ui.last_item.insert(id, if ev.modifiers.shift { from } else { index });
+    ui.press = Some(Press::Buttons {
+        slicer: id,
+        from,
+        pick,
+    });
+    ui.last_item
+        .insert(id, if ev.modifiers.shift { from } else { index });
     Some(ZoneResponse::Capture)
 }
 
-fn press_timeline(app: &mut ExcelApp, hit: &TimelineZone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> Option<ZoneResponse> {
-    let (x, y) = ((ev.x - hit.origin.0) / hit.zoom, (ev.y - hit.origin.1) / hit.zoom);
+fn press_timeline(
+    app: &mut ExcelApp,
+    hit: &TimelineZone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> Option<ZoneResponse> {
+    let (x, y) = (
+        (ev.x - hit.origin.0) / hit.zoom,
+        (ev.y - hit.origin.1) / hit.zoom,
+    );
     let id = hit.id;
     let object = object_id(&Slicers, id | TIMELINE);
     let layout = &hit.layout;
@@ -442,8 +536,10 @@ fn press_timeline(app: &mut ExcelApp, hit: &TimelineZone, ev: &ZoneEvent, window
         let entries: Vec<MenuEntry> = TimeLevel::ALL
             .into_iter()
             .map(|level| {
-                MenuEntry::new(level.label(locale), move |app, _, cx| set_level(app, id, level, cx))
-                    .checked(current == Some(level))
+                MenuEntry::new(level.label(locale), move |app, _, cx| {
+                    set_level(app, id, level, cx)
+                })
+                .checked(current == Some(level))
             })
             .collect();
         app.popup = Some(Popup::new(PopupKind::Menu(entries), ev.position, 150.0));
@@ -466,7 +562,16 @@ fn press_timeline(app: &mut ExcelApp, hit: &TimelineZone, ev: &ZoneEvent, window
         app.ext_mut::<SlicerUi>().band_scroll.insert(id, to);
         return Some(ZoneResponse::Handled);
     }
-    let on_band = logic::inside((layout.band.0, layout.names_y, layout.band.2, layout.bar.1 + 6.0), x, y);
+    let on_band = logic::inside(
+        (
+            layout.band.0,
+            layout.names_y,
+            layout.band.2,
+            layout.bar.1 + 6.0,
+        ),
+        x,
+        y,
+    );
     if !on_band || hit.periods.is_empty() {
         return None;
     }
@@ -519,11 +624,28 @@ impl Feature for Slicers {
         }
     }
 
-    fn render_tab(&self, app: &mut ExcelApp, tab: &'static str, window: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
-        if tab == TIMELINE_TAB { tabs::timeline_tab(app, window, cx) } else { tabs::slicer_tab(app, window, cx) }
+    fn render_tab(
+        &self,
+        app: &mut ExcelApp,
+        tab: &'static str,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
+        if tab == TIMELINE_TAB {
+            tabs::timeline_tab(app, window, cx)
+        } else {
+            tabs::slicer_tab(app, window, cx)
+        }
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         // The other buttons select and move the object and open its menu.
         if ev.button != MouseButton::Left {
             return ZoneResponse::Ignored;
@@ -547,14 +669,28 @@ impl Feature for Slicers {
         handled.unwrap_or(ZoneResponse::Ignored)
     }
 
-    fn zone_drag(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) {
+    fn zone_drag(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) {
         let Some(press) = app.ext::<SlicerUi>().and_then(|ui| ui.press.clone()) else {
             return;
         };
         if let Some(hit) = zone.payload::<SlicerZone>() {
-            let (x, y) = ((ev.x - hit.origin.0) / hit.zoom, (ev.y - hit.origin.1) / hit.zoom);
+            let (x, y) = (
+                (ev.x - hit.origin.0) / hit.zoom,
+                (ev.y - hit.origin.1) / hit.zoom,
+            );
             match press {
-                Press::Buttons { slicer, from, pick: Pick::Through(_) } => {
+                Press::Buttons {
+                    slicer,
+                    from,
+                    pick: Pick::Through(_),
+                } => {
                     // The drag selects from the button pressed to the one
                     // under the pointer; off the buttons it keeps the last.
                     if let Some(index) = hit.layout.button_at(x, y) {
@@ -562,7 +698,11 @@ impl Feature for Slicers {
                         app.ext_mut::<SlicerUi>().pending_items = Some((slicer, selected));
                     }
                 }
-                Press::Thumb { slicer, y: start, row } => {
+                Press::Thumb {
+                    slicer,
+                    y: start,
+                    row,
+                } => {
                     let to = hit.layout.scrolled(row, y - start);
                     app.ext_mut::<SlicerUi>().first_row.insert(slicer, to);
                 }
@@ -573,9 +713,14 @@ impl Feature for Slicers {
             match press {
                 Press::Periods { timeline, from } => {
                     let index = hit.layout.period_at(x, hit.periods.len());
-                    app.ext_mut::<SlicerUi>().pending_span = Some((timeline, from.min(index), from.max(index)));
+                    app.ext_mut::<SlicerUi>().pending_span =
+                        Some((timeline, from.min(index), from.max(index)));
                 }
-                Press::BandThumb { timeline, x: start, scroll } => {
+                Press::BandThumb {
+                    timeline,
+                    x: start,
+                    scroll,
+                } => {
                     let to = hit.layout.scrolled(scroll, x - start);
                     app.ext_mut::<SlicerUi>().band_scroll.insert(timeline, to);
                 }
@@ -585,7 +730,14 @@ impl Feature for Slicers {
         cx.notify();
     }
 
-    fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, _ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+    fn zone_mouse_up(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        _ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) {
         let ui = app.ext_mut::<SlicerUi>();
         ui.press = None;
         let items = ui.pending_items.take();
@@ -593,9 +745,12 @@ impl Feature for Slicers {
         if let Some((id, selected)) = items {
             // Nothing to do when the buttons already show this.
             let now: Vec<u32> = match zone.payload::<SlicerZone>() {
-                Some(hit) if hit.items.iter().any(|i| !i.selected) => {
-                    hit.items.iter().filter(|i| i.selected).map(|i| i.x).collect()
-                }
+                Some(hit) if hit.items.iter().any(|i| !i.selected) => hit
+                    .items
+                    .iter()
+                    .filter(|i| i.selected)
+                    .map(|i| i.x)
+                    .collect(),
                 _ => Vec::new(),
             };
             let same = now.len() == selected.len() && now.iter().all(|x| selected.contains(x));
@@ -612,13 +767,25 @@ impl Feature for Slicers {
         cx.notify();
     }
 
-    fn zone_scroll(&self, app: &mut ExcelApp, zone: &Zone, delta: (f32, f32), _cx: &mut Cx) -> bool {
+    fn zone_scroll(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        delta: (f32, f32),
+        _cx: &mut Cx,
+    ) -> bool {
         if let Some(hit) = zone.payload::<SlicerZone>() {
             if hit.layout.scroll.is_none() {
                 return false;
             }
             let hidden = hit.layout.rows.saturating_sub(hit.layout.rows_shown);
-            let rows = if delta.1 > 0.0 { -1 } else if delta.1 < 0.0 { 1 } else { 0 };
+            let rows = if delta.1 > 0.0 {
+                -1
+            } else if delta.1 < 0.0 {
+                1
+            } else {
+                0
+            };
             let to = (hit.layout.first_row as i64 + rows).clamp(0, hidden as i64) as u32;
             app.ext_mut::<SlicerUi>().first_row.insert(hit.id, to);
             return true;
@@ -628,7 +795,11 @@ impl Feature for Slicers {
                 return false;
             }
             // Either wheel moves the band.
-            let moved = if delta.0.abs() > delta.1.abs() { delta.0 } else { delta.1 };
+            let moved = if delta.0.abs() > delta.1.abs() {
+                delta.0
+            } else {
+                delta.1
+            };
             let to = (hit.layout.scroll - moved).clamp(0.0, hit.layout.max_scroll);
             app.ext_mut::<SlicerUi>().band_scroll.insert(hit.id, to);
             return true;
@@ -730,7 +901,12 @@ impl Feature for Slicers {
         }
     }
 
-    fn paste_object(&self, app: &mut ExcelApp, data: &dyn Any, at: ((u32, u32), (f32, f32))) -> Option<u32> {
+    fn paste_object(
+        &self,
+        app: &mut ExcelApp,
+        data: &dyn Any,
+        at: ((u32, u32), (f32, f32)),
+    ) -> Option<u32> {
         if let Some(slicer) = data.downcast_ref::<Slicer>() {
             let mut slicer = slicer.clone();
             (slicer.anchor, slicer.offset) = at;
@@ -738,7 +914,9 @@ impl Feature for Slicers {
         }
         let mut timeline = data.downcast_ref::<Timeline>()?.clone();
         (timeline.anchor, timeline.offset) = at;
-        app.wb.paste_timeline(app.sheet, timeline).map(|id| id | TIMELINE)
+        app.wb
+            .paste_timeline(app.sheet, timeline)
+            .map(|id| id | TIMELINE)
     }
 
     fn reorder_object(&self, app: &mut ExcelApp, id: u32, mv: ZMove) {
@@ -767,7 +945,14 @@ impl Feature for Slicers {
 
     /// A double click on the frame or the header of a slicer opens its
     /// settings.
-    fn object_double_click(&self, app: &mut ExcelApp, id: u32, _ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+    fn object_double_click(
+        &self,
+        app: &mut ExcelApp,
+        id: u32,
+        _ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) {
         if id & TIMELINE == 0 {
             dialogs::open_settings(app, window, cx);
         }
@@ -794,14 +979,23 @@ fn object_menu(app: &ExcelApp, object: u32) -> Vec<MenuEntry> {
         let id = timeline.id;
         out.push(
             MenuEntry::new(
-                quoted(t("Clear Filter From \"{}\"", "Effacer le filtre de «\u{a0}{}\u{a0}»"), &timeline.caption),
+                quoted(
+                    t(
+                        "Clear Filter From \"{}\"",
+                        "Effacer le filtre de «\u{a0}{}\u{a0}»",
+                    ),
+                    &timeline.caption,
+                ),
                 move |app, window, cx| select_days(app, id, None, window, cx),
             )
             .disabled(app.wb.timeline_selection(id).is_none()),
         );
         out.push(MenuEntry::command(Cmd::ReportConnections, app));
         out.push(MenuEntry::new(
-            quoted(t("Remove \"{}\"", "Supprimer «\u{a0}{}\u{a0}»"), &timeline.caption),
+            quoted(
+                t("Remove \"{}\"", "Supprimer «\u{a0}{}\u{a0}»"),
+                &timeline.caption,
+            ),
             |app, _, cx| app.delete_selected_object(cx),
         ));
         return out;
@@ -815,29 +1009,48 @@ fn object_menu(app: &ExcelApp, object: u32) -> Vec<MenuEntry> {
             edit_slicer(app, t("Sort", "Trier"), cx, |s| s.descending = descending);
         }
     };
-    out.push(MenuEntry::new(t("Sort Ascending", "Tri croissant"), sort(false)).checked(!slicer.descending));
-    out.push(MenuEntry::new(t("Sort Descending", "Tri décroissant"), sort(true)).checked(slicer.descending));
+    out.push(
+        MenuEntry::new(t("Sort Ascending", "Tri croissant"), sort(false))
+            .checked(!slicer.descending),
+    );
+    out.push(
+        MenuEntry::new(t("Sort Descending", "Tri décroissant"), sort(true))
+            .checked(slicer.descending),
+    );
     out.push(
         MenuEntry::new(
-            quoted(t("Clear Filter From \"{}\"", "Effacer le filtre de «\u{a0}{}\u{a0}»"), &slicer.caption),
+            quoted(
+                t(
+                    "Clear Filter From \"{}\"",
+                    "Effacer le filtre de «\u{a0}{}\u{a0}»",
+                ),
+                &slicer.caption,
+            ),
             move |app, window, cx| select_items(app, id, Vec::new(), window, cx),
         )
         .disabled(!app.wb.slicer_filtered(id)),
     );
     out.push(
         MenuEntry::new(
-            quoted(t("Multi-Select \"{}\"", "Sélection multiple «\u{a0}{}\u{a0}»"), &slicer.caption),
+            quoted(
+                t("Multi-Select \"{}\"", "Sélection multiple «\u{a0}{}\u{a0}»"),
+                &slicer.caption,
+            ),
             |app, window, cx| Cmd::MultiSelect.run(app, window, cx),
         )
         .checked(multi_select(app, id)),
     );
     out.push(MenuEntry::command(Cmd::ReportConnections, app));
     out.push(MenuEntry::new(
-        quoted(t("Remove \"{}\"", "Supprimer «\u{a0}{}\u{a0}»"), &slicer.caption),
+        quoted(
+            t("Remove \"{}\"", "Supprimer «\u{a0}{}\u{a0}»"),
+            &slicer.caption,
+        ),
         |app, _, cx| app.delete_selected_object(cx),
     ));
-    out.push(MenuEntry::new(t("Slicer Settings...", "Paramètres des segments..."), |app, window, cx| {
-        Cmd::SlicerSettings.run(app, window, cx)
-    }));
+    out.push(MenuEntry::new(
+        t("Slicer Settings...", "Paramètres des segments..."),
+        |app, window, cx| Cmd::SlicerSettings.run(app, window, cx),
+    ));
     out
 }

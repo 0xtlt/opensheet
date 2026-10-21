@@ -10,11 +10,16 @@
 //! columns), Unclear hyperlink text and Default sheet name.
 
 use crate::app::{ExcelApp, MenuAction};
-use crate::features::{Cx, Intent, StatusItem, drawings, edit_tools, format_cells, object_id, tables};
+use crate::features::{
+    Cx, Intent, StatusItem, drawings, edit_tools, format_cells, object_id, tables,
+};
 use crate::i18n::t;
 use crate::theme::{self, c};
 use crate::widgets::Button;
-use gpui::{Context, IntoElement, ScrollHandle, SharedString, Subscription, WeakEntity, Window, div, prelude::*, px};
+use gpui::{
+    Context, IntoElement, ScrollHandle, SharedString, Subscription, WeakEntity, Window, div,
+    prelude::*, px,
+};
 use opensheet_engine::drawing::{Drawing, DrawingKind};
 use opensheet_engine::format::format_value;
 use opensheet_engine::hyperlink::LinkKind;
@@ -92,11 +97,17 @@ impl Rule {
         match self {
             Rule::MissingAltText => t("Missing alt text", "Texte de remplacement manquant"),
             Rule::MissingTableHeader => t("Missing table header", "En-tête de tableau manquant"),
-            Rule::Contrast => t("Hard-to-read text contrast", "Contraste de texte dur à lire"),
+            Rule::Contrast => t(
+                "Hard-to-read text contrast",
+                "Contraste de texte dur à lire",
+            ),
             Rule::MergedCells => t("Use of merged cells", "Utilisation de cellules fusionnées"),
             Rule::RedNegative => t("Avoid red formatting", "Éviter la mise en forme rouge"),
             Rule::BlankTableRows => t("Blank table rows", "Rangées de tableau vides"),
-            Rule::UnclearLink => t("Unclear hyperlink text", "Texte de lien hypertexte pas assez explicite"),
+            Rule::UnclearLink => t(
+                "Unclear hyperlink text",
+                "Texte de lien hypertexte pas assez explicite",
+            ),
             Rule::DefaultSheetName => t("Default sheet name", "Nom de la feuille par défaut"),
         }
     }
@@ -228,7 +239,10 @@ impl Action {
         match self {
             Action::AddDescription => t("Add a description", "Ajouter une description"),
             Action::MarkDecorative => t("Mark as decorative", "Marquer comme décoratif"),
-            Action::UseFirstRowAsHeader => t("Use first row as header", "Utiliser la première ligne comme en-tête"),
+            Action::UseFirstRowAsHeader => t(
+                "Use first row as header",
+                "Utiliser la première ligne comme en-tête",
+            ),
             Action::Unmerge => t("Unmerge", "Annuler la fusion"),
             Action::RenameSheet => t("Rename sheet", "Renommer la feuille"),
             Action::FormatCellFont => t("Format cell font", "Format de police de cellule"),
@@ -246,7 +260,11 @@ pub(super) fn contrast_ratio(a: u32, b: u32) -> f64 {
     fn luminance(rgb: u32) -> f64 {
         let channel = |shift: u32| {
             let value = ((rgb >> shift) & 0xFF) as f64 / 255.0;
-            if value <= 0.03928 { value / 12.92 } else { ((value + 0.055) / 1.055).powf(2.4) }
+            if value <= 0.03928 {
+                value / 12.92
+            } else {
+                ((value + 0.055) / 1.055).powf(2.4)
+            }
         };
         0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
     }
@@ -268,8 +286,12 @@ fn hard_to_read(style: &Style) -> bool {
 /// colour alone: red, without a minus sign or brackets.
 pub(super) fn red_only_negative(code: &str, locale: &Locale) -> bool {
     let shown = format_value(&Value::Number(-1234.5), code, locale);
-    let reddish = shown.color.is_some_and(|color| color.r() > 160 && color.g() < 110 && color.b() < 110);
-    reddish && !shown.text.contains(['-', '−', '(']) && shown.text.chars().any(|ch| ch.is_ascii_digit())
+    let reddish = shown
+        .color
+        .is_some_and(|color| color.r() > 160 && color.g() < 110 && color.b() < 110);
+    reddish
+        && !shown.text.contains(['-', '−', '('])
+        && shown.text.chars().any(|ch| ch.is_ascii_digit())
 }
 
 /// Whether a sheet still has the name it was created with, in any of the
@@ -278,7 +300,8 @@ pub(super) fn is_default_sheet_name(name: &str) -> bool {
     ["en", "fr", "es", "de", "it"].iter().any(|id| {
         let prefix = Locale::by_id(id).sheet_prefix.to_lowercase();
         let name = name.to_lowercase();
-        name.strip_prefix(&prefix).is_some_and(|rest| !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_digit()))
+        name.strip_prefix(&prefix)
+            .is_some_and(|rest| !rest.is_empty() && rest.chars().all(|ch| ch.is_ascii_digit()))
     })
 }
 
@@ -294,7 +317,10 @@ pub(super) fn ranges_of(cells: &BTreeSet<(u32, u32)>) -> Vec<Rect> {
     }
     let mut out: Vec<Rect> = Vec::new();
     for run in runs {
-        match out.iter_mut().find(|rect| rect.c0 == run.c0 && rect.c1 == run.c1 && rect.r1 + 1 == run.r0) {
+        match out
+            .iter_mut()
+            .find(|rect| rect.c0 == run.c0 && rect.c1 == run.c1 && rect.r1 + 1 == run.r0)
+        {
             Some(rect) => rect.r1 = run.r0,
             None => out.push(run),
         }
@@ -352,7 +378,11 @@ pub(super) fn inspect(wb: &Workbook) -> Vec<Finding> {
             let Some(data) = table.data_range().filter(|data| data.r1 > data.r0) else {
                 continue;
             };
-            let blank = |row: u32, col: u32| sh.cells.get(&(row, col)).is_none_or(|cell| matches!(cell.content, Content::Empty));
+            let blank = |row: u32, col: u32| {
+                sh.cells
+                    .get(&(row, col))
+                    .is_none_or(|cell| matches!(cell.content, Content::Empty))
+            };
             let mut blanks = BTreeSet::new();
             for row in data.r0..=data.r1 {
                 if (data.c0..=data.c1).all(|col| blank(row, col)) {
@@ -375,7 +405,9 @@ pub(super) fn inspect(wb: &Workbook) -> Vec<Finding> {
                 continue;
             }
             let unreadable = if plain {
-                *by_style.entry(cell.style.0).or_insert_with(|| hard_to_read(wb.style_at(index, at.0, at.1)))
+                *by_style
+                    .entry(cell.style.0)
+                    .or_insert_with(|| hard_to_read(wb.style_at(index, at.0, at.1)))
             } else {
                 hard_to_read(&wb.display(index, at.0, at.1).style)
             };
@@ -411,7 +443,9 @@ pub(super) fn inspect(wb: &Workbook) -> Vec<Finding> {
             let shown = shown.trim().to_lowercase();
             let bare = shown.is_empty()
                 || shown == link.address.trim().to_lowercase()
-                || ["http://", "https://", "ftp://", "www.", "mailto:"].iter().any(|scheme| shown.starts_with(scheme));
+                || ["http://", "https://", "ftp://", "www.", "mailto:"]
+                    .iter()
+                    .any(|scheme| shown.starts_with(scheme));
             // A place in the workbook named by its reference reads well.
             if bare && link.kind() != LinkKind::Place {
                 found.push(Finding {
@@ -421,7 +455,9 @@ pub(super) fn inspect(wb: &Workbook) -> Vec<Finding> {
                 });
             }
         }
-        let used = sh.cells.values().any(|cell| !cell.value.is_empty()) || !sh.charts.is_empty() || !sh.drawings.is_empty();
+        let used = sh.cells.values().any(|cell| !cell.value.is_empty())
+            || !sh.charts.is_empty()
+            || !sh.drawings.is_empty();
         if used && is_default_sheet_name(name) {
             found.push(Finding {
                 rule: Rule::DefaultSheetName,
@@ -446,8 +482,17 @@ fn cell_count(wb: &Workbook) -> usize {
 /// lives, how many times it was calculated (every committed change
 /// calculates), and a little of its shape.
 fn stamp(wb: &Workbook) -> (usize, u64, usize, usize) {
-    let objects: usize = wb.sheets.iter().map(|sheet| sheet.drawings.len() + sheet.name.len()).sum();
-    (wb as *const Workbook as usize, wb.generation, cell_count(wb), wb.sheets.len() * 1000 + objects)
+    let objects: usize = wb
+        .sheets
+        .iter()
+        .map(|sheet| sheet.drawings.len() + sheet.name.len())
+        .sum();
+    (
+        wb as *const Workbook as usize,
+        wb.generation,
+        cell_count(wb),
+        wb.sheets.len() * 1000 + objects,
+    )
 }
 
 thread_local! {
@@ -486,9 +531,15 @@ pub(super) fn status_items(app: &ExcelApp) -> Vec<StatusItem> {
             "Classeur trop volumineux pour une vérification en arrière-plan. Cliquez pour vérifier l’accessibilité.",
         )
     } else if findings(&app.wb).is_empty() {
-        t("Accessibility: Good to go", "Accessibilité : vérification terminée")
+        t(
+            "Accessibility: Good to go",
+            "Accessibilité : vérification terminée",
+        )
     } else {
-        t("Accessibility: Investigate", "Accessibilité : consultez nos recommandations")
+        t(
+            "Accessibility: Investigate",
+            "Accessibilité : consultez nos recommandations",
+        )
     };
     let mut item = StatusItem::new(text);
     let open: MenuAction = Rc::new(|app, _, cx| open(app, cx));
@@ -502,7 +553,10 @@ pub(super) fn status_items(app: &ExcelApp) -> Vec<StatusItem> {
 /// cells or its object are selected.
 pub(super) fn go_to(app: &mut ExcelApp, target: Target, window: &mut Window, cx: &mut Cx) {
     let sheet = match target {
-        Target::Object(sheet, _) | Target::Table(sheet, _) | Target::Cells(sheet, _) | Target::Sheet(sheet) => sheet,
+        Target::Object(sheet, _)
+        | Target::Table(sheet, _)
+        | Target::Cells(sheet, _)
+        | Target::Sheet(sheet) => sheet,
     };
     if sheet >= app.wb.sheets.len() {
         return;
@@ -533,26 +587,46 @@ pub(super) fn go_to(app: &mut ExcelApp, target: Target, window: &mut Window, cx:
 }
 
 /// Do one of the Recommended Actions of a result.
-pub(super) fn act(app: &mut ExcelApp, finding: &Finding, action: Action, window: &mut Window, cx: &mut Cx) {
+pub(super) fn act(
+    app: &mut ExcelApp,
+    finding: &Finding,
+    action: Action,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     go_to(app, finding.target, window, cx);
     match (action, finding.target) {
-        (Action::AddDescription, Target::Object(..)) => app.run_command(drawings::Cmd::AltText, window, cx),
+        (Action::AddDescription, Target::Object(..)) => {
+            app.run_command(drawings::Cmd::AltText, window, cx)
+        }
         (Action::MarkDecorative, Target::Object(sheet, id)) => {
-            if app.may(Intent::EditObject(Some(object_id(&drawings::Drawings, id))), cx) {
-                app.wb.update_drawing(sheet, id, |drawing| drawing.decorative = true);
+            if app.may(
+                Intent::EditObject(Some(object_id(&drawings::Drawings, id))),
+                cx,
+            ) {
+                app.wb
+                    .update_drawing(sheet, id, |drawing| drawing.decorative = true);
                 app.commit(Action::MarkDecorative.label(), cx);
             }
         }
-        (Action::UseFirstRowAsHeader, Target::Table(..)) => app.run_command(tables::Cmd::HeaderRow, window, cx),
+        (Action::UseFirstRowAsHeader, Target::Table(..)) => {
+            app.run_command(tables::Cmd::HeaderRow, window, cx)
+        }
         (Action::Unmerge, Target::Cells(sheet, rect)) => {
             if app.may(Intent::ChangeSheet, cx) && app.wb.unmerge(sheet, rect) {
                 app.commit(t("Unmerge Cells", "Annuler la fusion des cellules"), cx);
             }
         }
         (Action::RenameSheet, Target::Sheet(sheet)) => app.begin_rename_sheet(sheet, window, cx),
-        (Action::FormatCellFont, Target::Cells(..)) => app.run_command(format_cells::Cmd::Font, window, cx),
-        (Action::FormatCellNumber, Target::Cells(..)) => app.run_command(format_cells::Cmd::Number, window, cx),
-        (Action::EditLink, Target::Cells(..)) => app.run_command(edit_tools::Cmd::EditLink, window, cx),
+        (Action::FormatCellFont, Target::Cells(..)) => {
+            app.run_command(format_cells::Cmd::Font, window, cx)
+        }
+        (Action::FormatCellNumber, Target::Cells(..)) => {
+            app.run_command(format_cells::Cmd::Number, window, cx)
+        }
+        (Action::EditLink, Target::Cells(..)) => {
+            app.run_command(edit_tools::Cmd::EditLink, window, cx)
+        }
         _ => {}
     }
 }
@@ -603,18 +677,31 @@ impl AccessibilityPane {
     /// A result that was fixed is no longer the selected one.
     fn forget_fixed(&mut self, cx: &gpui::App) {
         let listed = self.listed(cx);
-        if self.selected.as_ref().is_some_and(|selected| !listed.contains(selected)) {
+        if self
+            .selected
+            .as_ref()
+            .is_some_and(|selected| !listed.contains(selected))
+        {
             self.selected = None;
         }
     }
 
     fn heading(text: &'static str) -> gpui::Div {
-        div().pt(px(8.)).font_weight(gpui::FontWeight::SEMIBOLD).child(text)
+        div()
+            .pt(px(8.))
+            .font_weight(gpui::FontWeight::SEMIBOLD)
+            .child(text)
     }
 
     /// A text of Excel in which `\n` ends a line.
     fn paragraphs(text: &str) -> Vec<gpui::Div> {
-        text.split('\n').map(|line| div().min_h(px(8.)).child(SharedString::from(line.trim().to_string()))).collect()
+        text.split('\n')
+            .map(|line| {
+                div()
+                    .min_h(px(8.))
+                    .child(SharedString::from(line.trim().to_string()))
+            })
+            .collect()
     }
 }
 
@@ -625,17 +712,35 @@ impl Render for AccessibilityPane {
         let mut results: Vec<gpui::AnyElement> = Vec::new();
         let mut row = 0usize;
         for severity in Severity::ALL {
-            let of_kind: Vec<&Finding> = listed.iter().filter(|finding| finding.rule.severity() == severity).collect();
+            let of_kind: Vec<&Finding> = listed
+                .iter()
+                .filter(|finding| finding.rule.severity() == severity)
+                .collect();
             if of_kind.is_empty() {
                 continue;
             }
-            results.push(div().pt(px(6.)).font_weight(gpui::FontWeight::SEMIBOLD).child(severity.title()).into_any_element());
+            results.push(
+                div()
+                    .pt(px(6.))
+                    .font_weight(gpui::FontWeight::SEMIBOLD)
+                    .child(severity.title())
+                    .into_any_element(),
+            );
             let mut rule = None;
             for finding in of_kind {
                 if rule != Some(finding.rule) {
                     rule = Some(finding.rule);
-                    let count = listed.iter().filter(|other| other.rule == finding.rule).count();
-                    results.push(div().pl(px(10.)).pt(px(2.)).child(format!("{} ({count})", finding.rule.title())).into_any_element());
+                    let count = listed
+                        .iter()
+                        .filter(|other| other.rule == finding.rule)
+                        .count();
+                    results.push(
+                        div()
+                            .pl(px(10.))
+                            .pt(px(2.))
+                            .child(format!("{} ({count})", finding.rule.title()))
+                            .into_any_element(),
+                    );
                 }
                 let chosen = self.selected.as_ref() == Some(finding);
                 let pressed = finding.clone();
@@ -652,14 +757,25 @@ impl Render for AccessibilityPane {
                         .when(chosen, |d| d.bg(c(theme::ACCENT_LIGHT)))
                         .when(!chosen, |d| d.hover(|s| s.bg(c(theme::HOVER))))
                         .child(SharedString::from(finding.label.clone()))
-                        .on_click(cx.listener(move |this, _, window, cx| this.select(pressed.clone(), window, cx)))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.select(pressed.clone(), window, cx)
+                        }))
                         .into_any_element(),
                 );
                 if chosen && !finding.rule.actions().is_empty() {
-                    let buttons = finding.rule.actions().iter().enumerate().map(|(index, action)| {
-                        let action = *action;
-                        Button::new(("accessibility-action", index), action.label()).on_click(cx.listener(move |this, _, window, cx| this.run(action, window, cx)))
-                    });
+                    let buttons =
+                        finding
+                            .rule
+                            .actions()
+                            .iter()
+                            .enumerate()
+                            .map(|(index, action)| {
+                                let action = *action;
+                                Button::new(("accessibility-action", index), action.label())
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        this.run(action, window, cx)
+                                    }))
+                            });
                     results.push(
                         div()
                             .ml(px(26.))
@@ -668,7 +784,11 @@ impl Render for AccessibilityPane {
                             .flex_col()
                             .items_start()
                             .gap(px(4.))
-                            .child(div().text_color(c(theme::TEXT_MUTED)).child(t("Recommended Actions", "Actions recommandées")))
+                            .child(
+                                div()
+                                    .text_color(c(theme::TEXT_MUTED))
+                                    .child(t("Recommended Actions", "Actions recommandées")),
+                            )
                             .children(buttons)
                             .into_any_element(),
                     );
@@ -687,7 +807,10 @@ impl Render for AccessibilityPane {
             .flex_col()
             .gap(px(1.))
             .line_height(px(18.))
-            .child(Self::heading(t("Inspection Results", "Résultats de l'inspection")));
+            .child(Self::heading(t(
+                "Inspection Results",
+                "Résultats de l'inspection",
+            )));
         if good {
             pane = pane.child(div().pt(px(4.)).child(t(
                 "No accessibility issues found. People with disabilities should not have difficulty reading this workbook.",
@@ -696,14 +819,26 @@ impl Render for AccessibilityPane {
         } else {
             pane = pane.children(results);
         }
-        pane = pane.child(Self::heading(t("Additional Information", "Informations complémentaires")).pt(px(14.)));
+        pane = pane.child(
+            Self::heading(t("Additional Information", "Informations complémentaires")).pt(px(14.)),
+        );
         match &self.selected {
             Some(finding) => {
                 pane = pane
-                    .child(div().text_color(c(theme::TEXT_MUTED)).child(finding.rule.severity().meaning()))
-                    .child(Self::heading(t("Why Fix?", "Pourquoi corriger le problème ?")))
+                    .child(
+                        div()
+                            .text_color(c(theme::TEXT_MUTED))
+                            .child(finding.rule.severity().meaning()),
+                    )
+                    .child(Self::heading(t(
+                        "Why Fix?",
+                        "Pourquoi corriger le problème ?",
+                    )))
                     .child(div().child(finding.rule.why()))
-                    .child(Self::heading(t("Steps To Fix:", "Étapes à suivre pour résoudre le problème :")))
+                    .child(Self::heading(t(
+                        "Steps To Fix:",
+                        "Étapes à suivre pour résoudre le problème :",
+                    )))
                     .children(Self::paragraphs(finding.rule.steps()));
             }
             None if !good => {
@@ -720,7 +855,11 @@ impl Render for AccessibilityPane {
 
 /// Review ▸ Check Accessibility, and the click on the status bar.
 pub(super) fn open(app: &mut ExcelApp, cx: &mut Cx) {
-    let pane = match app.ext::<AccessibilityUi>().and_then(|ui| ui.pane.clone()).filter(|_| app.pane_open(PANE)) {
+    let pane = match app
+        .ext::<AccessibilityUi>()
+        .and_then(|ui| ui.pane.clone())
+        .filter(|_| app.pane_open(PANE))
+    {
         Some(pane) => pane,
         None => {
             let entity = cx.entity();
@@ -766,7 +905,14 @@ mod tests {
 
     #[test]
     fn default_names_are_told_in_every_language() {
-        for name in ["Sheet1", "sheet12", "Feuil3", "Hoja2", "Tabelle10", "Foglio1"] {
+        for name in [
+            "Sheet1",
+            "sheet12",
+            "Feuil3",
+            "Hoja2",
+            "Tabelle10",
+            "Foglio1",
+        ] {
             assert!(is_default_sheet_name(name), "{name}");
         }
         for name in ["Sheet", "Sheet1b", "Budget", "Sheet 1", "Feuille1", ""] {
@@ -776,7 +922,9 @@ mod tests {
 
     #[test]
     fn cells_are_gathered_in_ranges() {
-        let cells: BTreeSet<(u32, u32)> = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (4, 4), (4, 6)].into_iter().collect();
+        let cells: BTreeSet<(u32, u32)> = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (4, 4), (4, 6)]
+            .into_iter()
+            .collect();
         let names: Vec<String> = ranges_of(&cells).iter().map(Rect::name).collect();
         assert_eq!(names, vec!["A1:B2", "A3", "E5", "G5"]);
         assert!(ranges_of(&BTreeSet::new()).is_empty());

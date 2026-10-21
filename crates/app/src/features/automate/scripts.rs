@@ -32,7 +32,8 @@ impl TestFolder {
     fn new() -> TestFolder {
         static NEXT: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let n = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let path = std::env::temp_dir().join(format!("opensheet-scripts-test-{}-{n}", std::process::id()));
+        let path =
+            std::env::temp_dir().join(format!("opensheet-scripts-test-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&path);
         TestFolder(path)
     }
@@ -53,7 +54,9 @@ pub(crate) fn default_folder() -> PathBuf {
     }
     #[cfg(not(test))]
     {
-        crate::paths::app_data().unwrap_or_else(|| std::env::temp_dir().join("OpenSheet")).join("Scripts")
+        crate::paths::app_data()
+            .unwrap_or_else(|| std::env::temp_dir().join("OpenSheet"))
+            .join("Scripts")
     }
 }
 
@@ -62,7 +65,11 @@ pub(crate) fn default_folder() -> PathBuf {
 /// changed stay where they are.
 pub(crate) fn folder() -> PathBuf {
     let chosen = settings::get().scripts_folder;
-    if chosen.trim().is_empty() { default_folder() } else { PathBuf::from(chosen) }
+    if chosen.trim().is_empty() {
+        default_folder()
+    } else {
+        PathBuf::from(chosen)
+    }
 }
 
 /// Where deleted scripts go: the Trash of the user, so that a script
@@ -95,9 +102,16 @@ fn path_of(name: &str) -> PathBuf {
 pub(crate) fn name_problem(name: &str, current: Option<&str>) -> Option<&'static str> {
     let name = name.trim();
     if name.is_empty() {
-        return Some(t("Enter a name for the script.", "Entrez un nom pour le script."));
+        return Some(t(
+            "Enter a name for the script.",
+            "Entrez un nom pour le script.",
+        ));
     }
-    if name.chars().count() > 100 || name.starts_with('.') || name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|']) || name.chars().any(char::is_control) {
+    if name.chars().count() > 100
+        || name.starts_with('.')
+        || name.contains(['/', '\\', ':', '*', '?', '"', '<', '>', '|'])
+        || name.chars().any(char::is_control)
+    {
         return Some(t(
             "A script name can't start with a period or contain any of these characters: / \\ : * ? \" < > |",
             "Un nom de script ne peut pas commencer par un point ni contenir les caractères suivants : / \\ : * ? \" < > |",
@@ -105,7 +119,10 @@ pub(crate) fn name_problem(name: &str, current: Option<&str>) -> Option<&'static
     }
     let same = current.is_some_and(|current| current.to_lowercase() == name.to_lowercase());
     if !same && exists(name) {
-        return Some(t("A script with this name already exists.", "Un script portant ce nom existe déjà."));
+        return Some(t(
+            "A script with this name already exists.",
+            "Un script portant ce nom existe déjà.",
+        ));
     }
     None
 }
@@ -113,7 +130,9 @@ pub(crate) fn name_problem(name: &str, current: Option<&str>) -> Option<&'static
 /// File names do not tell upper case from lower case on this system.
 pub(crate) fn exists(name: &str) -> bool {
     let wanted = name.trim().to_lowercase();
-    list().iter().any(|entry| entry.name.to_lowercase() == wanted)
+    list()
+        .iter()
+        .any(|entry| entry.name.to_lowercase() == wanted)
 }
 
 /// The scripts of the folder, the one changed last first.
@@ -124,25 +143,41 @@ pub(crate) fn list() -> Vec<Entry> {
     };
     for file in dir.flatten() {
         let path = file.path();
-        let is_script = path.extension().is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION));
-        let Some(name) = path.file_stem().map(|stem| stem.to_string_lossy().to_string()).filter(|_| is_script) else {
+        let is_script = path
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case(EXTENSION));
+        let Some(name) = path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+            .filter(|_| is_script)
+        else {
             continue;
         };
         if name.starts_with('.') {
             continue;
         }
         // A file that is not a script is not listed.
-        let Some(script) = std::fs::read_to_string(&path).ok().and_then(|text| Script::from_osts(&name, &text).ok()) else {
+        let Some(script) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|text| Script::from_osts(&name, &text).ok())
+        else {
             continue;
         };
-        let modified = file.metadata().and_then(|meta| meta.modified()).unwrap_or(SystemTime::UNIX_EPOCH);
+        let modified = file
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .unwrap_or(SystemTime::UNIX_EPOCH);
         entries.push(Entry {
             name,
             description: script.description,
             modified,
         });
     }
-    entries.sort_by(|a, b| b.modified.cmp(&a.modified).then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase())));
+    entries.sort_by(|a, b| {
+        b.modified
+            .cmp(&a.modified)
+            .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
     entries
 }
 
@@ -162,11 +197,17 @@ pub(crate) fn save(script: &Script) -> Result<(), String> {
 
 /// `base`, or `base 1`, `base 2`… — the first that no script has.
 pub(crate) fn free_name(base: &str) -> String {
-    let taken: Vec<String> = list().into_iter().map(|entry| entry.name.to_lowercase()).collect();
+    let taken: Vec<String> = list()
+        .into_iter()
+        .map(|entry| entry.name.to_lowercase())
+        .collect();
     if !taken.contains(&base.to_lowercase()) {
         return base.to_string();
     }
-    (1..).map(|n| format!("{base} {n}")).find(|name| !taken.contains(&name.to_lowercase())).unwrap_or_else(|| base.to_string())
+    (1..)
+        .map(|n| format!("{base} {n}"))
+        .find(|name| !taken.contains(&name.to_lowercase()))
+        .unwrap_or_else(|| base.to_string())
 }
 
 /// A new script holding what Excel starts one with, written to its file.
@@ -195,7 +236,13 @@ pub(crate) fn delete(name: &str) -> Result<(), String> {
         let _ = std::fs::create_dir_all(&trash);
         // A name the Trash does not hold yet.
         let free = (0..1000)
-            .map(|n| if n == 0 { format!("{name}.{EXTENSION}") } else { format!("{name} {n}.{EXTENSION}") })
+            .map(|n| {
+                if n == 0 {
+                    format!("{name}.{EXTENSION}")
+                } else {
+                    format!("{name} {n}.{EXTENSION}")
+                }
+            })
             .map(|file| trash.join(file))
             .find(|target| !target.exists());
         free.is_some_and(|target| std::fs::rename(&path, target).is_ok())
@@ -218,12 +265,31 @@ pub(crate) fn duplicate(name: &str) -> Result<String, String> {
 /// Bring in a script file made elsewhere (by Excel): it is copied into
 /// the folder under its own name, or the next free one. Returns the name.
 pub(crate) fn import(file: &Path) -> Result<String, String> {
-    let not_a_script = || t("This file is not an Office Script.", "Ce fichier n'est pas un script Office.").to_string();
-    let stem = file.file_stem().map(|stem| stem.to_string_lossy().trim().to_string()).filter(|stem| !stem.is_empty()).ok_or_else(not_a_script)?;
+    let not_a_script = || {
+        t(
+            "This file is not an Office Script.",
+            "Ce fichier n'est pas un script Office.",
+        )
+        .to_string()
+    };
+    let stem = file
+        .file_stem()
+        .map(|stem| stem.to_string_lossy().trim().to_string())
+        .filter(|stem| !stem.is_empty())
+        .ok_or_else(not_a_script)?;
     let text = std::fs::read_to_string(file).map_err(|e| e.to_string())?;
     let mut script = Script::from_osts(&stem, &text).map_err(|_| not_a_script())?;
     // A name our folder can hold.
-    let cleaned: String = stem.chars().map(|ch| if "/\\:*?\"<>|".contains(ch) || ch.is_control() { '-' } else { ch }).collect();
+    let cleaned: String = stem
+        .chars()
+        .map(|ch| {
+            if "/\\:*?\"<>|".contains(ch) || ch.is_control() {
+                '-'
+            } else {
+                ch
+            }
+        })
+        .collect();
     script.name = free_name(cleaned.trim_start_matches('.'));
     save(&script)?;
     Ok(script.name)
@@ -241,11 +307,17 @@ mod tests {
 
     #[test]
     fn scripts_are_files_of_the_folder() {
-        assert!(folder().starts_with(std::env::temp_dir()), "tests must not touch the user's scripts");
+        assert!(
+            folder().starts_with(std::env::temp_dir()),
+            "tests must not touch the user's scripts"
+        );
         assert!(list().is_empty());
         let first = create().unwrap();
         let second = create().unwrap();
-        assert_eq!((first.name.as_str(), second.name.as_str()), ("Script", "Script 1"));
+        assert_eq!(
+            (first.name.as_str(), second.name.as_str()),
+            ("Script", "Script 1")
+        );
         assert!(folder().join("Script.osts").is_file() && folder().join("Script 1.osts").is_file());
         assert_eq!(load("Script").unwrap(), first);
         let mut names: Vec<String> = list().into_iter().map(|entry| entry.name).collect();
@@ -258,7 +330,13 @@ mod tests {
         changed.description = "Does things".to_string();
         save(&changed).unwrap();
         assert_eq!(load("Script").unwrap(), changed);
-        assert_eq!(list().iter().find(|entry| entry.name == "Script").map(|entry| entry.description.as_str()), Some("Does things"));
+        assert_eq!(
+            list()
+                .iter()
+                .find(|entry| entry.name == "Script")
+                .map(|entry| entry.description.as_str()),
+            Some("Does things")
+        );
         std::fs::write(folder().join("notes.txt"), "x").unwrap();
         std::fs::write(folder().join("broken.osts"), "not json").unwrap();
         assert_eq!(list().len(), 2);

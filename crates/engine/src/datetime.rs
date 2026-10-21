@@ -113,7 +113,8 @@ pub fn time_to_serial(h: f64, m: f64, s: f64) -> f64 {
 pub fn now_serial() -> f64 {
     use chrono::{Datelike, Timelike};
     let now = chrono::Local::now();
-    let date = date_to_serial(now.year() as i64, now.month() as i64, now.day() as i64).unwrap_or(0.0);
+    let date =
+        date_to_serial(now.year() as i64, now.month() as i64, now.day() as i64).unwrap_or(0.0);
     date + time_to_serial(now.hour() as f64, now.minute() as f64, now.second() as f64)
 }
 

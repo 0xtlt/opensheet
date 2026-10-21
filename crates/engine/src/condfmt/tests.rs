@@ -53,13 +53,20 @@ fn text(s: &str) -> Expr {
 /// A workbook whose column A holds `values`, from A1 down.
 fn column(values: &[&str]) -> Workbook {
     let names: Vec<String> = (1..=values.len()).map(|i| format!("A{i}")).collect();
-    let cells: Vec<(&str, &str)> = names.iter().map(String::as_str).zip(values.iter().copied()).collect();
+    let cells: Vec<(&str, &str)> = names
+        .iter()
+        .map(String::as_str)
+        .zip(values.iter().copied())
+        .collect();
     wb(&cells)
 }
 
 /// Make `rule` over `ranges`, with a red fill, the only rule of sheet 0.
 fn only(w: &mut Workbook, ranges: &str, rule: Rule) {
-    w.set_cond_formats(0, vec![CondFormat::new(rects(ranges), rule).with_format(fill(RED))]);
+    w.set_cond_formats(
+        0,
+        vec![CondFormat::new(rects(ranges), rule).with_format(fill(RED))],
+    );
     w.commit("rule");
 }
 
@@ -131,19 +138,26 @@ fn cell_value_rules() {
     // 1, 5, 10, text, blank, TRUE, an error, the text "5".
     let mut w = column(&["1", "5", "10", "abc", "", "TRUE", "=1/0", "'5"]);
     let all = "A1:A8";
-    let mut test =
-        |op: CellOp, first: Expr, second: Option<Expr>| matches(&mut w, all, Rule::cell_is(op, first, second), all);
+    let mut test = |op: CellOp, first: Expr, second: Option<Expr>| {
+        matches(&mut w, all, Rule::cell_is(op, first, second), all)
+    };
     // Text and booleans rank above every number; a blank cell counts as
     // zero; errors never match.
     assert_eq!(test(CellOp::Greater, num(5.0), None), "A3 A4 A6 A8");
     assert_eq!(test(CellOp::Less, num(5.0), None), "A1 A5");
     assert_eq!(test(CellOp::Equal, num(5.0), None), "A2");
     assert_eq!(test(CellOp::NotEqual, num(5.0), None), "A1 A3 A4 A5 A6 A8");
-    assert_eq!(test(CellOp::GreaterOrEqual, num(5.0), None), "A2 A3 A4 A6 A8");
+    assert_eq!(
+        test(CellOp::GreaterOrEqual, num(5.0), None),
+        "A2 A3 A4 A6 A8"
+    );
     assert_eq!(test(CellOp::LessOrEqual, num(5.0), None), "A1 A2 A5");
     assert_eq!(test(CellOp::Between, num(5.0), Some(num(10.0))), "A2 A3");
     assert_eq!(test(CellOp::Between, num(10.0), Some(num(5.0))), "A2 A3");
-    assert_eq!(test(CellOp::NotBetween, num(5.0), Some(num(10.0))), "A1 A4 A5 A6 A8");
+    assert_eq!(
+        test(CellOp::NotBetween, num(5.0), Some(num(10.0))),
+        "A1 A4 A5 A6 A8"
+    );
     assert_eq!(test(CellOp::Between, num(5.0), None), "");
     // Text compares without case, and after numbers.
     assert_eq!(test(CellOp::Equal, text("ABC"), None), "A4");
@@ -161,7 +175,13 @@ fn cell_value_rules() {
 #[test]
 fn cell_value_rules_with_formula_operands() {
     let mut w = column(&["1", "5", "10", "abc", "", "TRUE", "=1/0", "'5"]);
-    for (cell, input) in [("B1", "0"), ("B2", "9"), ("B3", "10"), ("C1", "5"), ("C2", "10")] {
+    for (cell, input) in [
+        ("B1", "0"),
+        ("B2", "9"),
+        ("B3", "10"),
+        ("C1", "5"),
+        ("C2", "10"),
+    ] {
         let (r, c) = parse_cell_name(cell).unwrap();
         w.set_cell_text(0, r, c, input).unwrap();
     }
@@ -171,13 +191,25 @@ fn cell_value_rules_with_formula_operands() {
     w.commit("setup");
     let all = "A1:A8";
     // A fixed reference: one value for the whole range.
-    assert_eq!(matches(&mut w, all, Rule::greater_than(f("$C$1")), all), "A3 A4 A6 A8");
-    assert_eq!(matches(&mut w, all, Rule::between(f("$C$1"), f("$C$2")), all), "A2 A3");
+    assert_eq!(
+        matches(&mut w, all, Rule::greater_than(f("$C$1")), all),
+        "A3 A4 A6 A8"
+    );
+    assert_eq!(
+        matches(&mut w, all, Rule::between(f("$C$1"), f("$C$2")), all),
+        "A2 A3"
+    );
     assert_eq!(matches(&mut w, all, Rule::equal_to(f("$C$1*2")), all), "A3");
     // A relative reference: each cell against its neighbour in column B
     // (blank from row 4 down, where text and TRUE are above "nothing").
-    assert_eq!(matches(&mut w, all, Rule::greater_than(f("B1")), all), "A1 A4 A6 A8");
-    assert_eq!(matches(&mut w, all, Rule::between(f("B1"), f("$C$2")), all), "A1 A3 A5");
+    assert_eq!(
+        matches(&mut w, all, Rule::greater_than(f("B1")), all),
+        "A1 A4 A6 A8"
+    );
+    assert_eq!(
+        matches(&mut w, all, Rule::between(f("B1"), f("$C$2")), all),
+        "A1 A3 A5"
+    );
     // Another sheet.
     assert_eq!(
         matches(&mut w, all, Rule::greater_than(f("Other!$A$1")), all),
@@ -288,8 +320,14 @@ fn formulas_with_names_and_other_sheets() {
     w.define_name("Limit", f("Sheet1!$D$1"));
     w.define_name("Here", f("ROW()"));
     w.commit("setup");
-    assert_eq!(matches(&mut w, "A1:A3", Rule::Formula(f("A1>Limit")), "A1:A3"), "A2 A3");
-    assert_eq!(matches(&mut w, "A1:A3", Rule::Formula(f("Here=2")), "A1:A3"), "A2");
+    assert_eq!(
+        matches(&mut w, "A1:A3", Rule::Formula(f("A1>Limit")), "A1:A3"),
+        "A2 A3"
+    );
+    assert_eq!(
+        matches(&mut w, "A1:A3", Rule::Formula(f("Here=2")), "A1:A3"),
+        "A2"
+    );
     // Relative references to another sheet move with the cell too.
     assert_eq!(
         matches(&mut w, "A1:A3", Rule::Formula(f("A1>Limits!A1")), "A1:A3"),
@@ -300,7 +338,12 @@ fn formulas_with_names_and_other_sheets() {
         "A3"
     );
     assert_eq!(
-        matches(&mut w, "A1:A3", Rule::Formula(f("A1>Missing!$A$2")), "A1:A3"),
+        matches(
+            &mut w,
+            "A1:A3",
+            Rule::Formula(f("A1>Missing!$A$2")),
+            "A1:A3"
+        ),
         ""
     );
 }
@@ -316,11 +359,19 @@ fn formula_answers_cover_whole_blocks() {
         }
     }
     w.commit("setup");
-    only(&mut w, "A1:AN100", Rule::Formula(f("MOD(A1+ROW()+COLUMN(),7)=0")));
+    only(
+        &mut w,
+        "A1:AN100",
+        Rule::Formula(f("MOD(A1+ROW()+COLUMN(),7)=0")),
+    );
     for step in 0..4000u32 {
         let (r, c) = ((step * 37) % 100, (step * 11) % 40);
         let expected = (r * 40 + c + r + 1 + c + 1) % 7 == 0;
-        assert_eq!(result_at(&w, 0, r, c).is_some(), expected, "row {r} col {c}");
+        assert_eq!(
+            result_at(&w, 0, r, c).is_some(),
+            expected,
+            "row {r} col {c}"
+        );
     }
     assert!(result_at(&w, 0, 100, 0).is_none());
     assert!(result_at(&w, 0, 0, 40).is_none());
@@ -353,15 +404,29 @@ fn top_and_bottom_percent() {
     // 10 % of 20 numbers is 2 of them.
     assert_eq!(matches(&mut w, all, Rule::top_percent(10), all), "A19 A20");
     assert_eq!(matches(&mut w, all, Rule::bottom_percent(10), all), "A1 A2");
-    assert_eq!(matches(&mut w, all, Rule::top_percent(25), all), "A16 A17 A18 A19 A20");
-    assert_eq!(matches(&mut w, all, Rule::top_percent(100), all).split(' ').count(), 20);
+    assert_eq!(
+        matches(&mut w, all, Rule::top_percent(25), all),
+        "A16 A17 A18 A19 A20"
+    );
+    assert_eq!(
+        matches(&mut w, all, Rule::top_percent(100), all)
+            .split(' ')
+            .count(),
+        20
+    );
     // The count rounds down: 10 % of 19 is 1.
     assert_eq!(matches(&mut w, "A1:A19", Rule::top_percent(10), all), "A19");
     // But never to nothing: 10 % of 5 numbers is still the top one.
     assert_eq!(matches(&mut w, "A1:A5", Rule::top_percent(10), all), "A5");
-    assert_eq!(matches(&mut w, "A1:A5", Rule::bottom_percent(10), all), "A1");
+    assert_eq!(
+        matches(&mut w, "A1:A5", Rule::bottom_percent(10), all),
+        "A1"
+    );
     // Several ranges are ranked together.
-    assert_eq!(matches(&mut w, "A1:A3,A18:A20", Rule::top_items(2), all), "A19 A20");
+    assert_eq!(
+        matches(&mut w, "A1:A3,A18:A20", Rule::top_items(2), all),
+        "A19 A20"
+    );
     // A range without numbers.
     assert_eq!(matches(&mut w, "C1:C5", Rule::top_items(2), "C1:C5"), "");
 }
@@ -401,22 +466,38 @@ fn above_and_below_average() {
 #[test]
 fn duplicate_and_unique_values() {
     let values = [
-        "apple", "Apple", "pear", "1", "'1", "", "", "=1/0", "=1/0", "2", "TRUE", "FALSE", "=\"\"", "=\"\"",
+        "apple", "Apple", "pear", "1", "'1", "", "", "=1/0", "=1/0", "2", "TRUE", "FALSE", "=\"\"",
+        "=\"\"",
     ];
     let mut w = column(&values);
     let all = "A1:A14";
     // Without case; text that reads as a number equals the number; errors
     // repeat like anything else; blanks and empty text never count.
-    assert_eq!(matches(&mut w, all, Rule::DuplicateValues, all), "A1 A2 A4 A5 A8 A9");
-    assert_eq!(matches(&mut w, all, Rule::UniqueValues, all), "A3 A10 A11 A12");
+    assert_eq!(
+        matches(&mut w, all, Rule::DuplicateValues, all),
+        "A1 A2 A4 A5 A8 A9"
+    );
+    assert_eq!(
+        matches(&mut w, all, Rule::UniqueValues, all),
+        "A3 A10 A11 A12"
+    );
     // Values are counted over all the ranges of the rule.
     w.set_cell_text(0, 0, 2, "PEAR").unwrap();
     w.set_cell_text(0, 1, 2, "kiwi").unwrap();
     w.commit("more");
-    assert_eq!(matches(&mut w, "A3,C1:C2", Rule::DuplicateValues, "A1:C3"), "C1 A3");
-    assert_eq!(matches(&mut w, "A3,C1:C2", Rule::UniqueValues, "A1:C3"), "C2");
+    assert_eq!(
+        matches(&mut w, "A3,C1:C2", Rule::DuplicateValues, "A1:C3"),
+        "C1 A3"
+    );
+    assert_eq!(
+        matches(&mut w, "A3,C1:C2", Rule::UniqueValues, "A1:C3"),
+        "C2"
+    );
     // Ranges that overlap do not make a value its own duplicate.
-    assert_eq!(matches(&mut w, "A3:A4,A3", Rule::DuplicateValues, "A1:A5"), "");
+    assert_eq!(
+        matches(&mut w, "A3:A4,A3", Rule::DuplicateValues, "A1:A5"),
+        ""
+    );
 }
 
 // ---- text --------------------------------------------------------------------------------
@@ -425,7 +506,16 @@ fn duplicate_and_unique_values() {
 fn text_rules() {
     // Text, text, text, the number 123, blank, an error, text with a star,
     // a boolean.
-    let mut w = column(&["Hello World", "hello", "World", "123", "", "=1/0", "a*b", "TRUE"]);
+    let mut w = column(&[
+        "Hello World",
+        "hello",
+        "World",
+        "123",
+        "",
+        "=1/0",
+        "a*b",
+        "TRUE",
+    ]);
     let all = "A1:A8";
     let mut test = |op: TextOp, text: Expr| matches(&mut w, all, Rule::Text { op, text }, all);
     // NOT(ISERROR(SEARCH(text, cell))): no case, wildcards, numbers as text.
@@ -440,7 +530,10 @@ fn text_rules() {
     assert_eq!(test(TextOp::Contains, text("true")), "A8");
     assert_eq!(test(TextOp::Contains, text("")), "A1 A2 A3 A4 A5 A7 A8");
     // ISERROR(SEARCH(text, cell)): blanks and errors "do not contain".
-    assert_eq!(test(TextOp::NotContains, text("hello")), "A3 A4 A5 A6 A7 A8");
+    assert_eq!(
+        test(TextOp::NotContains, text("hello")),
+        "A3 A4 A5 A6 A7 A8"
+    );
     assert_eq!(test(TextOp::NotContains, text("")), "A6");
     // LEFT(cell, LEN(text)) = text: no case, no wildcards.
     assert_eq!(test(TextOp::BeginsWith, text("HEL")), "A1 A2");
@@ -458,7 +551,16 @@ fn text_rules() {
 
 #[test]
 fn text_rules_with_formula_operands() {
-    let mut w = column(&["Hello World", "hello", "World", "123", "", "=1/0", "a*b", "TRUE"]);
+    let mut w = column(&[
+        "Hello World",
+        "hello",
+        "World",
+        "123",
+        "",
+        "=1/0",
+        "a*b",
+        "TRUE",
+    ]);
     for (cell, input) in [
         ("B1", "hello"),
         ("B2", "x"),
@@ -472,7 +574,8 @@ fn text_rules_with_formula_operands() {
     }
     w.commit("setup");
     let all = "A1:A8";
-    let mut test = |op: TextOp, text: &str| matches(&mut w, all, Rule::Text { op, text: f(text) }, all);
+    let mut test =
+        |op: TextOp, text: &str| matches(&mut w, all, Rule::Text { op, text: f(text) }, all);
     assert_eq!(test(TextOp::Contains, "$C$1"), "A1 A3");
     // A number is searched for as text...
     assert_eq!(test(TextOp::Contains, "$C$2"), "A4");
@@ -503,7 +606,10 @@ fn blanks_and_errors() {
     assert_eq!(matches(&mut w, all, Rule::Blanks, all), "A1 A5 A8 A9");
     assert_eq!(matches(&mut w, all, Rule::NoBlanks, all), "A2 A3 A6 A10");
     assert_eq!(matches(&mut w, all, Rule::Errors, all), "A4 A7");
-    assert_eq!(matches(&mut w, all, Rule::NoErrors, all), "A1 A2 A3 A5 A6 A8 A9 A10");
+    assert_eq!(
+        matches(&mut w, all, Rule::NoErrors, all),
+        "A1 A2 A3 A5 A6 A8 A9 A10"
+    );
 }
 
 /// The text, blank and error rules give what the formula Excel stores for
@@ -533,8 +639,13 @@ fn rules_agree_with_their_stored_formulas() {
     let all = format!("A1:A{rows}");
     let mut rules = vec![Rule::Blanks, Rule::NoBlanks, Rule::Errors, Rule::NoErrors];
     for op in TextOp::ALL {
-        for needle in ["hello", "WOR", "12", "o*d", "a~*b", "?", "", "true", "1.5", "-"] {
-            rules.push(Rule::Text { op, text: text(needle) });
+        for needle in [
+            "hello", "WOR", "12", "o*d", "a~*b", "?", "", "true", "1.5", "-",
+        ] {
+            rules.push(Rule::Text {
+                op,
+                text: text(needle),
+            });
         }
     }
     for rule in rules {
@@ -542,7 +653,9 @@ fn rules_agree_with_their_stored_formulas() {
         let stored = ooxml_formulas(&w.sheets[0].cond_formats[0]);
         assert_eq!(stored.len(), 1, "{rule:?}");
         for row in 0..rows {
-            let expected = match Calc::eval_once(&w, 0, row, 0, &stored[0].shifted(row as i64, 0)).into_scalar() {
+            let expected = match Calc::eval_once(&w, 0, row, 0, &stored[0].shifted(row as i64, 0))
+                .into_scalar()
+            {
                 Value::Bool(b) => b,
                 _ => false,
             };
@@ -602,20 +715,50 @@ fn dates_occurring() {
 fn date_periods_at_the_edges_of_weeks_and_years() {
     // On a Sunday the week has just started; on a Saturday it is ending.
     let sunday = date_to_serial(2024, 5, 12).unwrap();
-    assert_eq!(days_matching(TimePeriod::ThisWeek, sunday, -20, 20), span(0, 6));
-    assert_eq!(days_matching(TimePeriod::LastWeek, sunday, -20, 20), span(-7, -1));
-    assert_eq!(days_matching(TimePeriod::NextWeek, sunday, -20, 20), span(7, 13));
+    assert_eq!(
+        days_matching(TimePeriod::ThisWeek, sunday, -20, 20),
+        span(0, 6)
+    );
+    assert_eq!(
+        days_matching(TimePeriod::LastWeek, sunday, -20, 20),
+        span(-7, -1)
+    );
+    assert_eq!(
+        days_matching(TimePeriod::NextWeek, sunday, -20, 20),
+        span(7, 13)
+    );
     let saturday = date_to_serial(2024, 5, 18).unwrap();
-    assert_eq!(days_matching(TimePeriod::ThisWeek, saturday, -20, 20), span(-6, 0));
-    assert_eq!(days_matching(TimePeriod::LastWeek, saturday, -20, 20), span(-13, -7));
-    assert_eq!(days_matching(TimePeriod::NextWeek, saturday, -20, 20), span(1, 7));
+    assert_eq!(
+        days_matching(TimePeriod::ThisWeek, saturday, -20, 20),
+        span(-6, 0)
+    );
+    assert_eq!(
+        days_matching(TimePeriod::LastWeek, saturday, -20, 20),
+        span(-13, -7)
+    );
+    assert_eq!(
+        days_matching(TimePeriod::NextWeek, saturday, -20, 20),
+        span(1, 7)
+    );
     // Months wrap around the year.
     let january = date_to_serial(2024, 1, 10).unwrap();
-    assert_eq!(days_matching(TimePeriod::LastMonth, january, -60, 60), span(-40, -10));
-    assert_eq!(days_matching(TimePeriod::NextMonth, january, -60, 60), span(22, 50));
+    assert_eq!(
+        days_matching(TimePeriod::LastMonth, january, -60, 60),
+        span(-40, -10)
+    );
+    assert_eq!(
+        days_matching(TimePeriod::NextMonth, january, -60, 60),
+        span(22, 50)
+    );
     let december = date_to_serial(2024, 12, 31).unwrap();
-    assert_eq!(days_matching(TimePeriod::NextMonth, december, -60, 60), span(1, 31));
-    assert_eq!(days_matching(TimePeriod::LastMonth, december, -60, 60), span(-60, -31));
+    assert_eq!(
+        days_matching(TimePeriod::NextMonth, december, -60, 60),
+        span(1, 31)
+    );
+    assert_eq!(
+        days_matching(TimePeriod::LastMonth, december, -60, 60),
+        span(-60, -31)
+    );
     // The last day of a long month has a "next month" all the same.
     let end_of_january = date_to_serial(2025, 1, 31).unwrap();
     assert_eq!(
@@ -635,22 +778,42 @@ fn date_rules_look_at_the_day_only() {
     w.caches.cond.set_today(Some(today));
     // A time of day does not matter; text that reads as a date counts.
     assert_eq!(
-        matches(&mut w, "A1:A10", Rule::date_occurring(TimePeriod::Yesterday), "A1:A10"),
+        matches(
+            &mut w,
+            "A1:A10",
+            Rule::date_occurring(TimePeriod::Yesterday),
+            "A1:A10"
+        ),
         "A9"
     );
     assert_eq!(
-        matches(&mut w, "A1:A10", Rule::date_occurring(TimePeriod::ThisMonth), "A1:A10"),
+        matches(
+            &mut w,
+            "A1:A10",
+            Rule::date_occurring(TimePeriod::ThisMonth),
+            "A1:A10"
+        ),
         "A5 A8 A9"
     );
     assert_eq!(
-        matches(&mut w, "A1:A10", Rule::date_occurring(TimePeriod::Today), "A1:A10"),
+        matches(
+            &mut w,
+            "A1:A10",
+            Rule::date_occurring(TimePeriod::Today),
+            "A1:A10"
+        ),
         "A5 A8"
     );
     // The day changes: so do the answers, without any recalculation.
     w.caches.cond.set_today(Some(today + 1.0));
     assert_eq!(hits(&w, "A1:A10"), "");
     assert_eq!(
-        matches(&mut w, "A1:A10", Rule::date_occurring(TimePeriod::Yesterday), "A1:A10"),
+        matches(
+            &mut w,
+            "A1:A10",
+            Rule::date_occurring(TimePeriod::Yesterday),
+            "A1:A10"
+        ),
         "A5 A8"
     );
 }
@@ -664,7 +827,12 @@ fn date_rules_agree_with_their_stored_formulas() {
         let mut w = Workbook::new(Locale::en());
         let offsets: Vec<i32> = (-70..=70).collect();
         for (row, offset) in offsets.iter().enumerate() {
-            w.set_value(0, row as u32, 0, Value::Number(today + *offset as f64 + 0.25));
+            w.set_value(
+                0,
+                row as u32,
+                0,
+                Value::Number(today + *offset as f64 + 0.25),
+            );
         }
         w.commit("dates");
         for period in TimePeriod::ALL {
@@ -672,7 +840,8 @@ fn date_rules_agree_with_their_stored_formulas() {
             let stored = ooxml_formulas(&w.sheets[0].cond_formats[0]);
             assert_eq!(stored.len(), 1);
             for row in 0..offsets.len() as u32 {
-                let value = Calc::eval_once(&w, 0, row, 0, &stored[0].shifted(row as i64, 0)).into_scalar();
+                let value =
+                    Calc::eval_once(&w, 0, row, 0, &stored[0].shifted(row as i64, 0)).into_scalar();
                 let got = result_at(&w, 0, row, 0).is_some();
                 if now_serial().floor() != today {
                     return None;
@@ -710,7 +879,11 @@ fn scale(stops: &[(Cfvo, Color)]) -> Rule {
 #[test]
 fn two_colour_scales() {
     let mut w = column(&["0", "25", "50", "75", "100", "text", "", "=1/0", "TRUE"]);
-    only(&mut w, "A1:A9", Rule::ColorScale(ColorScale::two(BLACK, WHITE)));
+    only(
+        &mut w,
+        "A1:A9",
+        Rule::ColorScale(ColorScale::two(BLACK, WHITE)),
+    );
     assert_eq!(fill_at(&w, "A1"), Some(BLACK));
     assert_eq!(fill_at(&w, "A2"), Some(Color(0x404040)));
     assert_eq!(fill_at(&w, "A3"), Some(Color(0x808080)));
@@ -764,7 +937,11 @@ fn two_colour_scales() {
 #[test]
 fn three_colour_scales() {
     let mut w = column(&["0", "25", "50", "75", "100"]);
-    only(&mut w, "A1:A5", Rule::ColorScale(ScalePreset::GreenYellowRed.scale()));
+    only(
+        &mut w,
+        "A1:A5",
+        Rule::ColorScale(ScalePreset::GreenYellowRed.scale()),
+    );
     assert_eq!(fill_at(&w, "A1"), Some(Color(0xF8696B)));
     assert_eq!(fill_at(&w, "A2"), Some(Color(0xFCAA78)));
     assert_eq!(fill_at(&w, "A3"), Some(Color(0xFFEB84)));
@@ -795,7 +972,11 @@ fn three_colour_scales() {
 
     // All numbers equal: every stop is the same value.
     let mut w = column(&["7", "7", "7"]);
-    only(&mut w, "A1:A3", Rule::ColorScale(ScalePreset::GreenYellowRed.scale()));
+    only(
+        &mut w,
+        "A1:A3",
+        Rule::ColorScale(ScalePreset::GreenYellowRed.scale()),
+    );
     assert_eq!(fill_at(&w, "A2"), Some(Color(0xF8696B)));
 }
 
@@ -804,7 +985,11 @@ fn three_colour_scales() {
 #[test]
 fn data_bars_from_the_gallery() {
     let mut w = column(&["0", "50", "100", "text", ""]);
-    only(&mut w, "A1:A5", Rule::DataBar(DataBar::preset(BarColor::Blue, true)));
+    only(
+        &mut w,
+        "A1:A5",
+        Rule::DataBar(DataBar::preset(BarColor::Blue, true)),
+    );
     let bar = bar_at(&w, "A2").unwrap();
     assert!(close(bar.start, 0.0) && close(bar.end, 0.5));
     assert_eq!(
@@ -819,22 +1004,36 @@ fn data_bars_from_the_gallery() {
     let result = at(&w, "A2").unwrap();
     assert!(result.patch.is_empty());
     assert!(!result.adornment.unwrap().hide_value);
-    assert_eq!(w.display(0, 1, 0).adornment.and_then(|a| a.bar), bar_at(&w, "A2"));
+    assert_eq!(
+        w.display(0, 1, 0).adornment.and_then(|a| a.bar),
+        bar_at(&w, "A2")
+    );
 
     // Automatic ends start from zero: 50 is half of 100 even when it is
     // the smallest number.
     let mut w = column(&["50", "75", "100"]);
-    only(&mut w, "A1:A3", Rule::DataBar(DataBar::preset(BarColor::Green, false)));
+    only(
+        &mut w,
+        "A1:A3",
+        Rule::DataBar(DataBar::preset(BarColor::Green, false)),
+    );
     let bar = bar_at(&w, "A1").unwrap();
     assert!(close(bar.end, 0.5));
-    assert_eq!((bar.fill, bar.gradient, bar.border), (Color(0x63C384), false, None));
+    assert_eq!(
+        (bar.fill, bar.gradient, bar.border),
+        (Color(0x63C384), false, None)
+    );
     assert!(close(bar_at(&w, "A2").unwrap().end, 0.75));
 }
 
 #[test]
 fn data_bars_with_negative_numbers() {
     let mut w = column(&["-50", "0", "100"]);
-    only(&mut w, "A1:A3", Rule::DataBar(DataBar::preset(BarColor::Blue, true)));
+    only(
+        &mut w,
+        "A1:A3",
+        Rule::DataBar(DataBar::preset(BarColor::Blue, true)),
+    );
     // The axis sits a third of the way: 50 below zero, 100 above.
     let third = 1.0 / 3.0;
     let low = bar_at(&w, "A1").unwrap();
@@ -849,7 +1048,11 @@ fn data_bars_with_negative_numbers() {
     assert_eq!((high.negative, high.fill), (false, Color(0x638EC6)));
 
     // Solid bars of the gallery have no border, negative or not.
-    only(&mut w, "A1:A3", Rule::DataBar(DataBar::preset(BarColor::Purple, false)));
+    only(
+        &mut w,
+        "A1:A3",
+        Rule::DataBar(DataBar::preset(BarColor::Purple, false)),
+    );
     assert_eq!(bar_at(&w, "A1").unwrap().border, None);
     assert_eq!(bar_at(&w, "A1").unwrap().fill, RED);
 
@@ -859,7 +1062,10 @@ fn data_bars_with_negative_numbers() {
     same.negative_border = None;
     only(&mut w, "A1:A3", Rule::DataBar(same));
     let low = bar_at(&w, "A1").unwrap();
-    assert_eq!((low.fill, low.border), (Color(0xFFB628), Some(Color(0xFFB628))));
+    assert_eq!(
+        (low.fill, low.border),
+        (Color(0xFFB628), Some(Color(0xFFB628)))
+    );
 
     // The axis in the middle of the cell: each side scaled by the larger
     // of the two ends.
@@ -881,7 +1087,11 @@ fn data_bars_with_negative_numbers() {
 
     // Nothing positive: the axis is the far edge and bars grow back.
     let mut w = column(&["-100", "-50"]);
-    only(&mut w, "A1:A2", Rule::DataBar(DataBar::preset(BarColor::Blue, true)));
+    only(
+        &mut w,
+        "A1:A2",
+        Rule::DataBar(DataBar::preset(BarColor::Blue, true)),
+    );
     let bar = bar_at(&w, "A2").unwrap();
     assert!(close(bar.start, 1.0) && close(bar.end, 0.5) && close(bar.axis.unwrap(), 1.0));
     assert!(close(bar_at(&w, "A1").unwrap().end, 0.0));
@@ -909,7 +1119,11 @@ fn data_bar_settings() {
     only(&mut w, "A1:A3", Rule::DataBar(mirrored));
     let third = 1.0 / 3.0;
     let bar = bar_at(&w, "A2").unwrap();
-    assert!(close(bar.start, 1.0 - third) && close(bar.end, third) && close(bar.axis.unwrap(), 1.0 - third));
+    assert!(
+        close(bar.start, 1.0 - third)
+            && close(bar.end, third)
+            && close(bar.axis.unwrap(), 1.0 - third)
+    );
     assert!(close(bar_at(&w, "A1").unwrap().end, 1.0));
 
     // Fixed ends: numbers beyond them get the shortest or longest bar.
@@ -941,10 +1155,18 @@ fn data_bar_settings() {
     // Nothing but zeros: bars of no length. The same number everywhere
     // else: full bars, zero being the automatic low end.
     let mut w = column(&["0", "0", "7", "7"]);
-    only(&mut w, "A1:A2", Rule::DataBar(DataBar::preset(BarColor::Blue, true)));
+    only(
+        &mut w,
+        "A1:A2",
+        Rule::DataBar(DataBar::preset(BarColor::Blue, true)),
+    );
     let bar = bar_at(&w, "A1").unwrap();
     assert!(close(bar.start, 0.0) && close(bar.end, 0.0) && bar.axis.is_none());
-    only(&mut w, "A3:A4", Rule::DataBar(DataBar::preset(BarColor::Blue, true)));
+    only(
+        &mut w,
+        "A3:A4",
+        Rule::DataBar(DataBar::preset(BarColor::Blue, true)),
+    );
     assert!(close(bar_at(&w, "A3").unwrap().end, 1.0));
 }
 
@@ -953,14 +1175,28 @@ fn data_bar_settings() {
 #[test]
 fn icon_sets_from_the_gallery() {
     let mut w = column(&["0", "32", "33", "66", "67", "100", "x", "", "TRUE"]);
-    only(&mut w, "A1:A9", Rule::IconSet(IconRule::preset(IconSet::ThreeArrows)));
+    only(
+        &mut w,
+        "A1:A9",
+        Rule::IconSet(IconRule::preset(IconSet::ThreeArrows)),
+    );
     // Bands start at 33 % and 67 % of the way from 0 to 100, inclusive.
     let indexes: Vec<Option<u8>> = (1..=9)
         .map(|r| icon_at(&w, &format!("A{r}")).map(|i| i.index))
         .collect();
     assert_eq!(
         indexes,
-        [Some(0), Some(0), Some(1), Some(1), Some(2), Some(2), None, None, None]
+        [
+            Some(0),
+            Some(0),
+            Some(1),
+            Some(1),
+            Some(2),
+            Some(2),
+            None,
+            None,
+            None
+        ]
     );
     assert_eq!(icon_at(&w, "A1").unwrap().icon(), Icon::RedDownArrow);
     assert_eq!(icon_at(&w, "A3").unwrap().icon(), Icon::YellowSideArrow);
@@ -971,8 +1207,14 @@ fn icon_sets_from_the_gallery() {
 
     // Five icons: bands of 20 %.
     let mut w = column(&["0", "19", "20", "40", "60", "80", "100"]);
-    only(&mut w, "A1:A7", Rule::IconSet(IconRule::preset(IconSet::FiveQuarters)));
-    let icons: Vec<Icon> = (1..=7).map(|r| icon_at(&w, &format!("A{r}")).unwrap().icon()).collect();
+    only(
+        &mut w,
+        "A1:A7",
+        Rule::IconSet(IconRule::preset(IconSet::FiveQuarters)),
+    );
+    let icons: Vec<Icon> = (1..=7)
+        .map(|r| icon_at(&w, &format!("A{r}")).unwrap().icon())
+        .collect();
     let expected = [
         Icon::WhiteCircle,
         Icon::WhiteCircle,
@@ -985,8 +1227,14 @@ fn icon_sets_from_the_gallery() {
     assert_eq!(icons, expected);
 
     // Four icons: bands of 25 %.
-    only(&mut w, "A1:A7", Rule::IconSet(IconRule::preset(IconSet::FourRating)));
-    let indexes: Vec<u8> = (1..=7).map(|r| icon_at(&w, &format!("A{r}")).unwrap().index).collect();
+    only(
+        &mut w,
+        "A1:A7",
+        Rule::IconSet(IconRule::preset(IconSet::FourRating)),
+    );
+    let indexes: Vec<u8> = (1..=7)
+        .map(|r| icon_at(&w, &format!("A{r}")).unwrap().index)
+        .collect();
     assert_eq!(indexes, [0, 0, 0, 1, 2, 3, 3]);
     assert_eq!(icon_at(&w, "A1").unwrap().icon(), Icon::OneBar);
 }
@@ -994,7 +1242,11 @@ fn icon_sets_from_the_gallery() {
 #[test]
 fn icon_set_settings() {
     let mut w = column(&["0", "32", "33", "66", "67", "100"]);
-    let index = |w: &Workbook| -> Vec<u8> { (1..=6).map(|r| icon_at(w, &format!("A{r}")).unwrap().index).collect() };
+    let index = |w: &Workbook| -> Vec<u8> {
+        (1..=6)
+            .map(|r| icon_at(w, &format!("A{r}")).unwrap().index)
+            .collect()
+    };
     // ">" instead of ">=" for the middle band.
     let mut rule = IconRule::preset(IconSet::ThreeTrafficLights1);
     rule.thresholds[1].gte = false;
@@ -1033,7 +1285,10 @@ fn icon_set_settings() {
     );
     assert_eq!(icon_at(&w, "A6").unwrap().icon(), Icon::SilverStar);
     let middle = at(&w, "A3").unwrap().adornment.unwrap();
-    assert_eq!((middle.icon, middle.bar, middle.hide_value), (None, None, true));
+    assert_eq!(
+        (middle.icon, middle.bar, middle.hide_value),
+        (None, None, true)
+    );
 }
 
 #[test]
@@ -1066,8 +1321,14 @@ fn ranges_without_numbers_are_left_alone() {
     assert_eq!(matches(&mut w, "C1:C9", Rule::UniqueValues, "A1:C9"), "");
     // Rules that do match empty cells.
     assert_eq!(matches(&mut w, "C1:C2", Rule::Blanks, "A1:C9"), "C1 C2");
-    assert_eq!(matches(&mut w, "C1:C2", Rule::less_than(num(1.0)), "A1:C9"), "C1 C2");
-    assert_eq!(matches(&mut w, "C1:C2", Rule::Formula(f("C1=0")), "A1:C9"), "C1 C2");
+    assert_eq!(
+        matches(&mut w, "C1:C2", Rule::less_than(num(1.0)), "A1:C9"),
+        "C1 C2"
+    );
+    assert_eq!(
+        matches(&mut w, "C1:C2", Rule::Formula(f("C1=0")), "A1:C9"),
+        "C1 C2"
+    );
 }
 
 // ---- several rules on one cell -------------------------------------------------------------------------
@@ -1087,15 +1348,19 @@ fn rules_combine_by_priority() {
         fill: Some(Some(GREEN)),
         ..StylePatch::default()
     };
-    let over_five = CondFormat::new(rects("A1:A3"), Rule::greater_than(num(5.0))).with_format(bold_red.clone());
-    let positive =
-        CondFormat::new(rects("A1:A3"), Rule::greater_than(num(0.0))).with_format(italic_blue_on_green.clone());
+    let over_five =
+        CondFormat::new(rects("A1:A3"), Rule::greater_than(num(5.0))).with_format(bold_red.clone());
+    let positive = CondFormat::new(rects("A1:A3"), Rule::greater_than(num(0.0)))
+        .with_format(italic_blue_on_green.clone());
     w.set_cond_formats(0, vec![over_five.clone(), positive.clone()]);
     w.commit("rules");
     // Each property comes from the first rule that sets it.
     let both = at(&w, "A1").unwrap().patch;
     assert_eq!((both.bold, both.italic), (Some(true), Some(false)));
-    assert_eq!((both.font_color, both.fill), (Some(Some(RED)), Some(Some(GREEN))));
+    assert_eq!(
+        (both.font_color, both.fill),
+        (Some(Some(RED)), Some(Some(GREEN)))
+    );
     // 3 only passes the second rule; text is above both numbers.
     assert_eq!(at(&w, "A2").unwrap().patch, italic_blue_on_green);
     assert_eq!(at(&w, "A3").unwrap().patch.fill, Some(Some(GREEN)));
@@ -1117,7 +1382,9 @@ fn rules_combine_by_priority() {
 
     // What the grid gets: the cell's own style with the rules laid over.
     let shown = w.display(0, 0, 0);
-    assert!(shown.style.font.bold && shown.style.font.color == Some(RED) && shown.style.fill.is_none());
+    assert!(
+        shown.style.font.bold && shown.style.font.color == Some(RED) && shown.style.fill.is_none()
+    );
     assert!(shown.adornment.is_none());
     assert!(w.display(0, 5, 5).style.fill.is_none());
 }
@@ -1156,7 +1423,10 @@ fn one_bar_one_scale_one_icon() {
     assert_eq!(fill_at(&w, "A2"), Some(BLACK));
     // Text gets none of the graded formats, but passes "greater than 7".
     let on_text = at(&w, "A3").unwrap();
-    assert_eq!((on_text.patch.fill, on_text.adornment), (Some(Some(BLUE)), None));
+    assert_eq!(
+        (on_text.patch.fill, on_text.adornment),
+        (Some(Some(BLUE)), None)
+    );
 
     // A fill of higher priority than the scale wins where the rule holds.
     w.set_cond_formats(0, vec![filled.clone(), black_white.clone()]);
@@ -1201,7 +1471,9 @@ fn many_rules_are_found_by_row() {
         ];
         rules.push(CondFormat::new(ranges, Rule::equal_to(num(1.0))).with_format(fill(Color(i))));
     }
-    rules.push(CondFormat::new(rects("C:C"), Rule::equal_to(num(1.0))).with_format(fill(Color(100))));
+    rules.push(
+        CondFormat::new(rects("C:C"), Rule::equal_to(num(1.0))).with_format(fill(Color(100))),
+    );
     w.set_cond_formats(0, rules.clone());
     w.commit("rules");
     for r in 0..62 {
@@ -1230,17 +1502,24 @@ fn rules_too_entangled_to_index_still_work() {
     w.commit("cells");
     let rules: Vec<CondFormat> = (0..1500u32)
         .map(|i| {
-            CondFormat::new(vec![Rect::new(i, 0, 2999 - i, 0)], Rule::equal_to(num(1.0))).with_format(fill(Color(i)))
+            CondFormat::new(vec![Rect::new(i, 0, 2999 - i, 0)], Rule::equal_to(num(1.0)))
+                .with_format(fill(Color(i)))
         })
         .collect();
     w.set_cond_formats(0, rules);
     w.commit("rules");
     // Row 700 is inside the first 701 ranges, row 1499 inside all of them.
     for (row, rule) in [(0, 0), (700, 0), (1499, 0), (1500, 0), (2999, 0)] {
-        assert_eq!(result_at(&w, 0, row, 0).unwrap().patch.fill, Some(Some(Color(rule))));
+        assert_eq!(
+            result_at(&w, 0, row, 0).unwrap().patch.fill,
+            Some(Some(Color(rule)))
+        );
     }
     w.update_cond_format(0, 0, |cf| cf.rule = Rule::equal_to(num(2.0)));
-    assert_eq!(result_at(&w, 0, 700, 0).unwrap().patch.fill, Some(Some(Color(1))));
+    assert_eq!(
+        result_at(&w, 0, 700, 0).unwrap().patch.fill,
+        Some(Some(Color(1)))
+    );
     assert_eq!(result_at(&w, 0, 0, 0), None);
     assert_eq!(result_at(&w, 0, 3000, 0), None);
     assert_eq!(result_at(&w, 0, 700, 1), None);
@@ -1283,7 +1562,10 @@ fn results_follow_cells_rules_and_undo() {
 #[test]
 fn spilled_arrays_take_part() {
     let mut w = wb(&[("A1", "=SEQUENCE(5)"), ("C1", "=SEQUENCE(1,3)*10")]);
-    assert_eq!(matches(&mut w, "A1:A5", Rule::top_items(2), "A1:A6"), "A4 A5");
+    assert_eq!(
+        matches(&mut w, "A1:A5", Rule::top_items(2), "A1:A6"),
+        "A4 A5"
+    );
     assert_eq!(
         matches(&mut w, "A1:A5,C1:E1", Rule::above_average(), "A1:E5"),
         "C1 D1 E1"
@@ -1293,7 +1575,11 @@ fn spilled_arrays_take_part() {
         matches(&mut w, "A1:A5", Rule::Formula(f("ISODD(A1)")), "A1:A5"),
         "A1 A3 A5"
     );
-    only(&mut w, "A1:A5", Rule::ColorScale(ColorScale::two(BLACK, WHITE)));
+    only(
+        &mut w,
+        "A1:A5",
+        Rule::ColorScale(ColorScale::two(BLACK, WHITE)),
+    );
     assert_eq!(fill_at(&w, "A3"), Some(Color(0x808080)));
 }
 
@@ -1308,7 +1594,11 @@ fn adding_editing_and_reordering_rules() {
     assert!(w.insert_cond_format(0, 2, on("C1:C3", 3.0)));
     w.commit("rules");
     // New rules go to the top of the list.
-    let order = |w: &Workbook| -> Vec<String> { (0..w.cond_formats(0).len()).map(|i| applies_to(w, 0, i)).collect() };
+    let order = |w: &Workbook| -> Vec<String> {
+        (0..w.cond_formats(0).len())
+            .map(|i| applies_to(w, 0, i))
+            .collect()
+    };
     assert_eq!(order(&w), ["=$B$1:$B$3", "=$A$1:$A$3", "=$C$1:$C$3"]);
     assert!(w.reorder_cond_format(0, 2, 0));
     assert_eq!(order(&w), ["=$C$1:$C$3", "=$B$1:$B$3", "=$A$1:$A$3"]);
@@ -1525,7 +1815,11 @@ fn edits_on_other_sheets_and_sheet_names() {
     w.rename_sheet(other, "Other");
     w.set_cell_text(other, 4, 0, "10").unwrap();
     w.commit("setup");
-    only(&mut w, "A1:A2", Rule::greater_than(f("Other!$A$5+Sheet1!$C$1")));
+    only(
+        &mut w,
+        "A1:A2",
+        Rule::greater_than(f("Other!$A$5+Sheet1!$C$1")),
+    );
     assert_eq!(hits(&w, "A1:A2"), "A2");
     // Rows inserted on the other sheet: the reference follows, the range
     // does not move.
@@ -1617,7 +1911,10 @@ fn pasting_several_copies_and_part_of_a_rule() {
     assert_eq!(applies_to(&w, 0, 0), "=$A$1:$B$4,$D$5:$E$7,$H$1:$H$4");
     // A piece that is not the whole height of the copied block.
     assert!(w.copy_cond_formats(0, rect("B4:B5"), 0, rect("J1:J4")));
-    assert_eq!(applies_to(&w, 0, 0), "=$A$1:$B$4,$D$5:$E$7,$H$1:$H$4,$J$1,$J$3");
+    assert_eq!(
+        applies_to(&w, 0, 0),
+        "=$A$1:$B$4,$D$5:$E$7,$H$1:$H$4,$J$1,$J$3"
+    );
     // A destination that is not a whole number of copies takes one.
     assert!(w.copy_cond_formats(0, rect("A1:A2"), 0, rect("L1:L3")));
     assert_eq!(
@@ -1639,7 +1936,8 @@ fn rules_copied_to_another_sheet() {
     w.set_cell_text(other, 1, 4, "1").unwrap();
     w.set_cell_text(other, 0, 0, "3").unwrap();
     w.commit("setup");
-    let first = CondFormat::new(rects("A1:A9,C3:C4"), Rule::Formula(f("A1>$A$1"))).with_format(fill(RED));
+    let first =
+        CondFormat::new(rects("A1:A9,C3:C4"), Rule::Formula(f("A1>$A$1"))).with_format(fill(RED));
     let second = CondFormat::new(rects("C1:C9"), Rule::NoBlanks).with_format(fill(GREEN));
     w.set_cond_formats(0, vec![first, second]);
     let there = CondFormat::new(rects("E1:F1,A5"), Rule::Blanks);
@@ -1656,8 +1954,14 @@ fn rules_copied_to_another_sheet() {
     assert_eq!(applies_to(&w, other, 1), "=$E$1:$E$2");
     assert_eq!(applies_to(&w, other, 2), "=$F$1,$A$5");
     // The copies read the cells of their own sheet.
-    assert_eq!(result_at(&w, other, 0, 4).unwrap().patch.fill, Some(Some(RED)));
-    assert_eq!(result_at(&w, other, 1, 4).unwrap().patch.fill, Some(Some(GREEN)));
+    assert_eq!(
+        result_at(&w, other, 0, 4).unwrap().patch.fill,
+        Some(Some(RED))
+    );
+    assert_eq!(
+        result_at(&w, other, 1, 4).unwrap().patch.fill,
+        Some(Some(GREEN))
+    );
     // The source is untouched.
     assert_eq!(applies_to(&w, 0, 0), "=$A$1:$A$9,$C$3:$C$4");
     assert!(w.undo());
@@ -1667,7 +1971,8 @@ fn rules_copied_to_another_sheet() {
 #[test]
 fn moved_cells_take_their_rules_along() {
     let mut w = wb(&[("A1", "9"), ("A2", "1"), ("D1", "5")]);
-    let moving = CondFormat::new(rects("A1:A4"), Rule::Formula(f("A1>$D$1"))).with_format(fill(RED));
+    let moving =
+        CondFormat::new(rects("A1:A4"), Rule::Formula(f("A1>$D$1"))).with_format(fill(RED));
     let watching = CondFormat::new(rects("F1"), Rule::Formula(f("$A$1+$A$3+A2>0")));
     w.set_cond_formats(0, vec![moving, watching]);
     w.commit("rules");
@@ -1710,8 +2015,14 @@ fn typing_and_showing_operands() {
     // A formula is typed for the active cell and kept for the anchor.
     let typed = parse_operand("=SOMME($B$1:$B$3)+B3*1,5", fr, a3, a1).unwrap();
     assert_eq!(typed.to_text(en), "SUM($B$1:$B$3)+B1*1.5");
-    assert_eq!(operand_text(&typed, fr, a1, a3, false), "=SOMME($B$1:$B$3)+B3*1,5");
-    assert_eq!(operand_text(&typed, en, a1, a1, false), "=SUM($B$1:$B$3)+B1*1.5");
+    assert_eq!(
+        operand_text(&typed, fr, a1, a3, false),
+        "=SOMME($B$1:$B$3)+B3*1,5"
+    );
+    assert_eq!(
+        operand_text(&typed, en, a1, a1, false),
+        "=SUM($B$1:$B$3)+B1*1.5"
+    );
     assert_eq!(operand_text(&num(1.5), fr, a1, a3, false), "1,5");
     assert_eq!(operand_text(&text("abc"), en, a1, a1, false), "=\"abc\"");
     // The box of a text rule holds the text itself, or a formula.
@@ -1726,7 +2037,10 @@ fn typing_and_showing_operands() {
     let ranges = rects("A1:A10,C1,B:C,2:3");
     assert_eq!(ranges_text(&ranges, en), "=$A$1:$A$10,$C$1,$B:$C,$2:$3");
     assert_eq!(ranges_text(&ranges, fr), "=$A$1:$A$10;$C$1;$B:$C;$2:$3");
-    assert_eq!(parse_ranges("=$A$1:$A$10;$C$1; $B:$C ;$2:$3"), Some(ranges.clone()));
+    assert_eq!(
+        parse_ranges("=$A$1:$A$10;$C$1; $B:$C ;$2:$3"),
+        Some(ranges.clone())
+    );
     assert_eq!(parse_ranges("a1:a10,c1,b:c,2:3"), Some(ranges));
     assert_eq!(parse_ranges("=Sheet1!$B$2:$C$3"), Some(rects("B2:C3")));
     assert_eq!(parse_ranges("=A1,nonsense"), None);
@@ -1744,7 +2058,10 @@ fn formulas_stored_in_files() {
             .map(|e| e.to_text(en))
             .collect()
     };
-    assert_eq!(stored("B2:B9", Rule::between(num(1.0), f("$A$1"))), ["1", "$A$1"]);
+    assert_eq!(
+        stored("B2:B9", Rule::between(num(1.0), f("$A$1"))),
+        ["1", "$A$1"]
+    );
     assert_eq!(stored("B2:B9", Rule::Formula(f("B2>1"))), ["B2>1"]);
     assert_eq!(
         stored("B2:B9", Rule::text_contains(text("a\"b"))),
@@ -1798,9 +2115,15 @@ fn formulas_stored_in_files() {
                 Some(operand)
             );
         }
-        assert_eq!(text_operand_from_ooxml(op, Some("abc"), None), Some(text("abc")));
+        assert_eq!(
+            text_operand_from_ooxml(op, Some("abc"), None),
+            Some(text("abc"))
+        );
         assert_eq!(text_operand_from_ooxml(op, None, None), None);
-        assert_eq!(text_operand_from_ooxml(op, Some("abc"), Some(&f("B2>1"))), None);
+        assert_eq!(
+            text_operand_from_ooxml(op, Some("abc"), Some(&f("B2>1"))),
+            None
+        );
     }
 }
 
@@ -1828,14 +2151,20 @@ fn spellings_used_in_files() {
             set.ooxml().chars().next().and_then(|c| c.to_digit(10)),
             Some(set.len() as u32)
         );
-        assert_eq!(set.is_x14(), ["3Stars", "3Triangles", "5Boxes"].contains(&set.ooxml()));
+        assert_eq!(
+            set.is_x14(),
+            ["3Stars", "3Triangles", "5Boxes"].contains(&set.ooxml())
+        );
         icons.extend(set.icons());
     }
     // Excel has 52 different icons, all of them in some set.
     assert_eq!(icons.len(), 52);
     assert_eq!(IconSet::from_ooxml("NoIcons"), None);
     assert_eq!(
-        (CellOp::Greater.ooxml(), TextOp::NotContains.ooxml_operator()),
+        (
+            CellOp::Greater.ooxml(),
+            TextOp::NotContains.ooxml_operator()
+        ),
         ("greaterThan", "notContains")
     );
     assert_eq!(
@@ -1843,7 +2172,10 @@ fn spellings_used_in_files() {
         ("last7Days", "middle")
     );
     assert_eq!(
-        (IconSet::FourRedToBlack.ooxml(), IconSet::ThreeTrafficLights2.ooxml()),
+        (
+            IconSet::FourRedToBlack.ooxml(),
+            IconSet::ThreeTrafficLights2.ooxml()
+        ),
         ("4RedToBlack", "3TrafficLights2")
     );
 
@@ -1860,7 +2192,10 @@ fn spellings_used_in_files() {
         assert_eq!(Cfvo::from_ooxml(ty, cfvo.value().cloned()), Some(cfvo));
     }
     assert_eq!(
-        (Cfvo::Automatic.ooxml_type(true), Cfvo::Automatic.ooxml_type(false)),
+        (
+            Cfvo::Automatic.ooxml_type(true),
+            Cfvo::Automatic.ooxml_type(false)
+        ),
         ("autoMin", "autoMax")
     );
     assert_eq!(Cfvo::from_ooxml("autoMax", None), Some(Cfvo::Automatic));
@@ -1880,13 +2215,22 @@ fn spellings_used_in_files() {
         (Rule::Errors, "containsErrors"),
         (Rule::NoErrors, "notContainsErrors"),
         (Rule::date_occurring(TimePeriod::Today), "timePeriod"),
-        (Rule::ColorScale(ScalePreset::WhiteRed.scale()), "colorScale"),
+        (
+            Rule::ColorScale(ScalePreset::WhiteRed.scale()),
+            "colorScale",
+        ),
         (Rule::DataBar(DataBar::legacy(RED)), "dataBar"),
-        (Rule::IconSet(IconRule::preset(IconSet::FiveBoxes)), "iconSet"),
+        (
+            Rule::IconSet(IconRule::preset(IconSet::FiveBoxes)),
+            "iconSet",
+        ),
     ];
     for (rule, ty) in types {
         assert_eq!(rule.ooxml_type(), ty);
-        assert_eq!(rule.is_graded(), ["colorScale", "dataBar", "iconSet"].contains(&ty));
+        assert_eq!(
+            rule.is_graded(),
+            ["colorScale", "dataBar", "iconSet"].contains(&ty)
+        );
     }
 }
 
@@ -1906,9 +2250,15 @@ fn presets_have_excels_colours() {
         patch(HighlightFormat::YellowFillDarkYellowText),
         both(0xFFEB9C, 0x9C5700)
     );
-    assert_eq!(patch(HighlightFormat::GreenFillDarkGreenText), both(0xC6EFCE, 0x006100));
+    assert_eq!(
+        patch(HighlightFormat::GreenFillDarkGreenText),
+        both(0xC6EFCE, 0x006100)
+    );
     assert_eq!(patch(HighlightFormat::LightRedFill), fill(Color(0xFFC7CE)));
-    assert_eq!(patch(HighlightFormat::RedText).font_color, Some(Some(Color(0x9C0006))));
+    assert_eq!(
+        patch(HighlightFormat::RedText).font_color,
+        Some(Some(Color(0x9C0006)))
+    );
     let line = Some(Border {
         style: BorderStyle::Thin,
         color: Some(Color(0x9C0006)),
@@ -1927,7 +2277,10 @@ fn presets_have_excels_colours() {
     assert_eq!(HighlightFormat::ALL.len(), 6);
 
     let bars: Vec<u32> = BarColor::ALL.iter().map(|c| c.color().value()).collect();
-    assert_eq!(bars, [0x638EC6, 0x63C384, 0xFF555A, 0xFFB628, 0x008AEF, 0xD6007B]);
+    assert_eq!(
+        bars,
+        [0x638EC6, 0x63C384, 0xFF555A, 0xFFB628, 0x008AEF, 0xD6007B]
+    );
     let gradient = DataBar::preset(BarColor::Red, true);
     assert_eq!(
         (gradient.min.clone(), gradient.max.clone()),
@@ -1946,16 +2299,32 @@ fn presets_have_excels_colours() {
         (BarAxis::Automatic, BLACK, BarDirection::Context)
     );
     assert_eq!(
-        (gradient.min_length, gradient.max_length, gradient.show_value),
+        (
+            gradient.min_length,
+            gradient.max_length,
+            gradient.show_value
+        ),
         (0, 100, true)
     );
     let solid = DataBar::preset(BarColor::Red, false);
     assert_eq!(
-        (solid.gradient, solid.border, solid.negative_fill, solid.negative_border),
+        (
+            solid.gradient,
+            solid.border,
+            solid.negative_fill,
+            solid.negative_border
+        ),
         (false, None, Some(RED), None)
     );
 
-    let colors = |preset: ScalePreset| -> Vec<u32> { preset.scale().stops.iter().map(|s| s.color.value()).collect() };
+    let colors = |preset: ScalePreset| -> Vec<u32> {
+        preset
+            .scale()
+            .stops
+            .iter()
+            .map(|s| s.color.value())
+            .collect()
+    };
     let (red, yellow, green, white, blue) = (0xF8696B, 0xFFEB84, 0x63BE7B, 0xFCFCFF, 0x5A8AC6);
     // From the lowest number to the highest.
     assert_eq!(colors(ScalePreset::GreenYellowRed), [red, yellow, green]);
@@ -2021,7 +2390,11 @@ fn a_hundred_thousand_formatted_cells_scroll_smoothly() {
     for r in 0..ROWS {
         for c in 0..20u32 {
             // Numbers spread without pattern, some of them repeated.
-            let n = (r.wrapping_mul(2654435761).wrapping_add(c.wrapping_mul(40503)) >> 7) % 1000;
+            let n = (r
+                .wrapping_mul(2654435761)
+                .wrapping_add(c.wrapping_mul(40503))
+                >> 7)
+                % 1000;
             let value = if c == 18 {
                 Value::text(format!("item {n}"))
             } else {
@@ -2103,7 +2476,10 @@ fn a_hundred_thousand_formatted_cells_scroll_smoothly() {
     // A frame at 60 Hz lasts 16 ms; these bounds leave room for a busy
     // machine and an unoptimised build.
     assert!(again.as_millis() < 8, "repainting a frame took {again:?}");
-    assert!(scrolling.as_millis() < 8, "scrolling took {scrolling:?} a frame");
+    assert!(
+        scrolling.as_millis() < 8,
+        "scrolling took {scrolling:?} a frame"
+    );
     assert!(first.as_millis() < 1000, "the first frame took {first:?}");
     assert!(
         after_edit.as_millis() < 1000,

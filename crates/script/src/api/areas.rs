@@ -26,13 +26,25 @@ pub(super) fn areas_object(h: &Host, sheet: usize, rects: &[Rect]) -> J {
 
 /// The sheet and the ranges of a RangeAreas object, from its state.
 pub(super) fn areas_from(h: &Host, call: &Call, state: &[J]) -> Res<(usize, Vec<Rect>)> {
-    let id = state.first().and_then(J::as_i64).ok_or_else(|| call.invalid())?;
+    let id = state
+        .first()
+        .and_then(J::as_i64)
+        .ok_or_else(|| call.invalid())?;
     let sheet = h.sheet(call, id)?;
-    let numbers: Vec<u32> = state[1..].iter().filter_map(|n| n.as_u64().map(|n| n as u32)).collect();
+    let numbers: Vec<u32> = state[1..]
+        .iter()
+        .filter_map(|n| n.as_u64().map(|n| n as u32))
+        .collect();
     if numbers.is_empty() || numbers.len() != state.len() - 1 || numbers.len() % 4 != 0 {
         return Err(call.invalid());
     }
-    Ok((sheet, numbers.chunks(4).map(|n| Rect::new(n[0], n[1], n[2], n[3])).collect()))
+    Ok((
+        sheet,
+        numbers
+            .chunks(4)
+            .map(|n| Rect::new(n[0], n[1], n[2], n[3]))
+            .collect(),
+    ))
 }
 
 pub(super) fn this_areas(h: &Host, call: &Call) -> Res<(usize, Vec<Rect>)> {
@@ -41,7 +53,12 @@ pub(super) fn this_areas(h: &Host, call: &Call) -> Res<(usize, Vec<Rect>)> {
 
 /// An argument that is a Range, a RangeAreas or addresses separated by
 /// commas (`A1:B2, D4`), read from `sheet`.
-pub(super) fn areas_arg(h: &mut Host, call: &Call, index: usize, sheet: usize) -> Res<(usize, Vec<Rect>)> {
+pub(super) fn areas_arg(
+    h: &mut Host,
+    call: &Call,
+    index: usize,
+    sheet: usize,
+) -> Res<(usize, Vec<Rect>)> {
     let value = call.arg(index);
     if let J::String(text) = value {
         return resolve_areas(h, call, sheet, text);
@@ -70,7 +87,10 @@ pub(super) fn rects_of_cells(mut cells: Vec<(u32, u32)>) -> Vec<Rect> {
     }
     let mut out: Vec<Rect> = Vec::new();
     for run in runs {
-        match out.iter_mut().find(|rect| rect.c0 == run.c0 && rect.c1 == run.c1 && rect.r1 + 1 == run.r0) {
+        match out
+            .iter_mut()
+            .find(|rect| rect.c0 == run.c0 && rect.c1 == run.c1 && rect.r1 + 1 == run.r0)
+        {
             Some(rect) => rect.r1 = run.r0,
             None => out.push(run),
         }
@@ -102,7 +122,12 @@ pub(super) fn special(h: &mut Host, call: &Call, sheet: usize, rects: &[Rect]) -
     };
     h.calculate();
     let sh = &h.wb.sheets[sheet];
-    let used: Vec<Rect> = sh.used_rect().map_or(Vec::new(), |used| rects.iter().filter_map(|rect| rect.intersection(&used)).collect());
+    let used: Vec<Rect> = sh.used_rect().map_or(Vec::new(), |used| {
+        rects
+            .iter()
+            .filter_map(|rect| rect.intersection(&used))
+            .collect()
+    });
     // The cells of the sheet that lie in the ranges and pass a test.
     let cells_where = |keep: &dyn Fn(u32, u32, &Content) -> bool| -> Vec<(u32, u32)> {
         let mut found = Vec::new();
@@ -118,23 +143,37 @@ pub(super) fn special(h: &mut Host, call: &Call, sheet: usize, rects: &[Rect]) -
     // The parts of ranges of rules that lie in the ranges asked.
     let shared = |ranges: Vec<Rect>| -> Vec<Rect> {
         let mut out: Vec<Rect> = Vec::new();
-        for part in ranges.iter().flat_map(|range| rects.iter().filter_map(|rect| rect.intersection(range))) {
+        for part in ranges
+            .iter()
+            .flat_map(|range| rects.iter().filter_map(|rect| rect.intersection(range)))
+        {
             if !out.contains(&part) {
                 out.push(part);
             }
         }
         out
     };
-    let first = rects.first().map(|rect| (rect.r0, rect.c0)).unwrap_or((0, 0));
+    let first = rects
+        .first()
+        .map(|rect| (rect.r0, rect.c0))
+        .unwrap_or((0, 0));
     let found: Vec<Rect> = match kind {
-        "Constants" => rects_of_cells(cells_where(&|_, _, content| matches!(content, Content::Value(value) if wanted(value)))),
-        "Formulas" => rects_of_cells(cells_where(&|row, col, content| matches!(content, Content::Formula(_)) && wanted(&sh.value_at(row, col)))),
+        "Constants" => rects_of_cells(cells_where(
+            &|_, _, content| matches!(content, Content::Value(value) if wanted(value)),
+        )),
+        "Formulas" => rects_of_cells(cells_where(&|row, col, content| {
+            matches!(content, Content::Formula(_)) && wanted(&sh.value_at(row, col))
+        })),
         "Blanks" => {
             let mut blank = Vec::new();
             for area in &used {
                 h.sized(call, *area)?;
                 for row in area.r0..=area.r1 {
-                    blank.extend((area.c0..=area.c1).filter(|col| sh.is_blank(row, *col)).map(|col| (row, col)));
+                    blank.extend(
+                        (area.c0..=area.c1)
+                            .filter(|col| sh.is_blank(row, *col))
+                            .map(|col| (row, col)),
+                    );
                 }
             }
             rects_of_cells(blank)
@@ -144,7 +183,10 @@ pub(super) fn special(h: &mut Host, call: &Call, sheet: usize, rects: &[Rect]) -
             let mut out = Vec::new();
             for rect in rects {
                 // Runs of rows that show, crossed with runs of columns that show.
-                let runs = |from: u32, to: u32, hidden: &std::collections::BTreeSet<u32>| -> Vec<(u32, u32)> {
+                let runs = |from: u32,
+                            to: u32,
+                            hidden: &std::collections::BTreeSet<u32>|
+                 -> Vec<(u32, u32)> {
                     let mut runs = Vec::new();
                     let mut start = from;
                     for gone in hidden.range(from..=to) {
@@ -165,13 +207,37 @@ pub(super) fn special(h: &mut Host, call: &Call, sheet: usize, rects: &[Rect]) -
             }
             out
         }
-        "ConditionalFormats" => shared(sh.cond_formats.iter().flat_map(|cf| cf.ranges.iter().copied()).collect()),
-        "SameConditionalFormat" => shared(sh.cond_formats.iter().filter(|cf| cf.applies_to(first.0, first.1)).flat_map(|cf| cf.ranges.iter().copied()).collect()),
-        "DataValidations" => shared(sh.validations.iter().flat_map(|rule| rule.ranges.iter().copied()).collect()),
-        "SameDataValidation" => shared(sh.validations.iter().filter(|rule| rule.contains(first.0, first.1)).flat_map(|rule| rule.ranges.iter().copied()).collect()),
+        "ConditionalFormats" => shared(
+            sh.cond_formats
+                .iter()
+                .flat_map(|cf| cf.ranges.iter().copied())
+                .collect(),
+        ),
+        "SameConditionalFormat" => shared(
+            sh.cond_formats
+                .iter()
+                .filter(|cf| cf.applies_to(first.0, first.1))
+                .flat_map(|cf| cf.ranges.iter().copied())
+                .collect(),
+        ),
+        "DataValidations" => shared(
+            sh.validations
+                .iter()
+                .flat_map(|rule| rule.ranges.iter().copied())
+                .collect(),
+        ),
+        "SameDataValidation" => shared(
+            sh.validations
+                .iter()
+                .filter(|rule| rule.contains(first.0, first.1))
+                .flat_map(|rule| rule.ranges.iter().copied())
+                .collect(),
+        ),
         _ => return Err(call.invalid()),
     };
-    Ok(Ret::maybe((!found.is_empty()).then(|| areas_object(h, sheet, &found))))
+    Ok(Ret::maybe(
+        (!found.is_empty()).then(|| areas_object(h, sheet, &found)),
+    ))
 }
 
 /// `findAll`: every cell of the ranges (of the sheet when there is none)
@@ -180,9 +246,20 @@ pub(super) fn find_all(h: &mut Host, call: &Call, sheet: usize, within: &[Rect])
     let needle = call.str(0)?;
     let options = find_options(call, 1)?;
     h.calculate();
-    let search = Search { needle, options: &options, workbook: false, within };
-    let cells: Vec<(u32, u32)> = h.wb.find_everywhere(&search, sheet).into_iter().map(|(_, row, col)| (row, col)).collect();
-    Ok(Ret::maybe((!cells.is_empty()).then(|| areas_object(h, sheet, &rects_of_cells(cells)))))
+    let search = Search {
+        needle,
+        options: &options,
+        workbook: false,
+        within,
+    };
+    let cells: Vec<(u32, u32)> =
+        h.wb.find_everywhere(&search, sheet)
+            .into_iter()
+            .map(|(_, row, col)| (row, col))
+            .collect();
+    Ok(Ret::maybe(
+        (!cells.is_empty()).then(|| areas_object(h, sheet, &rects_of_cells(cells))),
+    ))
 }
 
 /// The ranges moved by an offset, when they all stay on the sheet.
@@ -190,8 +267,14 @@ fn moved(rects: &[Rect], rows: i64, cols: i64) -> Option<Vec<Rect>> {
     rects
         .iter()
         .map(|rect| {
-            let (r0, c0, r1, c1) = (rect.r0 as i64 + rows, rect.c0 as i64 + cols, rect.r1 as i64 + rows, rect.c1 as i64 + cols);
-            (r0 >= 0 && c0 >= 0 && r1 < MAX_ROWS as i64 && c1 < MAX_COLS as i64).then(|| Rect::new(r0 as u32, c0 as u32, r1 as u32, c1 as u32))
+            let (r0, c0, r1, c1) = (
+                rect.r0 as i64 + rows,
+                rect.c0 as i64 + cols,
+                rect.r1 as i64 + rows,
+                rect.c1 as i64 + cols,
+            );
+            (r0 >= 0 && c0 >= 0 && r1 < MAX_ROWS as i64 && c1 < MAX_COLS as i64)
+                .then(|| Rect::new(r0 as u32, c0 as u32, r1 as u32, c1 as u32))
         })
         .collect()
 }
@@ -206,8 +289,12 @@ fn view(h: &Host, call: &Call) -> Res<(usize, Vec<u32>, Vec<u32>)> {
     h.sized(call, rect)?;
     let sh = &h.wb.sheets[sheet];
     let hidden = sh.rows_not_shown();
-    let mut rows: Vec<u32> = (rect.r0..=rect.r1).filter(|row| !hidden.contains(row)).collect();
-    let cols: Vec<u32> = (rect.c0..=rect.c1).filter(|col| !sh.hidden_cols.contains(col)).collect();
+    let mut rows: Vec<u32> = (rect.r0..=rect.r1)
+        .filter(|row| !hidden.contains(row))
+        .collect();
+    let cols: Vec<u32> = (rect.c0..=rect.c1)
+        .filter(|col| !sh.hidden_cols.contains(col))
+        .collect();
     if let Ok(index) = usize::try_from(call.this_int(5)) {
         rows = vec![*rows.get(index).ok_or_else(|| call.gone())?];
     }
@@ -215,11 +302,30 @@ fn view(h: &Host, call: &Call) -> Res<(usize, Vec<u32>, Vec<u32>)> {
 }
 
 /// One thing read from every cell of a view, as an array of rows.
-fn view_grid(h: &mut Host, call: &Call, english: bool, cell: fn(&Workbook, usize, u32, u32) -> J) -> Res<Ret> {
+fn view_grid(
+    h: &mut Host,
+    call: &Call,
+    english: bool,
+    cell: fn(&Workbook, usize, u32, u32) -> J,
+) -> Res<Ret> {
     let (sheet, rows, cols) = view(h, call)?;
     h.calculate();
-    let grid = |wb: &mut Workbook| rows.iter().map(|row| J::from(cols.iter().map(|col| cell(wb, sheet, *row, *col)).collect::<Vec<J>>())).collect::<Vec<J>>();
-    Ok(Ret::Value(J::from(if english { h.english(grid) } else { grid(&mut h.wb) })))
+    let grid = |wb: &mut Workbook| {
+        rows.iter()
+            .map(|row| {
+                J::from(
+                    cols.iter()
+                        .map(|col| cell(wb, sheet, *row, *col))
+                        .collect::<Vec<J>>(),
+                )
+            })
+            .collect::<Vec<J>>()
+    };
+    Ok(Ret::Value(J::from(if english {
+        h.english(grid)
+    } else {
+        grid(&mut h.wb)
+    })))
 }
 
 pub(super) const RANGE_VIEW: ApiClass = class!("RangeView", "The cells of a range that show: the rows a filter or Hide left out, and the hidden columns, are skipped.", {

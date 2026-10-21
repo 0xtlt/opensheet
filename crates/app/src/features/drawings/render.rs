@@ -9,9 +9,9 @@
 //! centred on it, which is then turned like a plain picture.
 
 use super::picture::Bitmap;
+use opensheet_engine::Color;
 use opensheet_engine::drawing::{Effects, Glow, Outline, Shadow};
 use opensheet_engine::picture_style::{Bevel, Reflection, Rotation3d};
-use opensheet_engine::Color;
 
 /// The largest number of pixels a picture is composed at; a larger one
 /// is composed from a smaller copy.
@@ -46,16 +46,36 @@ impl Dress {
         let mut bits = Vec::new();
         let mut real = |values: &[f32]| bits.extend(values.iter().map(|v| v.to_bits()));
         match &self.outline {
-            Some(outline) => real(&[1.0, outline.color.value() as f32, outline.width, outline.dash.pattern().len() as f32]),
+            Some(outline) => real(&[
+                1.0,
+                outline.color.value() as f32,
+                outline.width,
+                outline.dash.pattern().len() as f32,
+            ]),
             None => real(&[0.0]),
         }
         let effects = &self.effects;
         match &effects.shadow {
-            Some(s) => real(&[1.0, s.color.value() as f32, s.transparency, s.size, s.blur, s.angle, s.distance, s.squash, s.skew]),
+            Some(s) => real(&[
+                1.0,
+                s.color.value() as f32,
+                s.transparency,
+                s.size,
+                s.blur,
+                s.angle,
+                s.distance,
+                s.squash,
+                s.skew,
+            ]),
             None => real(&[0.0]),
         }
         match &effects.glow {
-            Some(glow) => real(&[1.0, glow.color.value() as f32, glow.transparency, glow.radius]),
+            Some(glow) => real(&[
+                1.0,
+                glow.color.value() as f32,
+                glow.transparency,
+                glow.radius,
+            ]),
             None => real(&[0.0]),
         }
         match &effects.reflection {
@@ -99,9 +119,21 @@ impl Layer {
     }
 
     /// One colour through a mask.
-    fn tinted(w: usize, h: usize, ox: i32, oy: i32, mask: &[f32], color: Color, strength: f32) -> Layer {
+    fn tinted(
+        w: usize,
+        h: usize,
+        ox: i32,
+        oy: i32,
+        mask: &[f32],
+        color: Color,
+        strength: f32,
+    ) -> Layer {
         let value = color.value();
-        let ink = [(value & 0xFF) as f32 / 255.0, ((value >> 8) & 0xFF) as f32 / 255.0, ((value >> 16) & 0xFF) as f32 / 255.0];
+        let ink = [
+            (value & 0xFF) as f32 / 255.0,
+            ((value >> 8) & 0xFF) as f32 / 255.0,
+            ((value >> 16) & 0xFF) as f32 / 255.0,
+        ];
         let px = mask
             .iter()
             .map(|m| {
@@ -118,7 +150,12 @@ impl Layer {
         let (x0, y0) = (x.floor(), y.floor());
         let (fx, fy) = (x - x0, y - y0);
         let mut sum = [0.0f32; 4];
-        for (dx, dy, weight) in [(0, 0, (1.0 - fx) * (1.0 - fy)), (1, 0, fx * (1.0 - fy)), (0, 1, (1.0 - fx) * fy), (1, 1, fx * fy)] {
+        for (dx, dy, weight) in [
+            (0, 0, (1.0 - fx) * (1.0 - fy)),
+            (1, 0, fx * (1.0 - fy)),
+            (0, 1, (1.0 - fx) * fy),
+            (1, 1, fx * fy),
+        ] {
             let (px, py) = (x0 as i64 + dx, y0 as i64 + dy);
             if weight <= 0.0 || px < 0 || py < 0 || px >= self.w as i64 || py >= self.h as i64 {
                 continue;
@@ -164,7 +201,12 @@ impl Layer {
                 data.extend_from_slice(&[0; 4]);
             } else {
                 let byte = |v: f32| ((v / a).clamp(0.0, 1.0) * 255.0).round() as u8;
-                data.extend_from_slice(&[byte(p[0]), byte(p[1]), byte(p[2]), (a * 255.0).round() as u8]);
+                data.extend_from_slice(&[
+                    byte(p[0]),
+                    byte(p[1]),
+                    byte(p[2]),
+                    (a * 255.0).round() as u8,
+                ]);
             }
         }
         Bitmap {
@@ -185,7 +227,14 @@ impl Layer {
                 }
             }
         }
-        (x1 > x0 && y1 > y0).then(|| (x0 as i32 + self.ox, y0 as i32 + self.oy, x1 as i32 + self.ox, y1 as i32 + self.oy))
+        (x1 > x0 && y1 > y0).then(|| {
+            (
+                x0 as i32 + self.ox,
+                y0 as i32 + self.oy,
+                x1 as i32 + self.ox,
+                y1 as i32 + self.oy,
+            )
+        })
     }
 }
 
@@ -217,7 +266,11 @@ pub fn gaussian(plane: &mut Vec<f32>, w: usize, h: usize, sigma: f32) {
     // Back to full size, each value between the four reduced ones
     // around it.
     let at = |x: i64, y: i64| {
-        if x < 0 || y < 0 || x >= sw as i64 || y >= sh as i64 { 0.0 } else { small[y as usize * sw + x as usize] }
+        if x < 0 || y < 0 || x >= sw as i64 || y >= sh as i64 {
+            0.0
+        } else {
+            small[y as usize * sw + x as usize]
+        }
     };
     for y in 0..h {
         let fy = (y as f32 + 0.5) / factor as f32 - 0.5;
@@ -238,7 +291,9 @@ pub fn gaussian(plane: &mut Vec<f32>, w: usize, h: usize, sigma: f32) {
 /// deviations.
 fn blur_exact(plane: &mut [f32], w: usize, h: usize, sigma: f32) {
     let radius = (sigma * 3.0).ceil().max(1.0) as i64;
-    let mut kernel: Vec<f32> = (-radius..=radius).map(|i| (-(i * i) as f32 / (2.0 * sigma * sigma)).exp()).collect();
+    let mut kernel: Vec<f32> = (-radius..=radius)
+        .map(|i| (-(i * i) as f32 / (2.0 * sigma * sigma)).exp())
+        .collect();
     let total: f32 = kernel.iter().sum();
     kernel.iter_mut().for_each(|k| *k /= total);
     let mut row = vec![0.0f32; w.max(h)];
@@ -306,7 +361,8 @@ pub fn distance_to(set: &[bool], w: usize, h: usize) -> Vec<f32> {
         for q in 1..n {
             loop {
                 let p = v[k];
-                let s = ((f[q] + (q * q) as f64) - (f[p] + (p * p) as f64)) / (2.0 * q as f64 - 2.0 * p as f64);
+                let s = ((f[q] + (q * q) as f64) - (f[p] + (p * p) as f64))
+                    / (2.0 * q as f64 - 2.0 * p as f64);
                 if s <= z[k] && k > 0 {
                     k -= 1;
                 } else {
@@ -327,7 +383,10 @@ pub fn distance_to(set: &[bool], w: usize, h: usize) -> Vec<f32> {
             *out = ((q as f64 - p as f64) * (q as f64 - p as f64)) + f[p];
         }
     };
-    let mut grid: Vec<f64> = set.iter().map(|inside| if *inside { 0.0 } else { FAR }).collect();
+    let mut grid: Vec<f64> = set
+        .iter()
+        .map(|inside| if *inside { 0.0 } else { FAR })
+        .collect();
     for x in 0..w {
         for y in 0..h {
             f[y] = grid[y * w + x];
@@ -342,7 +401,9 @@ pub fn distance_to(set: &[bool], w: usize, h: usize) -> Vec<f32> {
         pass(&f[..w], &mut d[..w]);
         grid[y * w..(y + 1) * w].copy_from_slice(&d[..w]);
     }
-    grid.into_iter().map(|squared| squared.min(FAR).sqrt() as f32).collect()
+    grid.into_iter()
+        .map(|squared| squared.min(FAR).sqrt() as f32)
+        .collect()
 }
 
 /// How far inside the outline each pixel is (negative outside): the
@@ -354,7 +415,13 @@ fn signed_distance(inside: &[bool], w: usize, h: usize) -> Vec<f32> {
     inside
         .iter()
         .enumerate()
-        .map(|(i, is_in)| if *is_in { to_outside[i] - 0.5 } else { 0.5 - to_inside[i] })
+        .map(|(i, is_in)| {
+            if *is_in {
+                to_outside[i] - 0.5
+            } else {
+                0.5 - to_inside[i]
+            }
+        })
         .collect()
 }
 
@@ -439,23 +506,52 @@ fn homography(from: [(f64, f64); 4], to: [(f64, f64); 4]) -> Option<[f64; 8]> {
 /// it comes from.
 fn warp(layer: &Layer, frame: (usize, usize), rotation: &Rotation3d) -> Layer {
     let (fw, fh) = (frame.0 as f32, frame.1 as f32);
-    let corners = [(0.0, 0.0), (layer.w as f64, 0.0), (layer.w as f64, layer.h as f64), (0.0, layer.h as f64)];
+    let corners = [
+        (0.0, 0.0),
+        (layer.w as f64, 0.0),
+        (layer.w as f64, layer.h as f64),
+        (0.0, layer.h as f64),
+    ];
     let seen = corners.map(|(x, y)| {
-        let (u, v) = ((x as f32 + layer.ox as f32) / fw, (y as f32 + layer.oy as f32) / fh);
+        let (u, v) = (
+            (x as f32 + layer.ox as f32) / fw,
+            (y as f32 + layer.oy as f32) / fh,
+        );
         let (px, py, _) = rotation.project(fw, fh, u, v);
         ((px + fw / 2.0) as f64, (py + fh / 2.0) as f64)
     });
     // Never more than a few times the frame, whatever the camera.
     let reach = 3.0 * fw.max(fh) as f64;
     let clamp = |v: f64, middle: f64| v.clamp(middle - reach, middle + reach);
-    let x0 = seen.iter().map(|p| clamp(p.0, fw as f64 / 2.0)).fold(f64::INFINITY, f64::min).floor();
-    let y0 = seen.iter().map(|p| clamp(p.1, fh as f64 / 2.0)).fold(f64::INFINITY, f64::min).floor();
-    let x1 = seen.iter().map(|p| clamp(p.0, fw as f64 / 2.0)).fold(f64::NEG_INFINITY, f64::max).ceil();
-    let y1 = seen.iter().map(|p| clamp(p.1, fh as f64 / 2.0)).fold(f64::NEG_INFINITY, f64::max).ceil();
+    let x0 = seen
+        .iter()
+        .map(|p| clamp(p.0, fw as f64 / 2.0))
+        .fold(f64::INFINITY, f64::min)
+        .floor();
+    let y0 = seen
+        .iter()
+        .map(|p| clamp(p.1, fh as f64 / 2.0))
+        .fold(f64::INFINITY, f64::min)
+        .floor();
+    let x1 = seen
+        .iter()
+        .map(|p| clamp(p.0, fw as f64 / 2.0))
+        .fold(f64::NEG_INFINITY, f64::max)
+        .ceil();
+    let y1 = seen
+        .iter()
+        .map(|p| clamp(p.1, fh as f64 / 2.0))
+        .fold(f64::NEG_INFINITY, f64::max)
+        .ceil();
     let Some(back) = homography(seen, corners) else {
         return layer.clone();
     };
-    let mut out = Layer::new((x1 - x0).max(1.0) as usize, (y1 - y0).max(1.0) as usize, x0 as i32, y0 as i32);
+    let mut out = Layer::new(
+        (x1 - x0).max(1.0) as usize,
+        (y1 - y0).max(1.0) as usize,
+        x0 as i32,
+        y0 as i32,
+    );
     for y in 0..out.h {
         for x in 0..out.w {
             let (px, py) = (x as f64 + 0.5 + x0, y as f64 + 0.5 + y0);
@@ -482,7 +578,15 @@ fn shadow_layer(object: &Layer, shadow: &Shadow, turn: f32, k: f32) -> Option<La
     let sigma = px(shadow.blur) / 2.0;
     let (sin, cos) = (shadow.angle - turn).to_radians().sin_cos();
     let (dx, dy) = (px(shadow.distance) * cos, px(shadow.distance) * sin);
-    let (sx, sy) = (shadow.size.max(0.01), shadow.size.max(0.01) * if shadow.squash == 0.0 { 1.0 } else { shadow.squash });
+    let (sx, sy) = (
+        shadow.size.max(0.01),
+        shadow.size.max(0.01)
+            * if shadow.squash == 0.0 {
+                1.0
+            } else {
+                shadow.squash
+            },
+    );
     let lean = shadow.skew.to_radians().tan();
     // What stays where it is when the shadow is scaled: the middle of
     // the object, or its foot for a shadow lying on the ground.
@@ -502,12 +606,27 @@ fn shadow_layer(object: &Layer, shadow: &Shadow, turn: f32, k: f32) -> Option<La
         let (rx, ry) = (x - anchor.0, (y - anchor.1) * sy);
         (anchor.0 + rx * sx + lean * ry + dx, anchor.1 + ry + dy)
     };
-    let corners = [forward(bx0 as f32, by0 as f32), forward(bx1 as f32, by0 as f32), forward(bx1 as f32, by1 as f32), forward(bx0 as f32, by1 as f32)];
+    let corners = [
+        forward(bx0 as f32, by0 as f32),
+        forward(bx1 as f32, by0 as f32),
+        forward(bx1 as f32, by1 as f32),
+        forward(bx0 as f32, by1 as f32),
+    ];
     let room = (sigma * 3.0).ceil() + 1.0;
     let x0 = (corners.iter().map(|p| p.0).fold(f32::INFINITY, f32::min) - room).floor();
     let y0 = (corners.iter().map(|p| p.1).fold(f32::INFINITY, f32::min) - room).floor();
-    let x1 = (corners.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max) + room).ceil();
-    let y1 = (corners.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max) + room).ceil();
+    let x1 = (corners
+        .iter()
+        .map(|p| p.0)
+        .fold(f32::NEG_INFINITY, f32::max)
+        + room)
+        .ceil();
+    let y1 = (corners
+        .iter()
+        .map(|p| p.1)
+        .fold(f32::NEG_INFINITY, f32::max)
+        + room)
+        .ceil();
     let (w, h) = ((x1 - x0) as usize, (y1 - y0) as usize);
     if w == 0 || h == 0 || w * h > 4 * MAX_AREA {
         return None;
@@ -520,11 +639,20 @@ fn shadow_layer(object: &Layer, shadow: &Shadow, turn: f32, k: f32) -> Option<La
             let ry = py - anchor.1;
             let rx = (px - anchor.0 - lean * ry) / sx;
             let (ox, oy) = (anchor.0 + rx, anchor.1 + ry / sy);
-            mask[y * w + x] = object.sample(ox - object.ox as f32 - 0.5, oy - object.oy as f32 - 0.5)[3];
+            mask[y * w + x] =
+                object.sample(ox - object.ox as f32 - 0.5, oy - object.oy as f32 - 0.5)[3];
         }
     }
     gaussian(&mut mask, w, h, sigma);
-    Some(Layer::tinted(w, h, x0 as i32, y0 as i32, &mask, shadow.color, 1.0 - shadow.transparency.clamp(0.0, 1.0)))
+    Some(Layer::tinted(
+        w,
+        h,
+        x0 as i32,
+        y0 as i32,
+        &mask,
+        shadow.color,
+        1.0 - shadow.transparency.clamp(0.0, 1.0),
+    ))
 }
 
 /// A halo around the object: full at its edge, gone `radius` away.
@@ -549,7 +677,15 @@ fn glow_layer(object: &Layer, glow: &Glow, k: f32) -> Option<Layer> {
         })
         .collect();
     gaussian(&mut mask, w, h, (radius / 6.0).min(4.0));
-    Some(Layer::tinted(w, h, object.ox - pad as i32, object.oy - pad as i32, &mask, glow.color, 1.0 - glow.transparency.clamp(0.0, 1.0)))
+    Some(Layer::tinted(
+        w,
+        h,
+        object.ox - pad as i32,
+        object.oy - pad as i32,
+        &mask,
+        glow.color,
+        1.0 - glow.transparency.clamp(0.0, 1.0),
+    ))
 }
 
 /// The object seen again under itself, upside down: the rows nearest
@@ -565,7 +701,12 @@ fn reflection_layer(object: &Layer, reflection: &Reflection, k: f32) -> Option<L
     let room = (sigma * 3.0).ceil() as usize;
     let gap = px(reflection.distance).round() as i32;
     let strength = 1.0 - reflection.transparency.clamp(0.0, 1.0);
-    let mut out = Layer::new(object.w + 2 * room, reach + 2 * room, object.ox - room as i32, by1 + gap - room as i32);
+    let mut out = Layer::new(
+        object.w + 2 * room,
+        reach + 2 * room,
+        object.ox - room as i32,
+        by1 + gap - room as i32,
+    );
     for row in 0..reach {
         // The row of the object this far above its foot.
         let source = by1 - 1 - row as i32 - object.oy;
@@ -575,7 +716,8 @@ fn reflection_layer(object: &Layer, reflection: &Reflection, k: f32) -> Option<L
         let fade = strength * (1.0 - row as f32 / reach as f32);
         for x in 0..object.w {
             let p = object.px[source as usize * object.w + x];
-            out.px[(row + room) * out.w + x + room] = [p[0] * fade, p[1] * fade, p[2] * fade, p[3] * fade];
+            out.px[(row + room) * out.w + x + room] =
+                [p[0] * fade, p[1] * fade, p[2] * fade, p[3] * fade];
         }
     }
     blur_layer(&mut out, sigma);
@@ -588,26 +730,49 @@ fn reflection_layer(object: &Layer, reflection: &Reflection, k: f32) -> Option<L
 /// to be painted under the shape, centred on the canvas, which takes
 /// the returned share of its width and height. `None` when there is
 /// nothing to paint.
-pub fn under(cover: &[f32], w: usize, h: usize, effects: &Effects, turn: f32, k: f32) -> Option<(Bitmap, (f32, f32))> {
+pub fn under(
+    cover: &[f32],
+    w: usize,
+    h: usize,
+    effects: &Effects,
+    turn: f32,
+    k: f32,
+) -> Option<(Bitmap, (f32, f32))> {
     let object = Layer {
         w,
         h,
         ox: 0,
         oy: 0,
-        px: cover.iter().map(|a| [0.0, 0.0, 0.0, a.clamp(0.0, 1.0)]).collect(),
+        px: cover
+            .iter()
+            .map(|a| [0.0, 0.0, 0.0, a.clamp(0.0, 1.0)])
+            .collect(),
     };
     let mut layers: Vec<Layer> = Vec::new();
-    layers.extend(effects.shadow.and_then(|shadow| shadow_layer(&object, &shadow, turn, k)));
+    layers.extend(
+        effects
+            .shadow
+            .and_then(|shadow| shadow_layer(&object, &shadow, turn, k)),
+    );
     layers.extend(effects.glow.and_then(|glow| glow_layer(&object, &glow, k)));
     if layers.is_empty() {
         return None;
     }
     let (mut pad_x, mut pad_y) = (0i32, 0i32);
     for layer in &layers {
-        pad_x = pad_x.max(-layer.ox).max(layer.ox + layer.w as i32 - w as i32);
-        pad_y = pad_y.max(-layer.oy).max(layer.oy + layer.h as i32 - h as i32);
+        pad_x = pad_x
+            .max(-layer.ox)
+            .max(layer.ox + layer.w as i32 - w as i32);
+        pad_y = pad_y
+            .max(-layer.oy)
+            .max(layer.oy + layer.h as i32 - h as i32);
     }
-    let mut all = Layer::new(w + 2 * pad_x as usize, h + 2 * pad_y as usize, -pad_x, -pad_y);
+    let mut all = Layer::new(
+        w + 2 * pad_x as usize,
+        h + 2 * pad_y as usize,
+        -pad_x,
+        -pad_y,
+    );
     for layer in &layers {
         all.over(layer);
     }
@@ -618,7 +783,13 @@ pub fn under(cover: &[f32], w: usize, h: usize, effects: &Effects, turn: f32, k:
 /// How much of each pixel of a canvas `w` by `h` outlines cover: the
 /// inside of the closed ones when `filled`, and a line `stroke` pixels
 /// wide along all of them.
-pub fn cover_of(lines: &[(Vec<(f32, f32)>, bool)], w: usize, h: usize, filled: bool, stroke: f32) -> Vec<f32> {
+pub fn cover_of(
+    lines: &[(Vec<(f32, f32)>, bool)],
+    w: usize,
+    h: usize,
+    filled: bool,
+    stroke: f32,
+) -> Vec<f32> {
     let mut cover = vec![0.0f32; w * h];
     if filled {
         let mut crossings: Vec<f32> = Vec::new();
@@ -638,7 +809,10 @@ pub fn cover_of(lines: &[(Vec<(f32, f32)>, bool)], w: usize, h: usize, filled: b
             }
             crossings.sort_by(f32::total_cmp);
             for pair in crossings.chunks_exact(2) {
-                let (from, to) = ((pair[0] - 0.5).ceil().max(0.0) as usize, ((pair[1] - 0.5).floor() as i64).min(w as i64 - 1));
+                let (from, to) = (
+                    (pair[0] - 0.5).ceil().max(0.0) as usize,
+                    ((pair[1] - 0.5).floor() as i64).min(w as i64 - 1),
+                );
                 for x in from as i64..=to {
                     cover[y * w + x as usize] = 1.0;
                 }
@@ -648,19 +822,31 @@ pub fn cover_of(lines: &[(Vec<(f32, f32)>, bool)], w: usize, h: usize, filled: b
     if stroke > 0.0 {
         let half = stroke / 2.0;
         for (points, closed) in lines {
-            let count = if *closed { points.len() } else { points.len().saturating_sub(1) };
+            let count = if *closed {
+                points.len()
+            } else {
+                points.len().saturating_sub(1)
+            };
             for i in 0..count {
                 let (a, b) = (points[i], points[(i + 1) % points.len()]);
                 let reach = half + 1.0;
-                let (x0, x1) = ((a.0.min(b.0) - reach).floor().max(0.0) as usize, ((a.0.max(b.0) + reach).ceil() as i64).min(w as i64 - 1));
-                let (y0, y1) = ((a.1.min(b.1) - reach).floor().max(0.0) as usize, ((a.1.max(b.1) + reach).ceil() as i64).min(h as i64 - 1));
+                let (x0, x1) = (
+                    (a.0.min(b.0) - reach).floor().max(0.0) as usize,
+                    ((a.0.max(b.0) + reach).ceil() as i64).min(w as i64 - 1),
+                );
+                let (y0, y1) = (
+                    (a.1.min(b.1) - reach).floor().max(0.0) as usize,
+                    ((a.1.max(b.1) + reach).ceil() as i64).min(h as i64 - 1),
+                );
                 let (dx, dy) = (b.0 - a.0, b.1 - a.1);
                 let length = (dx * dx + dy * dy).max(1e-9);
                 for y in y0 as i64..=y1 {
                     for x in x0 as i64..=x1 {
                         let (px, py) = (x as f32 + 0.5, y as f32 + 0.5);
                         let along = (((px - a.0) * dx + (py - a.1) * dy) / length).clamp(0.0, 1.0);
-                        let distance = ((px - a.0 - along * dx).powi(2) + (py - a.1 - along * dy).powi(2)).sqrt();
+                        let distance = ((px - a.0 - along * dx).powi(2)
+                            + (py - a.1 - along * dy).powi(2))
+                        .sqrt();
                         let at = y as usize * w + x as usize;
                         cover[at] = cover[at].max((half - distance + 0.5).clamp(0.0, 1.0));
                     }
@@ -677,23 +863,37 @@ pub fn cover_of(lines: &[(Vec<(f32, f32)>, bool)], w: usize, h: usize, filled: b
 /// is how many of its pixels make a pixel of the sheet at 100 %. The
 /// result is centred on the frame; `frame_share` of the returned pair
 /// says how much of its width and height the frame takes.
-pub fn compose(body: &Bitmap, mask: Option<&[bool]>, dress: &Dress, k: f32) -> (Bitmap, (f32, f32)) {
+pub fn compose(
+    body: &Bitmap,
+    mask: Option<&[bool]>,
+    dress: &Dress,
+    k: f32,
+) -> (Bitmap, (f32, f32)) {
     // Too many pixels to dress: a smaller copy is.
     if body.width as usize * body.height as usize > MAX_AREA && body.width > 2 && body.height > 2 {
         let half = body.halved();
         let small_mask = mask.map(|mask| {
             let (w, h) = (half.width as usize, half.height as usize);
             (0..w * h)
-                .map(|i| mask[((i / w * 2).min(body.height as usize - 1)) * body.width as usize + (i % w * 2).min(body.width as usize - 1)])
+                .map(|i| {
+                    mask[((i / w * 2).min(body.height as usize - 1)) * body.width as usize
+                        + (i % w * 2).min(body.width as usize - 1)]
+                })
                 .collect::<Vec<bool>>()
         });
         return compose(&half, small_mask.as_deref(), dress, k / 2.0);
     }
     let (w, h) = (body.width as usize, body.height as usize);
     let px = |points: f32| points * 4.0 / 3.0 * k;
-    let border = dress.outline.map_or(0.0, |outline| px(outline.width).max(1.0));
+    let border = dress
+        .outline
+        .map_or(0.0, |outline| px(outline.width).max(1.0));
     let edged = dress.outline.is_some() || dress.effects.bevel.is_some();
-    let pad = if edged { (border / 2.0).ceil() as usize + 1 } else { 0 };
+    let pad = if edged {
+        (border / 2.0).ceil() as usize + 1
+    } else {
+        0
+    };
     let mut object = Layer::new(w + 2 * pad, h + 2 * pad, -(pad as i32), -(pad as i32));
     for y in 0..h {
         for x in 0..w {
@@ -718,7 +918,11 @@ pub fn compose(body: &Bitmap, mask: Option<&[bool]>, dress: &Dress, k: f32) -> (
         if let Some(outline) = &dress.outline {
             // The line lies astride the edge, half inside, half outside.
             let value = outline.color.value();
-            let ink = [(value & 0xFF) as f32 / 255.0, ((value >> 8) & 0xFF) as f32 / 255.0, ((value >> 16) & 0xFF) as f32 / 255.0];
+            let ink = [
+                (value & 0xFF) as f32 / 255.0,
+                ((value >> 8) & 0xFF) as f32 / 255.0,
+                ((value >> 16) & 0xFF) as f32 / 255.0,
+            ];
             for (p, d) in object.px.iter_mut().zip(&depth) {
                 let cover = (border / 2.0 - d.abs() + 0.5).clamp(0.0, 1.0);
                 if cover > 0.0 {
@@ -734,21 +938,49 @@ pub fn compose(body: &Bitmap, mask: Option<&[bool]>, dress: &Dress, k: f32) -> (
             shade(&mut object, &depth, bevel, k);
         }
     }
-    if let Some(rotation) = dress.effects.rotation.filter(|rotation| !rotation.is_flat() || rotation.perspective > 0.0) {
+    if let Some(rotation) = dress
+        .effects
+        .rotation
+        .filter(|rotation| !rotation.is_flat() || rotation.perspective > 0.0)
+    {
         object = warp(&object, (w, h), &rotation);
     }
     let mut under: Vec<Layer> = Vec::new();
-    under.extend(dress.effects.shadow.and_then(|shadow| shadow_layer(&object, &shadow, dress.turn, k)));
-    under.extend(dress.effects.glow.and_then(|glow| glow_layer(&object, &glow, k)));
-    under.extend(dress.effects.reflection.and_then(|reflection| reflection_layer(&object, &reflection, k)));
+    under.extend(
+        dress
+            .effects
+            .shadow
+            .and_then(|shadow| shadow_layer(&object, &shadow, dress.turn, k)),
+    );
+    under.extend(
+        dress
+            .effects
+            .glow
+            .and_then(|glow| glow_layer(&object, &glow, k)),
+    );
+    under.extend(
+        dress
+            .effects
+            .reflection
+            .and_then(|reflection| reflection_layer(&object, &reflection, k)),
+    );
     // Room for everything, as much on one side of the frame as on the
     // other: the result turns about the middle of the frame.
     let (mut pad_x, mut pad_y) = (0i32, 0i32);
     for layer in under.iter().chain([&object]) {
-        pad_x = pad_x.max(-layer.ox).max(layer.ox + layer.w as i32 - w as i32);
-        pad_y = pad_y.max(-layer.oy).max(layer.oy + layer.h as i32 - h as i32);
+        pad_x = pad_x
+            .max(-layer.ox)
+            .max(layer.ox + layer.w as i32 - w as i32);
+        pad_y = pad_y
+            .max(-layer.oy)
+            .max(layer.oy + layer.h as i32 - h as i32);
     }
-    let mut all = Layer::new(w + 2 * pad_x as usize, h + 2 * pad_y as usize, -pad_x, -pad_y);
+    let mut all = Layer::new(
+        w + 2 * pad_x as usize,
+        h + 2 * pad_y as usize,
+        -pad_x,
+        -pad_y,
+    );
     for layer in under.iter().chain([&object]) {
         all.over(layer);
     }
@@ -779,7 +1011,12 @@ mod tests {
 
     fn pixel(bitmap: &Bitmap, x: u32, y: u32) -> [u8; 4] {
         let at = ((y * bitmap.width + x) * 4) as usize;
-        [bitmap.data[at], bitmap.data[at + 1], bitmap.data[at + 2], bitmap.data[at + 3]]
+        [
+            bitmap.data[at],
+            bitmap.data[at + 1],
+            bitmap.data[at + 2],
+            bitmap.data[at + 3],
+        ]
     }
 
     #[test]
@@ -794,7 +1031,9 @@ mod tests {
         // Nothing in the set: far everywhere, and no panic.
         assert!(distance_to(&[false; 6], 3, 2).iter().all(|d| *d > 1000.0));
         // Inside a 4 by 4 block the edge is half a pixel from the rim.
-        let inside: Vec<bool> = (0..36).map(|i| (1..5).contains(&(i % 6)) && (1..5).contains(&(i / 6))).collect();
+        let inside: Vec<bool> = (0..36)
+            .map(|i| (1..5).contains(&(i % 6)) && (1..5).contains(&(i / 6)))
+            .collect();
         let signed = signed_distance(&inside, 6, 6);
         assert_eq!(signed[6 + 1], 0.5);
         assert_eq!(signed[2 * 6 + 2], 1.5);
@@ -825,11 +1064,25 @@ mod tests {
         // pixels, so the first pixel inside is a quarter of a deviation
         // in (60 %) and the third one and a quarter (89 %).
         let (w, h) = (80usize, 40usize);
-        let mut step: Vec<f32> = (0..w * h).map(|i| if i % w >= 40 { 1.0 } else { 0.0 }).collect();
+        let mut step: Vec<f32> = (0..w * h)
+            .map(|i| if i % w >= 40 { 1.0 } else { 0.0 })
+            .collect();
         gaussian(&mut step, w, h, 2.0);
-        assert!((step[20 * w + 40] - 0.5987).abs() < 0.01, "{}", step[20 * w + 40]);
-        assert!((step[20 * w + 42] - 0.8944).abs() < 0.01, "{}", step[20 * w + 42]);
-        assert!((step[20 * w + 37] - 0.1056).abs() < 0.01, "{}", step[20 * w + 37]);
+        assert!(
+            (step[20 * w + 40] - 0.5987).abs() < 0.01,
+            "{}",
+            step[20 * w + 40]
+        );
+        assert!(
+            (step[20 * w + 42] - 0.8944).abs() < 0.01,
+            "{}",
+            step[20 * w + 42]
+        );
+        assert!(
+            (step[20 * w + 37] - 0.1056).abs() < 0.01,
+            "{}",
+            step[20 * w + 37]
+        );
     }
 
     #[test]
@@ -935,9 +1188,15 @@ mod tests {
         // The face keeps its colour; the edge towards the light is
         // lighter, the one away from it darker.
         assert_eq!(pixel(&out, off + 30, off + 30), [128, 128, 128, 255]);
-        let (top, bottom) = (pixel(&out, off + 30, off + 3)[0], pixel(&out, off + 30, off + 56)[0]);
+        let (top, bottom) = (
+            pixel(&out, off + 30, off + 3)[0],
+            pixel(&out, off + 30, off + 56)[0],
+        );
         assert!(top > 150 && bottom < 105, "{top} {bottom}");
-        let (lit, dark) = (pixel(&out, off + 3, off + 30)[0], pixel(&out, off + 56, off + 30)[0]);
+        let (lit, dark) = (
+            pixel(&out, off + 3, off + 30)[0],
+            pixel(&out, off + 56, off + 30)[0],
+        );
         assert!(lit > 135 && dark < 120, "{lit} {dark}");
     }
 
@@ -946,19 +1205,38 @@ mod tests {
         let mut dress = plain();
         // 60 degrees about the vertical axis, seen in parallel: half as
         // wide, as tall.
-        dress.effects.rotation = Some(Rotation3d { x: 60.0, y: 0.0, z: 0.0, perspective: 0.0 });
+        dress.effects.rotation = Some(Rotation3d {
+            x: 60.0,
+            y: 0.0,
+            z: 0.0,
+            perspective: 0.0,
+        });
         let (out, _) = compose(&grey(80, 40), None, &dress, 1.0);
         assert_eq!((out.width, out.height), (80, 40));
         assert_eq!(pixel(&out, 40, 20), [128, 128, 128, 255]);
         assert_eq!(pixel(&out, 25, 20)[3], 255);
         assert_eq!(pixel(&out, 15, 20)[3], 0);
         // In perspective the near side is taller than the far side.
-        dress.effects.rotation = Some(Rotation3d { x: 50.0, y: 0.0, z: 0.0, perspective: 60.0 });
+        dress.effects.rotation = Some(Rotation3d {
+            x: 50.0,
+            y: 0.0,
+            z: 0.0,
+            perspective: 60.0,
+        });
         let (seen, _) = compose(&grey(80, 80), None, &dress, 1.0);
-        let column = |x: u32| (0..seen.height).filter(|y| pixel(&seen, x, *y)[3] > 128).count();
+        let column = |x: u32| {
+            (0..seen.height)
+                .filter(|y| pixel(&seen, x, *y)[3] > 128)
+                .count()
+        };
         let inked: Vec<u32> = (0..seen.width).filter(|x| column(*x) > 0).collect();
         let (first, last) = (inked[1], inked[inked.len() - 2]);
-        assert!(column(first).abs_diff(column(last)) > 8, "{} {}", column(first), column(last));
+        assert!(
+            column(first).abs_diff(column(last)) > 8,
+            "{} {}",
+            column(first),
+            column(last)
+        );
         // A homography that maps a square onto itself changes nothing.
         let square = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)];
         let same = homography(square, square).unwrap();
@@ -970,7 +1248,14 @@ mod tests {
         // A filled triangle, and the same as a line only.
         let triangle = vec![(vec![(10.0, 50.0), (30.0, 10.0), (50.0, 50.0)], true)];
         let filled = cover_of(&triangle, 60, 60, true, 0.0);
-        assert_eq!((filled[40 * 60 + 30], filled[15 * 60 + 12], filled[55 * 60 + 30]), (1.0, 0.0, 0.0));
+        assert_eq!(
+            (
+                filled[40 * 60 + 30],
+                filled[15 * 60 + 12],
+                filled[55 * 60 + 30]
+            ),
+            (1.0, 0.0, 0.0)
+        );
         let hollow = cover_of(&triangle, 60, 60, false, 3.0);
         assert_eq!(hollow[40 * 60 + 30], 0.0);
         assert!(hollow[49 * 60 + 30] > 0.9 && hollow[30 * 60 + 20] > 0.5);

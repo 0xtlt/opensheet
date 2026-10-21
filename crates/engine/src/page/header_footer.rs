@@ -134,8 +134,10 @@ impl HeaderFooter {
     pub fn is_empty(&self) -> bool {
         self.odd_header.is_empty()
             && self.odd_footer.is_empty()
-            && (!self.different_odd_even || (self.even_header.is_empty() && self.even_footer.is_empty()))
-            && (!self.different_first || (self.first_header.is_empty() && self.first_footer.is_empty()))
+            && (!self.different_odd_even
+                || (self.even_header.is_empty() && self.even_footer.is_empty()))
+            && (!self.different_first
+                || (self.first_header.is_empty() && self.first_footer.is_empty()))
     }
 
     /// The variant a page uses. `first` is true for the first page the
@@ -292,7 +294,11 @@ fn tokens(code: &str) -> Vec<(Tok<'_>, &str)> {
                 }
             },
             '0'..='9' => {
-                let more = code[i..].bytes().take(2).take_while(|b| b.is_ascii_digit()).count();
+                let more = code[i..]
+                    .bytes()
+                    .take(2)
+                    .take_while(|b| b.is_ascii_digit())
+                    .count();
                 let n: u32 = code[i - 1..i + more].parse().unwrap_or(11);
                 i += more;
                 Tok::Size(n)
@@ -319,8 +325,8 @@ fn tokens(code: &str) -> Vec<(Tok<'_>, &str)> {
 /// number them: background 1, text 1, background 2, text 2, six accents,
 /// hyperlink, followed hyperlink.
 const THEME: [u32; 12] = [
-    0xFFFFFF, 0x000000, 0xE8E8E8, 0x0E2841, 0x156082, 0xE97132, 0x196B24, 0x0F9ED5, 0xA02B93, 0x4EA72E, 0x467886,
-    0x96607D,
+    0xFFFFFF, 0x000000, 0xE8E8E8, 0x0E2841, 0x156082, 0xE97132, 0x196B24, 0x0F9ED5, 0xA02B93,
+    0x4EA72E, 0x467886, 0x96607D,
 ];
 
 /// The argument of `&K`: `RRGGBB`, or a theme colour `TT+NNN` / `TT-NNN`
@@ -381,7 +387,11 @@ impl HfSections {
     /// The stored form: `&L...&C...&R...`, empty sections left out.
     pub fn to_code(&self) -> String {
         let mut out = String::new();
-        for (marker, text) in [("&L", &self.left), ("&C", &self.center), ("&R", &self.right)] {
+        for (marker, text) in [
+            ("&L", &self.left),
+            ("&C", &self.center),
+            ("&R", &self.right),
+        ] {
             if !text.is_empty() {
                 out.push_str(marker);
                 out.push_str(text);
@@ -487,7 +497,9 @@ fn font_style(style: &str) -> (bool, bool) {
     let has = |words: &[&str]| words.iter().any(|w| lower.contains(w));
     (
         has(&["bold", "gras", "negrita", "fett", "grassetto"]),
-        has(&["italic", "italique", "cursiva", "kursiv", "corsivo", "oblique"]),
+        has(&[
+            "italic", "italique", "cursiva", "kursiv", "corsivo", "oblique",
+        ]),
     )
 }
 
@@ -531,7 +543,11 @@ pub fn expand(section: &str, ctx: &HfContext) -> Vec<HfRun> {
                 push(&mut runs, &fmt, &text.text);
             }
             Tok::Time => {
-                let text = format::format_value(&Value::Number(ctx.now), &short_time_format(ctx.locale), ctx.locale);
+                let text = format::format_value(
+                    &Value::Number(ctx.now),
+                    &short_time_format(ctx.locale),
+                    ctx.locale,
+                );
                 push(&mut runs, &fmt, &text.text);
             }
             Tok::Path => push(&mut runs, &fmt, ctx.file_path),
@@ -609,7 +625,11 @@ pub fn lines(runs: Vec<HfRun>) -> Vec<Vec<HfRun>> {
 /// preset lists of the Page Setup dialog show them ("Sheet1, Page 1").
 pub fn plain_text(code: &str, ctx: &HfContext) -> String {
     let sections = HfSections::parse(code);
-    let sep = if ctx.locale.arg_sep == ';' { "; " } else { ", " };
+    let sep = if ctx.locale.arg_sep == ';' {
+        "; "
+    } else {
+        ", "
+    };
     let mut parts: Vec<String> = Vec::new();
     for section in [&sections.left, &sections.center, &sections.right] {
         let text: String = expand(section, ctx)
@@ -635,7 +655,16 @@ const FIELDS: [(&str, [&str; 5]); 8] = [
     ("&N", ["Pages", "Pages", "Páginas", "Seiten", "Pagine"]),
     ("&D", ["Date", "Date", "Fecha", "Datum", "Data"]),
     ("&T", ["Time", "Heure", "Hora", "Zeit", "Ora"]),
-    ("&Z", ["Path", "Chemin d'accès", "Ruta de acceso", "Pfad", "Percorso"]),
+    (
+        "&Z",
+        [
+            "Path",
+            "Chemin d'accès",
+            "Ruta de acceso",
+            "Pfad",
+            "Percorso",
+        ],
+    ),
     ("&F", ["File", "Fichier", "Archivo", "Datei", "File"]),
     ("&A", ["Tab", "Onglet", "Etiqueta", "Register", "Scheda"]),
     ("&G", ["Picture", "Image", "Imagen", "Grafik", "Immagine"]),
@@ -697,7 +726,9 @@ pub fn from_dialog_text(text: &str, locale: &Locale) -> String {
             let name = after[..end].trim().to_lowercase();
             FIELDS
                 .iter()
-                .find(|(_, names)| names[li].to_lowercase() == name || names[0].to_lowercase() == name)
+                .find(|(_, names)| {
+                    names[li].to_lowercase() == name || names[0].to_lowercase() == name
+                })
                 .map(|(code, _)| (*code, end))
         });
         match field {
@@ -786,13 +817,19 @@ mod tests {
         assert_eq!(s.left, "Left && more");
         assert_eq!(s.center, "&\"Arial,Bold\"&14Title");
         assert_eq!(s.right, "Page &P of &N");
-        assert_eq!(s.to_code(), "&LLeft && more&C&\"Arial,Bold\"&14Title&RPage &P of &N");
+        assert_eq!(
+            s.to_code(),
+            "&LLeft && more&C&\"Arial,Bold\"&14Title&RPage &P of &N"
+        );
         // Without a marker the text is the centre section.
         assert_eq!(HfSections::parse("Hello").center, "Hello");
         // `&&L` is an ampersand followed by an L, not a section.
         assert_eq!(HfSections::parse("&CA&&L").center, "A&&L");
         // A font name containing a section letter is not a section.
-        assert_eq!(HfSections::parse("&L&\"Lucida,Regular\"x").left, "&\"Lucida,Regular\"x");
+        assert_eq!(
+            HfSections::parse("&L&\"Lucida,Regular\"x").left,
+            "&\"Lucida,Regular\"x"
+        );
         assert!(HfSections::parse("").is_empty());
     }
 
@@ -802,9 +839,15 @@ mod tests {
         assert_eq!(text(&expand("Page &P of &N", &en)), "Page 3 of 12");
         assert_eq!(text(&expand("&P+2/&P-1", &en)), "5/2");
         assert_eq!(text(&expand("&D &T", &en)), "10/12/2026 3:45 PM");
-        assert_eq!(text(&expand("&D &T", &ctx(Locale::fr()))), "12/10/2026 15:45");
+        assert_eq!(
+            text(&expand("&D &T", &ctx(Locale::fr()))),
+            "12/10/2026 15:45"
+        );
         assert_eq!(text(&expand("&D", &ctx(Locale::de()))), "12.10.2026");
-        assert_eq!(text(&expand("&Z&F [&A]", &en)), "/Users/ana/Budget.xlsx [T&L]");
+        assert_eq!(
+            text(&expand("&Z&F [&A]", &en)),
+            "/Users/ana/Budget.xlsx [T&L]"
+        );
         assert_eq!(text(&expand("R&&D &G&Q", &en)), "R&D <pic>");
         assert_eq!(text(&expand("a&", &en)), "a");
         // Codes are not case sensitive.
@@ -872,8 +915,14 @@ mod tests {
             plain_text("&L&A&CConfidential&RPage &P", &en),
             "T&L, Confidential, Page 3"
         );
-        assert_eq!(plain_text("&CPage &P de &N", &ctx(Locale::fr())), "Page 3 de 12");
-        assert_eq!(plain_text("&L&A&RPage &P", &ctx(Locale::fr())), "T&L; Page 3");
+        assert_eq!(
+            plain_text("&CPage &P de &N", &ctx(Locale::fr())),
+            "Page 3 de 12"
+        );
+        assert_eq!(
+            plain_text("&L&A&RPage &P", &ctx(Locale::fr())),
+            "T&L; Page 3"
+        );
     }
 
     #[test]
@@ -886,8 +935,14 @@ mod tests {
             "&\"Arial,Bold\"Page &[Page]+1 de &[Pages] - &[Chemin d'accès]&[Fichier] - &[Onglet] &[Date] &[Heure] &[Image]"
         );
         assert_eq!(from_dialog_text(&shown, fr), code);
-        assert_eq!(from_dialog_text("&[Tab] &[onglet] &[Nope] &[", fr), "&A &A &[Nope] &[");
-        assert_eq!(to_dialog_text("&P of &N", Locale::en()), "&[Page] of &[Pages]");
+        assert_eq!(
+            from_dialog_text("&[Tab] &[onglet] &[Nope] &[", fr),
+            "&A &A &[Nope] &["
+        );
+        assert_eq!(
+            to_dialog_text("&P of &N", Locale::en()),
+            "&[Page] of &[Pages]"
+        );
     }
 
     #[test]

@@ -252,7 +252,11 @@ pub(crate) fn push_color(x: &mut String, element: &str, color: Color) {
             x.push_str("/>");
         }
         None => {
-            w!(x, "<{element} rgb=\"FF{:06X}\"/>", color.value() & 0xFF_FFFF);
+            w!(
+                x,
+                "<{element} rgb=\"FF{:06X}\"/>",
+                color.value() & 0xFF_FFFF
+            );
         }
     }
 }

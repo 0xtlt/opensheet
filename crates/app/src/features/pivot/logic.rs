@@ -8,8 +8,9 @@ use crate::i18n::t;
 use opensheet_engine::ast::StructuralEdit;
 use opensheet_engine::ops::PasteMode;
 use opensheet_engine::pivot::{
-    Aggregation, Area, AxisField, BaseItem, FieldGroup, FieldLayout, FilterKind, GroupKind, LabelFilter, PivotButton,
-    PivotCell, PivotError, PivotPart, PivotSource, PivotTable, ShowAs, SortOrder, Subtotals, Top10By, ValueFilter,
+    Aggregation, Area, AxisField, BaseItem, FieldGroup, FieldLayout, FilterKind, GroupKind,
+    LabelFilter, PivotButton, PivotCell, PivotError, PivotPart, PivotSource, PivotTable, ShowAs,
+    SortOrder, Subtotals, Top10By, ValueFilter,
 };
 use opensheet_engine::workbook::ClearMode;
 use opensheet_engine::{Expr, Locale, Rect, Style, Value, Workbook};
@@ -47,13 +48,21 @@ pub fn error_text(err: &PivotError) -> &'static str {
             "The PivotTable report will not fit on the sheet. Please select a different location.",
             "Le rapport de tableau croisé dynamique est plus grand que la feuille. Sélectionnez un autre emplacement.",
         ),
-        PivotError::CannotGroup => t("Cannot group that selection.", "Impossible de grouper cette sélection."),
+        PivotError::CannotGroup => t(
+            "Cannot group that selection.",
+            "Impossible de grouper cette sélection.",
+        ),
         PivotError::CannotUngroup => t(
             "Cannot ungroup that selection.",
             "Impossible de dissocier le groupe de cette sélection.",
         ),
-        PivotError::InvalidName => t("PivotTable name is not valid.", "Nom du tableau croisé dynamique non valide."),
-        PivotError::NoSuchPivot | PivotError::NoSuchField | PivotError::NotAValue => cannot_change_part(),
+        PivotError::InvalidName => t(
+            "PivotTable name is not valid.",
+            "Nom du tableau croisé dynamique non valide.",
+        ),
+        PivotError::NoSuchPivot | PivotError::NoSuchField | PivotError::NotAValue => {
+            cannot_change_part()
+        }
         PivotError::ChartKind => t(
             "The selected chart type is not supported for a PivotChart report. PivotChart reports cannot use XY (Scatter), Bubble, or Stock chart types.",
             "Le type de graphique sélectionné n'est pas pris en charge pour un rapport de graphique croisé dynamique. Les graphiques XY (nuage de points), en bulles et boursiers ne peuvent pas être appliqués à des rapports de graphique croisé dynamique.",
@@ -118,7 +127,10 @@ pub fn would_affect_pivot() -> &'static str {
 }
 
 pub fn name_exists() -> &'static str {
-    t("PivotTable field name already exists.", "Le nom du champ dynamique existe déjà.")
+    t(
+        "PivotTable field name already exists.",
+        "Le nom du champ dynamique existe déjà.",
+    )
 }
 
 /// The question asked before a report covers cells holding data.
@@ -174,7 +186,10 @@ pub fn replaces_contents(cause: ChangeCause) -> bool {
         ChangeCause::Clear(mode) => matches!(mode, ClearMode::Contents | ClearMode::All),
         ChangeCause::Paste { mode, .. } => !matches!(
             mode,
-            PasteMode::Formats | PasteMode::Comments | PasteMode::Validation | PasteMode::ColumnWidths
+            PasteMode::Formats
+                | PasteMode::Comments
+                | PasteMode::Validation
+                | PasteMode::ColumnWidths
         ),
     }
 }
@@ -266,7 +281,12 @@ pub fn area_entries(p: &PivotTable, area: Area, locale: &Locale) -> Vec<AreaEntr
 /// What dropping `source` means. `target`: the area it was dropped on and
 /// the entry it was dropped before (the number of entries: after the last
 /// one); `None` when it was dropped outside the areas.
-pub fn drop_op(p: &PivotTable, source: DragSource, target: Option<(Area, usize)>, locale: &Locale) -> Option<PaneOp> {
+pub fn drop_op(
+    p: &PivotTable,
+    source: DragSource,
+    target: Option<(Area, usize)>,
+    locale: &Locale,
+) -> Option<PaneOp> {
     let Some((to, slot)) = target else {
         // Dragging an entry out of its area removes it.
         return match source {
@@ -331,7 +351,11 @@ pub fn apply_op(p: &mut PivotTable, op: PaneOp, locale: &Locale) {
             }
             p.remove_field(field);
         }
-        PaneOp::Add { field, area, position } => p.add_field(field, area, position, locale),
+        PaneOp::Add {
+            field,
+            area,
+            position,
+        } => p.add_field(field, area, position, locale),
         PaneOp::Move {
             from,
             index,
@@ -344,16 +368,18 @@ pub fn apply_op(p: &mut PivotTable, op: PaneOp, locale: &Locale) {
             area: Area::Values,
             index,
         } => p.remove_data_field(index),
-        PaneOp::Remove { area, index } => match area_entries(p, area, locale).get(index).map(|e| e.field) {
-            Some(Some(field)) => p.remove_field(field),
-            // Removing "Σ Values" removes the value fields.
-            Some(None) => {
-                for index in (0..p.data_fields.len()).rev() {
-                    p.remove_data_field(index);
+        PaneOp::Remove { area, index } => {
+            match area_entries(p, area, locale).get(index).map(|e| e.field) {
+                Some(Some(field)) => p.remove_field(field),
+                // Removing "Σ Values" removes the value fields.
+                Some(None) => {
+                    for index in (0..p.data_fields.len()).rev() {
+                        p.remove_data_field(index);
+                    }
                 }
+                None => {}
             }
-            None => {}
-        },
+        }
     }
 }
 
@@ -367,7 +393,11 @@ pub fn run_op(wb: &mut Workbook, id: u32, op: PaneOp, overwrite: bool) -> Result
     };
     let through_engine = match op {
         PaneOp::Check(field) => Some((field, p.default_area(field), None)),
-        PaneOp::Add { field, area, position } if area != Area::Values => Some((field, area, position)),
+        PaneOp::Add {
+            field,
+            area,
+            position,
+        } if area != Area::Values => Some((field, area, position)),
         PaneOp::Move {
             from: Area::Filters,
             index,
@@ -481,7 +511,9 @@ impl LabelTest {
             LabelTest::Equals => t("equals", "est égal à"),
             LabelTest::NotEquals => t("does not equal", "est différent de"),
             LabelTest::GreaterThan => t("is greater than", "est supérieur à"),
-            LabelTest::GreaterOrEqual => t("is greater than or equal to", "est supérieur ou égal à"),
+            LabelTest::GreaterOrEqual => {
+                t("is greater than or equal to", "est supérieur ou égal à")
+            }
             LabelTest::LessThan => t("is less than", "est inférieur à"),
             LabelTest::LessOrEqual => t("is less than or equal to", "est inférieur ou égal à"),
             LabelTest::BeginsWith => t("begins with", "commence par"),
@@ -664,7 +696,9 @@ pub fn items_to_show(items: &[u32], checked: &[bool], shown: Option<&[usize]>) -
     items
         .iter()
         .enumerate()
-        .filter(|(i, _)| checked.get(*i).copied().unwrap_or(false) && shown.is_none_or(|s| s.contains(i)))
+        .filter(|(i, _)| {
+            checked.get(*i).copied().unwrap_or(false) && shown.is_none_or(|s| s.contains(i))
+        })
         .map(|(_, item)| *item)
         .collect()
 }
@@ -749,15 +783,26 @@ impl ShowKind {
             ShowKind::PercentOfColumn => t("% of Column Total", "% du total de la colonne"),
             ShowKind::PercentOfRow => t("% of Row Total", "% du total de la ligne"),
             ShowKind::PercentOf => t("% Of", "% de"),
-            ShowKind::PercentOfParentRow => t("% of Parent Row Total", "% du total de la ligne parente"),
-            ShowKind::PercentOfParentColumn => t("% of Parent Column Total", "% du total de la colonne parente"),
+            ShowKind::PercentOfParentRow => {
+                t("% of Parent Row Total", "% du total de la ligne parente")
+            }
+            ShowKind::PercentOfParentColumn => t(
+                "% of Parent Column Total",
+                "% du total de la colonne parente",
+            ),
             ShowKind::PercentOfParent => t("% of Parent Total", "% du total du parent"),
             ShowKind::Difference => t("Difference From", "Différence par rapport"),
             ShowKind::PercentDifference => t("% Difference From", "Différence en % par rapport"),
             ShowKind::RunningTotal => t("Running Total In", "Résultat cumulé par"),
             ShowKind::PercentRunningTotal => t("% Running Total In", "% résultat cumulé dans"),
-            ShowKind::RankAscending => t("Rank Smallest to Largest", "Rang - Du plus petit au plus grand"),
-            ShowKind::RankDescending => t("Rank Largest to Smallest", "Rang - Du plus grand au plus petit"),
+            ShowKind::RankAscending => t(
+                "Rank Smallest to Largest",
+                "Rang - Du plus petit au plus grand",
+            ),
+            ShowKind::RankDescending => t(
+                "Rank Largest to Smallest",
+                "Rang - Du plus grand au plus petit",
+            ),
             ShowKind::Index => t("Index", "Index"),
         }
     }
@@ -778,7 +823,10 @@ impl ShowKind {
 
     /// The calculation compares with a base item.
     pub fn needs_item(self) -> bool {
-        matches!(self, ShowKind::PercentOf | ShowKind::Difference | ShowKind::PercentDifference)
+        matches!(
+            self,
+            ShowKind::PercentOf | ShowKind::Difference | ShowKind::PercentDifference
+        )
     }
 
     pub fn of(show: &ShowAs) -> (ShowKind, Option<usize>, Option<BaseItem>) {
@@ -792,9 +840,13 @@ impl ShowKind {
             ShowAs::PercentOfParentColumn => (ShowKind::PercentOfParentColumn, None, None),
             ShowAs::PercentOfParent { field } => (ShowKind::PercentOfParent, Some(field), None),
             ShowAs::Difference { field, item } => (ShowKind::Difference, Some(field), Some(item)),
-            ShowAs::PercentDifference { field, item } => (ShowKind::PercentDifference, Some(field), Some(item)),
+            ShowAs::PercentDifference { field, item } => {
+                (ShowKind::PercentDifference, Some(field), Some(item))
+            }
             ShowAs::RunningTotal { field } => (ShowKind::RunningTotal, Some(field), None),
-            ShowAs::PercentRunningTotal { field } => (ShowKind::PercentRunningTotal, Some(field), None),
+            ShowAs::PercentRunningTotal { field } => {
+                (ShowKind::PercentRunningTotal, Some(field), None)
+            }
             ShowAs::RankAscending { field } => (ShowKind::RankAscending, Some(field), None),
             ShowAs::RankDescending { field } => (ShowKind::RankDescending, Some(field), None),
             ShowAs::Index => (ShowKind::Index, None, None),
@@ -835,7 +887,11 @@ impl ShowKind {
 
 /// The fields a calculation can run along: those of the rows and columns.
 pub fn base_fields(p: &PivotTable) -> Vec<usize> {
-    p.row_fields.iter().chain(&p.col_fields).filter_map(|a| a.field()).collect()
+    p.row_fields
+        .iter()
+        .chain(&p.col_fields)
+        .filter_map(|a| a.field())
+        .collect()
 }
 
 /// The functions of the "Summarize Values By" menu, ahead of "More
@@ -864,8 +920,12 @@ pub enum Target {
 pub fn target_of(cell: &PivotCell) -> Option<Target> {
     match cell.part {
         PivotPart::Value | PivotPart::DataCaption => cell.data_field.map(Target::Data),
-        PivotPart::RowHeaderCaption | PivotPart::ColumnHeaderCaption => cell.fields.first().copied().map(Target::Field),
-        PivotPart::RowGrandTotalLabel | PivotPart::ColumnGrandTotalLabel => cell.data_field.map(Target::Data),
+        PivotPart::RowHeaderCaption | PivotPart::ColumnHeaderCaption => {
+            cell.fields.first().copied().map(Target::Field)
+        }
+        PivotPart::RowGrandTotalLabel | PivotPart::ColumnGrandTotalLabel => {
+            cell.data_field.map(Target::Data)
+        }
         PivotPart::Placeholder | PivotPart::Blank => None,
         _ => cell
             .field
@@ -878,14 +938,22 @@ pub fn target_of(cell: &PivotCell) -> Option<Target> {
 pub fn target_name(p: &PivotTable, target: Target) -> String {
     match target {
         Target::Field(f) => p.field_caption(f).to_string(),
-        Target::Data(d) => p.data_fields.get(d).map(|d| d.name.clone()).unwrap_or_default(),
+        Target::Data(d) => p
+            .data_fields
+            .get(d)
+            .map(|d| d.name.clone())
+            .unwrap_or_default(),
     }
 }
 
 /// The items the selection picks out for "Group Selection": the labels of
 /// one field of one PivotTable. `None` when the selection holds no label,
 /// or labels of several fields.
-pub fn selected_items(wb: &Workbook, sheet: usize, ranges: &[Rect]) -> Option<(u32, usize, Vec<u32>)> {
+pub fn selected_items(
+    wb: &Workbook,
+    sheet: usize,
+    ranges: &[Rect],
+) -> Option<(u32, usize, Vec<u32>)> {
     let mut found: Option<(u32, usize)> = None;
     let mut items: Vec<u32> = Vec::new();
     for range in ranges {
@@ -941,12 +1009,10 @@ pub fn select_rect(p: &PivotTable, what: SelectWhat) -> Option<Rect> {
     match what {
         SelectWhat::Entire => Some(p.page_location.map_or(body, |pages| pages.union(&body))),
         SelectWhat::Body => Some(body),
-        SelectWhat::Values => {
-            (body.r0 + top <= body.r1 && body.c0 + left <= body.c1).then(|| Rect::new(body.r0 + top, body.c0 + left, body.r1, body.c1))
-        }
-        SelectWhat::Labels => {
-            (left > 0 && body.r0 + top <= body.r1).then(|| Rect::new(body.r0 + top, body.c0, body.r1, body.c0 + left - 1))
-        }
+        SelectWhat::Values => (body.r0 + top <= body.r1 && body.c0 + left <= body.c1)
+            .then(|| Rect::new(body.r0 + top, body.c0 + left, body.r1, body.c1)),
+        SelectWhat::Labels => (left > 0 && body.r0 + top <= body.r1)
+            .then(|| Rect::new(body.r0 + top, body.c0, body.r1, body.c0 + left - 1)),
     }
 }
 
@@ -965,7 +1031,11 @@ pub fn filter_button_box((x0, y0, x1, y1): Box4, zoom: f32) -> Option<Box4> {
     if x1 - x0 < 6.0 || y1 - y0 < 6.0 {
         return None;
     }
-    let size = (15.0 * zoom).round().min(y1 - y0 - 3.0).min(x1 - x0 - 3.0).max(5.0);
+    let size = (15.0 * zoom)
+        .round()
+        .min(y1 - y0 - 3.0)
+        .min(x1 - x0 - 3.0)
+        .max(5.0);
     Some((x1 - 2.0 - size, y1 - 2.0 - size, x1 - 2.0, y1 - 2.0))
 }
 
@@ -1002,7 +1072,10 @@ pub fn fit_widths(
     mut measure: impl FnMut(&str, &Style) -> f32,
 ) -> Vec<(u32, f32)> {
     let mut widths: Vec<(u32, f32)> = Vec::new();
-    if p.report.size() == (0, 0) || p.cell(p.anchor.0, p.anchor.1).is_some_and(|c| c.part == PivotPart::Placeholder) {
+    if p.report.size() == (0, 0)
+        || p.cell(p.anchor.0, p.anchor.1)
+            .is_some_and(|c| c.part == PivotPart::Placeholder)
+    {
         return widths;
     }
     let (top, left) = (p.report.first_data_row(), p.report.first_data_col());
@@ -1018,7 +1091,8 @@ pub fn fit_widths(
                     continue;
                 }
                 let display = wb.display(sheet, row, col);
-                let mut width = measure(&text, &display.style) + display.style.indent as f32 * INDENT;
+                let mut width =
+                    measure(&text, &display.style) + display.style.indent as f32 * INDENT;
                 // Only headers, labels and filter cells carry a drop-down.
                 let may_have_button = !is_body || row - rect.r0 < top || col - rect.c0 < left;
                 if may_have_button
@@ -1082,7 +1156,10 @@ pub fn ungroup_target(p: &PivotTable, cell: &PivotCell) -> Option<(usize, Option
         return None;
     };
     match &p.cache.fields.get(field)?.group {
-        Some(group) => Some((field, cell.item.filter(|_| group.kind == GroupKind::Discrete))),
+        Some(group) => Some((
+            field,
+            cell.item.filter(|_| group.kind == GroupKind::Discrete),
+        )),
         // A date field under its periods.
         None => (!p.cache.group_children(field).is_empty()).then_some((field, None)),
     }
@@ -1094,7 +1171,11 @@ pub fn place_of(p: &PivotTable, field: usize) -> Option<(Area, usize)> {
     match p.axis_of(field)? {
         Area::Rows => at(&p.row_fields).map(|i| (Area::Rows, i)),
         Area::Columns => at(&p.col_fields).map(|i| (Area::Columns, i)),
-        area => p.page_fields.iter().position(|pf| pf.field == field).map(|i| (area, i)),
+        area => p
+            .page_fields
+            .iter()
+            .position(|pf| pf.field == field)
+            .map(|i| (area, i)),
     }
 }
 
@@ -1104,16 +1185,31 @@ pub fn sort_labels(p: &PivotTable, field: usize) -> (&'static str, &'static str)
     let source = p.cache.database_field(field);
     let grouped = p.cache.fields.get(field).is_some_and(|f| f.group.is_some());
     if grouped || !p.cache.is_numeric(source) {
-        (t("Sort A to Z", "Trier de A à Z"), t("Sort Z to A", "Trier de Z à A"))
+        (
+            t("Sort A to Z", "Trier de A à Z"),
+            t("Sort Z to A", "Trier de Z à A"),
+        )
     } else if p.cache.is_date(source) {
         (
-            t("Sort Oldest to Newest", "Trier du plus ancien au plus récent"),
-            t("Sort Newest to Oldest", "Trier du plus récent au plus ancien"),
+            t(
+                "Sort Oldest to Newest",
+                "Trier du plus ancien au plus récent",
+            ),
+            t(
+                "Sort Newest to Oldest",
+                "Trier du plus récent au plus ancien",
+            ),
         )
     } else {
         (
-            t("Sort Smallest to Largest", "Trier du plus petit au plus grand"),
-            t("Sort Largest to Smallest", "Trier du plus grand au plus petit"),
+            t(
+                "Sort Smallest to Largest",
+                "Trier du plus petit au plus grand",
+            ),
+            t(
+                "Sort Largest to Smallest",
+                "Trier du plus grand au plus petit",
+            ),
         )
     }
 }
@@ -1156,8 +1252,14 @@ pub fn move_item(p: &mut PivotTable, field: usize, item: u32, to: MoveTo) {
     let Some(f) = p.fields.get_mut(field) else {
         return;
     };
-    f.items.sort_by_key(|it| shown.iter().position(|x| *x == it.x).unwrap_or(usize::MAX));
-    let visible: Vec<u32> = f.items.iter().filter(|it| !it.hidden).map(|it| it.x).collect();
+    f.items
+        .sort_by_key(|it| shown.iter().position(|x| *x == it.x).unwrap_or(usize::MAX));
+    let visible: Vec<u32> = f
+        .items
+        .iter()
+        .filter(|it| !it.hidden)
+        .map(|it| it.x)
+        .collect();
     let Some(at) = visible.iter().position(|x| *x == item) else {
         return;
     };
@@ -1339,7 +1441,14 @@ impl Item {
 
 /// Excel's context menu for a cell of a PivotTable. `ranges`: the
 /// selection; `list_shown`: the field list is showing.
-pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[Rect], list_shown: bool) -> Vec<Item> {
+pub fn context_menu(
+    wb: &Workbook,
+    sheet: usize,
+    row: u32,
+    col: u32,
+    ranges: &[Rect],
+    list_shown: bool,
+) -> Vec<Item> {
     let Some(p) = wb.pivot_at(sheet, row, col) else {
         return Vec::new();
     };
@@ -1349,20 +1458,34 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
     let locale = wb.locale;
     let mut menu = vec![
         Item::new(t("Copy", "Copier"), Act::Copy),
-        Item::new(t("Format Cells...", "Format de cellule..."), Act::FormatCells),
+        Item::new(
+            t("Format Cells...", "Format de cellule..."),
+            Act::FormatCells,
+        ),
     ];
     let target = target_of(&cell);
     if let (PivotPart::Value, Some(Target::Data(data))) = (cell.part, target) {
-        menu.push(Item::new(t("Number Format...", "Format de nombre..."), Act::NumberFormat(data)));
+        menu.push(Item::new(
+            t("Number Format...", "Format de nombre..."),
+            Act::NumberFormat(data),
+        ));
     }
     menu.push(Item::new(t("Refresh", "Actualiser"), Act::Refresh));
 
     match target {
         Some(Target::Data(data)) => {
-            let name = p.data_fields.get(data).map(|d| d.name.as_str()).unwrap_or_default();
+            let name = p
+                .data_fields
+                .get(data)
+                .map(|d| d.name.as_str())
+                .unwrap_or_default();
             // A value sorts the items of its row (else of its column) by
             // the totals of its value field.
-            let sorted = cell.row_items.last().or(cell.col_items.last()).map(|(field, _)| *field);
+            let sorted = cell
+                .row_items
+                .last()
+                .or(cell.col_items.last())
+                .map(|(field, _)| *field);
             if let (PivotPart::Value, Some(field)) = (cell.part, sorted) {
                 let sort = |order| Act::Sort {
                     field,
@@ -1374,15 +1497,24 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                     t("Sort", "Trier"),
                     vec![
                         Item::new(
-                            t("Sort Smallest to Largest", "Trier du plus petit au plus grand"),
+                            t(
+                                "Sort Smallest to Largest",
+                                "Trier du plus petit au plus grand",
+                            ),
                             sort(SortOrder::Ascending),
                         ),
                         Item::new(
-                            t("Sort Largest to Smallest", "Trier du plus grand au plus petit"),
+                            t(
+                                "Sort Largest to Smallest",
+                                "Trier du plus grand au plus petit",
+                            ),
                             sort(SortOrder::Descending),
                         ),
                         Item::separator(),
-                        Item::new(t("More Sort Options...", "Autres options de tri..."), Act::SortOptions(field)),
+                        Item::new(
+                            t("More Sort Options...", "Autres options de tri..."),
+                            Act::SortOptions(field),
+                        ),
                     ],
                 ));
             }
@@ -1397,7 +1529,8 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
             let mut functions: Vec<Item> = QUICK_FUNCTIONS
                 .iter()
                 .map(|f| {
-                    Item::new(f.label(locale), Act::Function { data, function: *f }).checked(function == Some(*f))
+                    Item::new(f.label(locale), Act::Function { data, function: *f })
+                        .checked(function == Some(*f))
                 })
                 .collect();
             functions.push(Item::separator());
@@ -1405,7 +1538,10 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 t("More Options...", "Autres options..."),
                 Act::ValueSettings { data, tab: 0 },
             ));
-            menu.push(Item::submenu(t("Summarize Values By", "Synthèse des valeurs par"), functions));
+            menu.push(Item::submenu(
+                t("Summarize Values By", "Synthèse des valeurs par"),
+                functions,
+            ));
             let shown = p.data_fields.get(data).map(|d| ShowKind::of(&d.show_as).0);
             let has_base = !base_fields(p).is_empty();
             let mut kinds: Vec<Item> = ShowKind::ALL
@@ -1422,14 +1558,23 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 t("More Options...", "Autres options..."),
                 Act::ValueSettings { data, tab: 1 },
             ));
-            menu.push(Item::submenu(t("Show Values As", "Afficher les valeurs"), kinds));
+            menu.push(Item::submenu(
+                t("Show Values As", "Afficher les valeurs"),
+                kinds,
+            ));
             if cell.part == PivotPart::Value {
                 menu.push(Item::separator());
-                menu.push(Item::new(t("Show Details", "Afficher les détails"), Act::ShowDetails));
+                menu.push(Item::new(
+                    t("Show Details", "Afficher les détails"),
+                    Act::ShowDetails,
+                ));
             }
             menu.push(Item::separator());
             menu.push(Item::new(
-                t("Value Field Settings...", "Paramètres des champs de valeurs..."),
+                t(
+                    "Value Field Settings...",
+                    "Paramètres des champs de valeurs...",
+                ),
                 Act::ValueSettings { data, tab: 0 },
             ));
         }
@@ -1452,29 +1597,43 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                         Item::new(ascending, sort(SortOrder::Ascending)),
                         Item::new(descending, sort(SortOrder::Descending)),
                         Item::separator(),
-                        Item::new(t("More Sort Options...", "Autres options de tri..."), Act::SortOptions(field)),
+                        Item::new(
+                            t("More Sort Options...", "Autres options de tri..."),
+                            Act::SortOptions(field),
+                        ),
                     ],
                 ));
-                let picked = selected_items(wb, sheet, ranges).is_some_and(|(id, f, _)| id == p.id && f == field);
+                let picked = selected_items(wb, sheet, ranges)
+                    .is_some_and(|(id, f, _)| id == p.id && f == field);
                 menu.push(Item::submenu(
                     t("Filter", "Filtrer"),
                     vec![
                         Item::named(
-                            t("Clear Filter From \"{}\"", "Effacer le filtre de «\u{a0}{}\u{a0}»"),
+                            t(
+                                "Clear Filter From \"{}\"",
+                                "Effacer le filtre de «\u{a0}{}\u{a0}»",
+                            ),
                             caption,
                             Act::ClearFilter(field),
                         )
                         .enabled(p.is_filtered(field)),
                         Item::separator(),
                         Item::new(
-                            t("Keep Only Selected Items", "Conserver uniquement les éléments sélectionnés"),
+                            t(
+                                "Keep Only Selected Items",
+                                "Conserver uniquement les éléments sélectionnés",
+                            ),
                             Act::KeepSelected,
                         )
                         .enabled(picked),
-                        Item::new(t("Hide Selected Items", "Masquer les éléments sélectionnés"), Act::HideSelected)
-                            .enabled(picked),
+                        Item::new(
+                            t("Hide Selected Items", "Masquer les éléments sélectionnés"),
+                            Act::HideSelected,
+                        )
+                        .enabled(picked),
                         Item::separator(),
-                        Item::new(t("Top 10...", "10 premiers..."), Act::Top10(field)).enabled(!p.data_fields.is_empty()),
+                        Item::new(t("Top 10...", "10 premiers..."), Act::Top10(field))
+                            .enabled(!p.data_fields.is_empty()),
                         Item::new(
                             t("Label Filters...", "Filtres s'appliquant aux étiquettes..."),
                             Act::LabelFilters(field),
@@ -1488,14 +1647,21 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 ));
                 menu.push(Item::separator());
                 menu.push(
-                    Item::named(t("Subtotal \"{}\"", "Sous-total de «\u{a0}{}\u{a0}»"), caption, Act::ToggleSubtotal(field))
-                        .checked(p.fields[field].subtotals != Subtotals::None),
+                    Item::named(
+                        t("Subtotal \"{}\"", "Sous-total de «\u{a0}{}\u{a0}»"),
+                        caption,
+                        Act::ToggleSubtotal(field),
+                    )
+                    .checked(p.fields[field].subtotals != Subtotals::None),
                 );
             }
             if drill_field(p, &cell).is_some() {
-                let collapsed = cell
-                    .item
-                    .map(|item| p.fields[field].items.iter().any(|it| it.x == item && it.collapsed));
+                let collapsed = cell.item.map(|item| {
+                    p.fields[field]
+                        .items
+                        .iter()
+                        .any(|it| it.x == item && it.collapsed)
+                });
                 let one = |collapse: bool| match cell.item {
                     Some(item) => Act::CollapseItem {
                         field,
@@ -1511,8 +1677,10 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 menu.push(Item::submenu(
                     t("Expand/Collapse", "Afficher/Masquer"),
                     vec![
-                        Item::new(t("Expand", "Développer"), one(false)).enabled(collapsed != Some(false)),
-                        Item::new(t("Collapse", "Réduire"), one(true)).enabled(collapsed != Some(true)),
+                        Item::new(t("Expand", "Développer"), one(false))
+                            .enabled(collapsed != Some(false)),
+                        Item::new(t("Collapse", "Réduire"), one(true))
+                            .enabled(collapsed != Some(true)),
                         Item::separator(),
                         Item::new(
                             t("Expand Entire Field", "Développer le champ entier"),
@@ -1523,13 +1691,17 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                         ),
                         Item::new(
                             t("Collapse Entire Field", "Réduire le champ entier"),
-                            Act::CollapseField { field, collapsed: true },
+                            Act::CollapseField {
+                                field,
+                                collapsed: true,
+                            },
                         ),
                     ],
                 ));
             }
             if on_axis {
-                let several = selected_items(wb, sheet, ranges).is_some_and(|(_, _, items)| items.len() > 1);
+                let several =
+                    selected_items(wb, sheet, ranges).is_some_and(|(_, _, items)| items.len() > 1);
                 menu.push(Item::separator());
                 menu.push(
                     Item::new(t("Group...", "Grouper..."), Act::Group)
@@ -1545,8 +1717,14 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 let mut moves: Vec<Item> = Vec::new();
                 let (back, forth) = if in_columns {
                     (
-                        t("Move \"{}\" Left", "Déplacer «\u{a0}{}\u{a0}» vers la gauche"),
-                        t("Move \"{}\" Right", "Déplacer «\u{a0}{}\u{a0}» vers la droite"),
+                        t(
+                            "Move \"{}\" Left",
+                            "Déplacer «\u{a0}{}\u{a0}» vers la gauche",
+                        ),
+                        t(
+                            "Move \"{}\" Right",
+                            "Déplacer «\u{a0}{}\u{a0}» vers la droite",
+                        ),
                     )
                 } else {
                     (
@@ -1555,7 +1733,10 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                     )
                 };
                 let (to_start, to_end) = (
-                    t("Move \"{}\" to Beginning", "Déplacer «\u{a0}{}\u{a0}» au début"),
+                    t(
+                        "Move \"{}\" to Beginning",
+                        "Déplacer «\u{a0}{}\u{a0}» au début",
+                    ),
                     t("Move \"{}\" to End", "Déplacer «\u{a0}{}\u{a0}» à la fin"),
                 );
                 // The item of a label moves among the items shown.
@@ -1563,12 +1744,18 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                     let shown: Vec<u32> = p
                         .items_in_order(field)
                         .into_iter()
-                        .filter(|x| !p.fields[field].items.iter().any(|it| it.x == *x && it.hidden))
+                        .filter(|x| {
+                            !p.fields[field]
+                                .items
+                                .iter()
+                                .any(|it| it.x == *x && it.hidden)
+                        })
                         .collect();
                     let at = shown.iter().position(|x| *x == item).unwrap_or(0);
                     let text = p.item_text(field, item, locale);
                     let step = |pattern: &'static str, to: MoveTo, possible: bool| {
-                        Item::named(pattern, &text, Act::MoveItem { field, item, to }).enabled(possible)
+                        Item::named(pattern, &text, Act::MoveItem { field, item, to })
+                            .enabled(possible)
                     };
                     moves.push(step(to_start, MoveTo::Beginning, at > 0));
                     moves.push(step(back, MoveTo::Up, at > 0));
@@ -1586,14 +1773,23 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 moves.push(Item::separator());
                 if area != Area::Rows {
                     moves.push(Item::named(
-                        t("Move \"{}\" to Rows", "Déplacer «\u{a0}{}\u{a0}» vers les lignes"),
+                        t(
+                            "Move \"{}\" to Rows",
+                            "Déplacer «\u{a0}{}\u{a0}» vers les lignes",
+                        ),
                         caption,
-                        Act::MoveFieldTo { field, area: Area::Rows },
+                        Act::MoveFieldTo {
+                            field,
+                            area: Area::Rows,
+                        },
                     ));
                 }
                 if area != Area::Columns {
                     moves.push(Item::named(
-                        t("Move \"{}\" to Columns", "Déplacer «\u{a0}{}\u{a0}» vers les colonnes"),
+                        t(
+                            "Move \"{}\" to Columns",
+                            "Déplacer «\u{a0}{}\u{a0}» vers les colonnes",
+                        ),
                         caption,
                         Act::MoveFieldTo {
                             field,
@@ -1611,10 +1807,16 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
                 Act::Remove(Target::Field(field)),
             ));
             menu.push(Item::separator());
-            menu.push(Item::new(t("Field Settings...", "Paramètres de champ..."), Act::FieldSettings(field)));
+            menu.push(Item::new(
+                t("Field Settings...", "Paramètres de champ..."),
+                Act::FieldSettings(field),
+            ));
         }
         None => {
-            if matches!(cell.part, PivotPart::RowGrandTotalLabel | PivotPart::ColumnGrandTotalLabel) {
+            if matches!(
+                cell.part,
+                PivotPart::RowGrandTotalLabel | PivotPart::ColumnGrandTotalLabel
+            ) {
                 menu.push(Item::separator());
                 menu.push(Item::new(
                     t("Remove Grand Total", "Supprimer le total général"),
@@ -1625,7 +1827,10 @@ pub fn context_menu(wb: &Workbook, sheet: usize, row: u32, col: u32, ranges: &[R
         }
     }
     menu.push(Item::new(
-        t("PivotTable Options...", "Options du tableau croisé dynamique..."),
+        t(
+            "PivotTable Options...",
+            "Options du tableau croisé dynamique...",
+        ),
         Act::Options,
     ));
     menu.push(Item::new(
@@ -1748,7 +1953,9 @@ mod tests {
             sheet: wb.sheets[0].name.clone(),
             range: Rect::new(0, 0, DATA.len() as u32 - 1, 3),
         };
-        let id = wb.pivot_create(source, PivotDestination::NewSheet { index: 1 }, false).unwrap();
+        let id = wb
+            .pivot_create(source, PivotDestination::NewSheet { index: 1 }, false)
+            .unwrap();
         wb.commit("pivot");
         (wb, id)
     }
@@ -1760,7 +1967,10 @@ mod tests {
 
     fn labels(wb: &Workbook, id: u32, area: Area) -> Vec<String> {
         let (_, p) = wb.pivot(id).unwrap();
-        area_entries(p, area, wb.locale).into_iter().map(|e| e.label).collect()
+        area_entries(p, area, wb.locale)
+            .into_iter()
+            .map(|e| e.label)
+            .collect()
     }
 
     #[test]
@@ -1774,11 +1984,20 @@ mod tests {
         run(&mut wb, id, PaneOp::Check(DATE));
         assert_eq!(
             labels(&wb, id, Area::Rows),
-            ["Region", "Years (Date)", "Quarters (Date)", "Months (Date)", "Date"]
+            [
+                "Region",
+                "Years (Date)",
+                "Quarters (Date)",
+                "Months (Date)",
+                "Date"
+            ]
         );
         // Unticking takes a field out of every area.
         run(&mut wb, id, PaneOp::Check(SALES));
-        assert_eq!(labels(&wb, id, Area::Values), ["Sum of Sales", "Sum of Sales2"]);
+        assert_eq!(
+            labels(&wb, id, Area::Values),
+            ["Sum of Sales", "Sum of Sales2"]
+        );
         assert_eq!(labels(&wb, id, Area::Columns), ["Σ Values"]);
         run(&mut wb, id, PaneOp::Uncheck(SALES));
         assert!(labels(&wb, id, Area::Values).is_empty());
@@ -1792,7 +2011,9 @@ mod tests {
         run(&mut wb, id, PaneOp::Check(PRODUCT));
         run(&mut wb, id, PaneOp::Check(SALES));
         let locale = wb.locale;
-        let drop = |wb: &Workbook, source, target| drop_op(wb.pivot(id).unwrap().1, source, target, locale);
+        let drop = |wb: &Workbook, source, target| {
+            drop_op(wb.pivot(id).unwrap().1, source, target, locale)
+        };
 
         // Within an area: dropped before itself or just after, nothing moves.
         let region = DragSource::Area(Area::Rows, 0);
@@ -1812,13 +2033,21 @@ mod tests {
         assert_eq!(labels(&wb, id, Area::Rows), ["Product", "Region"]);
 
         // To another area.
-        let to_columns = drop(&wb, DragSource::Area(Area::Rows, 1), Some((Area::Columns, 0))).unwrap();
+        let to_columns = drop(
+            &wb,
+            DragSource::Area(Area::Rows, 1),
+            Some((Area::Columns, 0)),
+        )
+        .unwrap();
         run(&mut wb, id, to_columns);
         assert_eq!(labels(&wb, id, Area::Rows), ["Product"]);
         assert_eq!(labels(&wb, id, Area::Columns), ["Region"]);
 
         // From the list: a field already in the area moves, another is added.
-        assert_eq!(drop(&wb, DragSource::List(PRODUCT), Some((Area::Rows, 1))), None);
+        assert_eq!(
+            drop(&wb, DragSource::List(PRODUCT), Some((Area::Rows, 1))),
+            None
+        );
         let add = drop(&wb, DragSource::List(SALES), Some((Area::Values, 1))).unwrap();
         assert_eq!(
             add,
@@ -1871,14 +2100,32 @@ mod tests {
     #[test]
     fn the_menu_of_an_entry_knows_where_it_can_go() {
         let (mut wb, id) = workbook();
-        for op in [PaneOp::Check(REGION), PaneOp::Check(PRODUCT), PaneOp::Check(SALES), PaneOp::Check(SALES)] {
+        for op in [
+            PaneOp::Check(REGION),
+            PaneOp::Check(PRODUCT),
+            PaneOp::Check(SALES),
+            PaneOp::Check(SALES),
+        ] {
             run(&mut wb, id, op);
         }
         let (_, p) = wb.pivot(id).unwrap();
         let first = entry_moves(p, Area::Rows, 0, wb.locale);
-        assert!(!first.up && first.down && first.to_filters && !first.to_rows && first.to_columns && first.to_values);
+        assert!(
+            !first.up
+                && first.down
+                && first.to_filters
+                && !first.to_rows
+                && first.to_columns
+                && first.to_values
+        );
         let sigma = entry_moves(p, Area::Columns, 0, wb.locale);
-        assert!(sigma.sigma && sigma.to_rows && !sigma.to_columns && !sigma.to_filters && !sigma.to_values);
+        assert!(
+            sigma.sigma
+                && sigma.to_rows
+                && !sigma.to_columns
+                && !sigma.to_filters
+                && !sigma.to_values
+        );
         let value = entry_moves(p, Area::Values, 1, wb.locale);
         assert!(value.value && value.up && !value.down && !value.to_values && value.to_rows);
     }
@@ -1889,12 +2136,21 @@ mod tests {
             assert_eq!(LabelTest::of(&test.build("a", "b")).0, test);
             assert!(!test.label().is_empty() && test.menu_label().ends_with("..."));
         }
-        assert_eq!(LabelTest::MENU.iter().map(|group| group.len()).sum::<usize>(), LabelTest::ALL.len());
+        assert_eq!(
+            LabelTest::MENU
+                .iter()
+                .map(|group| group.len())
+                .sum::<usize>(),
+            LabelTest::ALL.len()
+        );
         for test in ValueTest::ALL {
             assert_eq!(ValueTest::of(&test.build(1.0, 2.0)).0, test);
         }
         // The bounds of "between" are put in order.
-        assert_eq!(ValueTest::Between.build(5.0, 2.0), ValueFilter::Between(2.0, 5.0));
+        assert_eq!(
+            ValueTest::Between.build(5.0, 2.0),
+            ValueFilter::Between(2.0, 5.0)
+        );
         assert_eq!(
             LabelTest::of(&LabelFilter::Between("a".into(), "m".into())),
             (LabelTest::Between, "a".to_string(), "m".to_string())
@@ -1924,18 +2180,28 @@ mod tests {
 
     #[test]
     fn sort_summaries() {
-        assert_eq!(sort_summary("Region", SortOrder::Ascending, None), "Sort Region in ascending order");
+        assert_eq!(
+            sort_summary("Region", SortOrder::Ascending, None),
+            "Sort Region in ascending order"
+        );
         assert_eq!(
             sort_summary("Region", SortOrder::Descending, Some("Sum of Sales")),
             "Sort Region by Sum of Sales in descending order"
         );
-        assert!(sort_summary("Region", SortOrder::Manual, None).starts_with("Drag items of the Region field"));
+        assert!(
+            sort_summary("Region", SortOrder::Manual, None)
+                .starts_with("Drag items of the Region field")
+        );
     }
 
     #[test]
     fn targets_and_selections() {
         let (mut wb, id) = workbook();
-        for op in [PaneOp::Check(REGION), PaneOp::Check(PRODUCT), PaneOp::Check(SALES)] {
+        for op in [
+            PaneOp::Check(REGION),
+            PaneOp::Check(PRODUCT),
+            PaneOp::Check(SALES),
+        ] {
             run(&mut wb, id, op);
         }
         // A3 "Row Labels", B3 "Sum of Sales", A4 East, A5 Apples, B5 a value.
@@ -1958,8 +2224,14 @@ mod tests {
         assert_eq!(selected_items(&wb, 1, &[Rect::new(4, 1, 5, 1)]), None);
 
         assert_eq!(select_rect(p, SelectWhat::Entire), p.location);
-        assert_eq!(select_rect(p, SelectWhat::Values), Some(Rect::new(3, 1, 9, 1)));
-        assert_eq!(select_rect(p, SelectWhat::Labels), Some(Rect::new(3, 0, 9, 0)));
+        assert_eq!(
+            select_rect(p, SelectWhat::Values),
+            Some(Rect::new(3, 1, 9, 1))
+        );
+        assert_eq!(
+            select_rect(p, SelectWhat::Labels),
+            Some(Rect::new(3, 0, 9, 0))
+        );
     }
 
     #[test]
@@ -1970,7 +2242,11 @@ mod tests {
         let by_chars = |text: &str, _: &Style| text.chars().count() as f32 * 7.0;
         assert!(fit_widths(&wb, 1, p, by_chars).is_empty());
 
-        for op in [PaneOp::Check(REGION), PaneOp::Check(PRODUCT), PaneOp::Check(SALES)] {
+        for op in [
+            PaneOp::Check(REGION),
+            PaneOp::Check(PRODUCT),
+            PaneOp::Check(SALES),
+        ] {
             run(&mut wb, id, op);
         }
         let (_, p) = wb.pivot(id).unwrap();
@@ -1979,9 +2255,18 @@ mod tests {
         // "Grand Total" (11), which is narrower than the products with
         // their two steps of indentation ("Apples": 6 letters + 18).
         let label_col = widths.iter().find(|(c, _)| *c == 0).unwrap().1;
-        assert_eq!(label_col, (11.0f32 * 7.0).max(10.0 * 7.0 + FILTER_BUTTON).max(6.0 * 7.0 + 18.0) + 9.0);
+        assert_eq!(
+            label_col,
+            (11.0f32 * 7.0)
+                .max(10.0 * 7.0 + FILTER_BUTTON)
+                .max(6.0 * 7.0 + 18.0)
+                + 9.0
+        );
         // "Sum of Sales" gives the width of the values.
-        assert_eq!(widths.iter().find(|(c, _)| *c == 1).unwrap().1, 12.0 * 7.0 + 9.0);
+        assert_eq!(
+            widths.iter().find(|(c, _)| *c == 1).unwrap().1,
+            12.0 * 7.0 + 9.0
+        );
         assert_eq!(widths.len(), 2);
 
         // A filter field adds its cells above the report.
@@ -1998,7 +2283,10 @@ mod tests {
         assert!(p.page_location.is_some());
         let widths = fit_widths(&wb, 1, p, by_chars);
         // "(All)" and its drop-down are narrower than "Sum of Sales".
-        assert_eq!(widths.iter().find(|(c, _)| *c == 1).unwrap().1, 12.0 * 7.0 + 9.0);
+        assert_eq!(
+            widths.iter().find(|(c, _)| *c == 1).unwrap().1,
+            12.0 * 7.0 + 9.0
+        );
     }
 
     #[test]
@@ -2040,7 +2328,11 @@ mod tests {
     #[test]
     fn the_context_menu_of_a_label() {
         let (mut wb, id) = workbook();
-        for op in [PaneOp::Check(REGION), PaneOp::Check(PRODUCT), PaneOp::Check(SALES)] {
+        for op in [
+            PaneOp::Check(REGION),
+            PaneOp::Check(PRODUCT),
+            PaneOp::Check(SALES),
+        ] {
             run(&mut wb, id, op);
         }
         // A4 is "East", the first region, with products below it.
@@ -2096,7 +2388,10 @@ mod tests {
         // The caption of the values: the value field without "Show Details".
         let menu = context_menu(&wb, 1, 2, 1, &[Rect::cell(2, 1)], true);
         let text = outline(&menu);
-        assert!(text.contains("Value Field Settings...") && !text.contains("Show Details"), "{text}");
+        assert!(
+            text.contains("Value Field Settings...") && !text.contains("Show Details"),
+            "{text}"
+        );
         // The grand total label and the empty report.
         let menu = context_menu(&wb, 1, 5, 0, &[Rect::cell(5, 0)], true);
         assert_eq!(
@@ -2114,7 +2409,11 @@ mod tests {
     #[test]
     fn what_a_cell_can_expand_group_and_ungroup() {
         let (mut wb, id) = workbook();
-        for op in [PaneOp::Check(REGION), PaneOp::Check(PRODUCT), PaneOp::Check(SALES)] {
+        for op in [
+            PaneOp::Check(REGION),
+            PaneOp::Check(PRODUCT),
+            PaneOp::Check(SALES),
+        ] {
             run(&mut wb, id, op);
         }
         let (_, p) = wb.pivot(id).unwrap();
@@ -2158,8 +2457,14 @@ mod tests {
     fn sources_and_destinations() {
         let (wb, _) = workbook();
         // The block of data around the active cell, or the selection.
-        assert_eq!(default_source(&wb, 0, (2, 1), Rect::cell(2, 1)), "Sheet1!$A$1:$D$5");
-        assert_eq!(default_source(&wb, 0, (1, 0), Rect::new(0, 0, 2, 1)), "Sheet1!$A$1:$B$3");
+        assert_eq!(
+            default_source(&wb, 0, (2, 1), Rect::cell(2, 1)),
+            "Sheet1!$A$1:$D$5"
+        );
+        assert_eq!(
+            default_source(&wb, 0, (1, 0), Rect::new(0, 0, 2, 1)),
+            "Sheet1!$A$1:$B$3"
+        );
         assert_eq!(default_source(&wb, 0, (30, 9), Rect::cell(30, 9)), "");
         assert_eq!(parse_destination("H3", 0, &wb), Some((0, 2, 7)));
         assert_eq!(parse_destination("=Sheet2!$B$4", 0, &wb), Some((1, 3, 1)));
@@ -2194,9 +2499,12 @@ mod tests {
     fn items_move_hide_and_show_their_detail() {
         let (mut wb, id) = workbook();
         // More regions, to have something to move.
-        for (r, row) in [["North", "Apples", "2024-03-01", "70"], ["South", "Pears", "2024-04-01", "30"]]
-            .iter()
-            .enumerate()
+        for (r, row) in [
+            ["North", "Apples", "2024-03-01", "70"],
+            ["South", "Pears", "2024-04-01", "30"],
+        ]
+        .iter()
+        .enumerate()
         {
             for (c, text) in row.iter().enumerate() {
                 wb.set_cell_text(0, 5 + r as u32, c as u32, text).unwrap();
@@ -2213,12 +2521,22 @@ mod tests {
         }
         // The regions that came with the new source follow the others, as
         // new items do in Excel.
-        assert_eq!(row_labels(&wb, id), ["East", "West", "North", "South", "Grand Total"]);
+        assert_eq!(
+            row_labels(&wb, id),
+            ["East", "West", "North", "South", "Grand Total"]
+        );
         let item = |wb: &Workbook, label: &str| {
             let (_, p) = wb.pivot(id).unwrap();
-            (0..4u32).find(|x| p.item_text(REGION, *x, wb.locale) == label).unwrap()
+            (0..4u32)
+                .find(|x| p.item_text(REGION, *x, wb.locale) == label)
+                .unwrap()
         };
-        let (east, north, south, west) = (item(&wb, "East"), item(&wb, "North"), item(&wb, "South"), item(&wb, "West"));
+        let (east, north, south, west) = (
+            item(&wb, "East"),
+            item(&wb, "North"),
+            item(&wb, "South"),
+            item(&wb, "West"),
+        );
         let change = |wb: &mut Workbook, edit: &dyn Fn(&mut PivotTable)| {
             wb.pivot_update(id, false, edit).unwrap();
             wb.commit("change");
@@ -2226,23 +2544,44 @@ mod tests {
 
         // Moving among the items shown.
         change(&mut wb, &|p| move_item(p, REGION, west, MoveTo::Beginning));
-        assert_eq!(row_labels(&wb, id), ["West", "East", "North", "South", "Grand Total"]);
+        assert_eq!(
+            row_labels(&wb, id),
+            ["West", "East", "North", "South", "Grand Total"]
+        );
         change(&mut wb, &|p| move_item(p, REGION, west, MoveTo::Down));
-        assert_eq!(row_labels(&wb, id), ["East", "West", "North", "South", "Grand Total"]);
+        assert_eq!(
+            row_labels(&wb, id),
+            ["East", "West", "North", "South", "Grand Total"]
+        );
         change(&mut wb, &|p| move_item(p, REGION, east, MoveTo::End));
-        assert_eq!(row_labels(&wb, id), ["West", "North", "South", "East", "Grand Total"]);
+        assert_eq!(
+            row_labels(&wb, id),
+            ["West", "North", "South", "East", "Grand Total"]
+        );
         change(&mut wb, &|p| move_item(p, REGION, east, MoveTo::Up));
-        assert_eq!(row_labels(&wb, id), ["West", "North", "East", "South", "Grand Total"]);
+        assert_eq!(
+            row_labels(&wb, id),
+            ["West", "North", "East", "South", "Grand Total"]
+        );
         // At the end already: nothing moves.
         change(&mut wb, &|p| move_item(p, REGION, south, MoveTo::Down));
-        assert_eq!(row_labels(&wb, id), ["West", "North", "East", "South", "Grand Total"]);
+        assert_eq!(
+            row_labels(&wb, id),
+            ["West", "North", "East", "South", "Grand Total"]
+        );
 
         // Hiding the selection, then keeping only one item; a hidden item
         // is stepped over by a move.
         change(&mut wb, &|p| filter_items(p, REGION, &[north], false));
-        assert_eq!(row_labels(&wb, id), ["West", "East", "South", "Grand Total"]);
+        assert_eq!(
+            row_labels(&wb, id),
+            ["West", "East", "South", "Grand Total"]
+        );
         change(&mut wb, &|p| move_item(p, REGION, east, MoveTo::Up));
-        assert_eq!(row_labels(&wb, id), ["East", "West", "South", "Grand Total"]);
+        assert_eq!(
+            row_labels(&wb, id),
+            ["East", "West", "South", "Grand Total"]
+        );
         change(&mut wb, &|p| filter_items(p, REGION, &[south, west], true));
         assert_eq!(row_labels(&wb, id), ["West", "South", "Grand Total"]);
         // Hiding everything that shows is not done.
@@ -2258,7 +2597,15 @@ mod tests {
         assert_eq!(labels(&wb, id, Area::Rows), ["Region", "Product"]);
         assert_eq!(
             row_labels(&wb, id),
-            ["East", "West", "Apples", "Pears", "North", "South", "Grand Total"]
+            [
+                "East",
+                "West",
+                "Apples",
+                "Pears",
+                "North",
+                "South",
+                "Grand Total"
+            ]
         );
 
         // Subtotals of the regions off, then on again.
@@ -2285,7 +2632,8 @@ mod tests {
         ] {
             apply_op(&mut pending, op, wb.locale);
         }
-        wb.pivot_update(id, false, |p| adopt_layout(p, &pending)).unwrap();
+        wb.pivot_update(id, false, |p| adopt_layout(p, &pending))
+            .unwrap();
         wb.commit("update");
         assert!(labels(&wb, id, Area::Rows).is_empty());
         assert_eq!(labels(&wb, id, Area::Columns), ["Product"]);
@@ -2306,28 +2654,52 @@ mod tests {
         assert_eq!(body, Rect::new(2, 0, 5, 1));
         let refused = |intent: Intent| refusal(&wb, 1, &intent);
         // Typing into a cell, clearing or pasting over part of the report.
-        assert_eq!(refused(Intent::EditCells(Rect::cell(3, 1))), Some(cannot_change_part()));
-        assert_eq!(refused(Intent::EditCells(Rect::new(3, 0, 4, 1))), Some(would_affect_pivot()));
-        assert_eq!(refused(Intent::EditCells(Rect::new(4, 1, 9, 5))), Some(would_affect_pivot()));
+        assert_eq!(
+            refused(Intent::EditCells(Rect::cell(3, 1))),
+            Some(cannot_change_part())
+        );
+        assert_eq!(
+            refused(Intent::EditCells(Rect::new(3, 0, 4, 1))),
+            Some(would_affect_pivot())
+        );
+        assert_eq!(
+            refused(Intent::EditCells(Rect::new(4, 1, 9, 5))),
+            Some(would_affect_pivot())
+        );
         // The whole report, or cells beside it, may be cleared.
         assert_eq!(refused(Intent::EditCells(body)), None);
         assert_eq!(refused(Intent::EditCells(Rect::new(0, 0, 20, 8))), None);
         assert_eq!(refused(Intent::EditCells(Rect::cell(3, 2))), None);
         // Formatting its cells is allowed, sorting them is not.
         assert_eq!(refused(Intent::FormatCells(Rect::cell(3, 1))), None);
-        assert_eq!(refused(Intent::Sort(Rect::new(3, 0, 5, 1))), Some(would_affect_pivot()));
+        assert_eq!(
+            refused(Intent::Sort(Rect::new(3, 0, 5, 1))),
+            Some(would_affect_pivot())
+        );
         assert_eq!(refused(Intent::Sort(Rect::new(8, 0, 9, 1))), None);
         // Rows and columns: not through the report, but before it, after
         // it, or all of it at once.
-        assert_eq!(refused(Intent::InsertRows { at: 4, count: 1 }), Some(would_affect_pivot()));
+        assert_eq!(
+            refused(Intent::InsertRows { at: 4, count: 1 }),
+            Some(would_affect_pivot())
+        );
         assert_eq!(refused(Intent::InsertRows { at: 2, count: 1 }), None);
         assert_eq!(refused(Intent::InsertRows { at: 6, count: 3 }), None);
-        assert_eq!(refused(Intent::DeleteRows { first: 3, last: 3 }), Some(would_affect_pivot()));
+        assert_eq!(
+            refused(Intent::DeleteRows { first: 3, last: 3 }),
+            Some(would_affect_pivot())
+        );
         assert_eq!(refused(Intent::DeleteRows { first: 2, last: 5 }), None);
         assert_eq!(refused(Intent::DeleteRows { first: 0, last: 1 }), None);
-        assert_eq!(refused(Intent::InsertColumns { at: 1, count: 1 }), Some(would_affect_pivot()));
+        assert_eq!(
+            refused(Intent::InsertColumns { at: 1, count: 1 }),
+            Some(would_affect_pivot())
+        );
         assert_eq!(refused(Intent::InsertColumns { at: 0, count: 1 }), None);
-        assert_eq!(refused(Intent::DeleteColumns { first: 1, last: 1 }), Some(would_affect_pivot()));
+        assert_eq!(
+            refused(Intent::DeleteColumns { first: 1, last: 1 }),
+            Some(would_affect_pivot())
+        );
         assert_eq!(refused(Intent::DeleteColumns { first: 0, last: 1 }), None);
         // The data sheet has no PivotTable: nothing is refused there.
         assert_eq!(refusal(&wb, 0, &Intent::EditCells(Rect::cell(1, 1))), None);
@@ -2357,7 +2729,8 @@ mod tests {
 
     #[test]
     fn buttons_stay_inside_their_cell() {
-        let inside = |b: Box4, cell: Box4| b.0 >= cell.0 && b.1 >= cell.1 && b.2 <= cell.2 && b.3 <= cell.3;
+        let inside =
+            |b: Box4, cell: Box4| b.0 >= cell.0 && b.1 >= cell.1 && b.2 <= cell.2 && b.3 <= cell.3;
         for zoom in [0.5f32, 1.0, 1.75, 4.0] {
             // A cell of the default size at this zoom.
             let cell = (40.0, 60.0, 40.0 + 64.0 * zoom, 60.0 + 20.0 * zoom);
@@ -2371,8 +2744,13 @@ mod tests {
                 assert!(inside(drill, cell), "{zoom} {indent}");
                 // The text starts after its padding and one step more of
                 // indentation than its level: clear of the box.
-                let text = cell.0 + (3.0 * zoom).round().max(1.0) + (indent as f32 + 1.0) * INDENT * zoom;
-                assert!(drill.2 <= text + 0.5, "{zoom} {indent}: {} > {text}", drill.2);
+                let text =
+                    cell.0 + (3.0 * zoom).round().max(1.0) + (indent as f32 + 1.0) * INDENT * zoom;
+                assert!(
+                    drill.2 <= text + 0.5,
+                    "{zoom} {indent}: {} > {text}",
+                    drill.2
+                );
             }
         }
         // At 100 % the drop-down button is 15 pixels wide: what the fitted
@@ -2404,8 +2782,12 @@ mod tests {
     #[test]
     fn report_layout_is_the_shared_form() {
         let (mut wb, id) = workbook();
-        assert_eq!(report_layout(wb.pivot(id).unwrap().1), Some(FieldLayout::Compact));
-        wb.pivot_update(id, false, |p| p.fields[0].layout = FieldLayout::Tabular).unwrap();
+        assert_eq!(
+            report_layout(wb.pivot(id).unwrap().1),
+            Some(FieldLayout::Compact)
+        );
+        wb.pivot_update(id, false, |p| p.fields[0].layout = FieldLayout::Tabular)
+            .unwrap();
         assert_eq!(report_layout(wb.pivot(id).unwrap().1), None);
     }
 }

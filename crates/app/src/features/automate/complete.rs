@@ -62,7 +62,9 @@ enum Type {
 }
 
 fn class(name: &str) -> Option<&'static ApiClass> {
-    opensheet_script::api().iter().find(|class| class.name == name)
+    opensheet_script::api()
+        .iter()
+        .find(|class| class.name == name)
 }
 
 fn an_enum(name: &str) -> Option<&'static ApiEnum> {
@@ -74,16 +76,25 @@ fn type_of_text(text: &str) -> Type {
     let text = text.trim();
     // `Range | undefined` is a Range for what can be called on it.
     if let Some((first, rest)) = text.split_once('|') {
-        if rest.split('|').all(|part| matches!(part.trim(), "undefined" | "null")) {
+        if rest
+            .split('|')
+            .all(|part| matches!(part.trim(), "undefined" | "null"))
+        {
             return type_of_text(first);
         }
     }
     if let Some(inner) = text.strip_suffix("[]") {
         let inner = inner.trim();
-        let inner = inner.strip_prefix('(').and_then(|inner| inner.strip_suffix(')')).unwrap_or(inner);
+        let inner = inner
+            .strip_prefix('(')
+            .and_then(|inner| inner.strip_suffix(')'))
+            .unwrap_or(inner);
         return Type::List(Box::new(type_of_text(inner)));
     }
-    if let Some(inner) = text.strip_prefix("Array<").and_then(|rest| rest.strip_suffix('>')) {
+    if let Some(inner) = text
+        .strip_prefix("Array<")
+        .and_then(|rest| rest.strip_suffix('>'))
+    {
         return Type::List(Box::new(type_of_text(inner)));
     }
     let name = text.strip_prefix("ExcelScript.").unwrap_or(text);
@@ -101,7 +112,10 @@ fn type_of_text(text: &str) -> Type {
 
 /// What a method gives back: the text after the `):` of its signature.
 fn return_type(member: &ApiMember) -> Type {
-    member.signature.rsplit_once("): ").map_or(Type::Other, |(_, text)| type_of_text(text))
+    member
+        .signature
+        .rsplit_once("): ")
+        .map_or(Type::Other, |(_, text)| type_of_text(text))
 }
 
 // ---------------------------------------------------------------- the text
@@ -285,7 +299,8 @@ impl<'a> Text<'a> {
         let mut from = 0;
         while let Some(at) = self.source[from..].find(name).map(|at| at + from) {
             let end = at + name.len();
-            let whole = (at == 0 || !is_word(self.bytes[at - 1])) && (end == self.bytes.len() || !is_word(self.bytes[end]));
+            let whole = (at == 0 || !is_word(self.bytes[at - 1]))
+                && (end == self.bytes.len() || !is_word(self.bytes[end]));
             if whole && self.code[at] && !(at > 0 && self.bytes[at - 1] == b'.') {
                 found.push(at);
             }
@@ -312,7 +327,9 @@ impl<'a> Text<'a> {
                     b';' | b',' if depth == 0 => return at,
                     b'\n' if depth == 0 => {
                         let next = self.after_blanks(at);
-                        if self.bytes.get(next) != Some(&b'.') && self.bytes.get(next) != Some(&b'?') {
+                        if self.bytes.get(next) != Some(&b'.')
+                            && self.bytes.get(next) != Some(&b'?')
+                        {
                             return at;
                         }
                     }
@@ -339,7 +356,9 @@ impl<'a> Text<'a> {
         // The nearest declaration above; failing that, any.
         let before = places.iter().rev().filter(|place| **place < at);
         let after = places.iter().filter(|place| **place >= at);
-        before.chain(after).find_map(|place| self.declaration(name, *place, depth))
+        before
+            .chain(after)
+            .find_map(|place| self.declaration(name, *place, depth))
     }
 
     /// What the occurrence of a name at `place` says of its type, when
@@ -351,22 +370,34 @@ impl<'a> Text<'a> {
         let behind = &self.source[..before];
         // `name: ExcelScript.Range`: a parameter or a typed variable.
         if let Some(rest) = ahead.strip_prefix(':') {
-            let end = rest.find(['=', ',', ')', ';', '{', '\n']).unwrap_or(rest.len());
+            let end = rest
+                .find(['=', ',', ')', ';', '{', '\n'])
+                .unwrap_or(rest.len());
             let declared = type_of_text(&rest[..end]);
             if !matches!(declared, Type::Other) {
                 return Some(declared);
             }
         }
-        let keyword = |text: &str| ["let", "const", "var"].iter().any(|word| text.ends_with(word) && !text[..text.len() - word.len()].ends_with(is_word_char));
+        let keyword = |text: &str| {
+            ["let", "const", "var"].iter().any(|word| {
+                text.ends_with(word) && !text[..text.len() - word.len()].ends_with(is_word_char)
+            })
+        };
         // `let name = expression`.
         if keyword(behind) {
-            if let Some(rest) = ahead.strip_prefix('=').filter(|rest| !rest.starts_with('=')) {
+            if let Some(rest) = ahead
+                .strip_prefix('=')
+                .filter(|rest| !rest.starts_with('='))
+            {
                 let start = self.after_blanks(after + 1);
                 let _ = rest;
                 return self.type_at(self.expression_end(start), depth + 1);
             }
             // `for (const name of expression)`: one of the list.
-            if let Some(rest) = ahead.strip_prefix("of").filter(|rest| rest.starts_with(|c: char| c.is_whitespace())) {
+            if let Some(rest) = ahead
+                .strip_prefix("of")
+                .filter(|rest| rest.starts_with(|c: char| c.is_whitespace()))
+            {
                 let start = self.after_blanks(after + 2);
                 let _ = rest;
                 return match self.type_at(self.expression_end(start), depth + 1)? {
@@ -378,10 +409,23 @@ impl<'a> Text<'a> {
         // `list.forEach((name) => ...)`, `list.map(name => ...)`: the
         // first parameter of the callback is one of the list.
         let arrow = ahead.starts_with("=>") || ahead.starts_with(',') || ahead.starts_with(')');
-        let opened = behind.strip_suffix('(').map(|rest| rest.strip_suffix('(').unwrap_or(rest));
+        let opened = behind
+            .strip_suffix('(')
+            .map(|rest| rest.strip_suffix('(').unwrap_or(rest));
         if let (true, Some(call)) = (arrow, opened) {
-            for method in ["forEach", "map", "filter", "find", "some", "every", "findIndex"] {
-                if let Some(receiver) = call.strip_suffix(method).and_then(|rest| rest.trim_end().strip_suffix('.')) {
+            for method in [
+                "forEach",
+                "map",
+                "filter",
+                "find",
+                "some",
+                "every",
+                "findIndex",
+            ] {
+                if let Some(receiver) = call
+                    .strip_suffix(method)
+                    .and_then(|rest| rest.trim_end().strip_suffix('.'))
+                {
                     return match self.type_at(receiver.len(), depth + 1)? {
                         Type::List(item) => Some(*item),
                         _ => None,
@@ -418,7 +462,9 @@ impl<'a> Text<'a> {
                     let called = links.next_if_eq(&Link::Call).is_some();
                     match (name, called) {
                         ("find" | "pop" | "shift" | "at", true) => *item,
-                        ("filter" | "slice" | "concat" | "reverse" | "sort", true) => Type::List(item),
+                        ("filter" | "slice" | "concat" | "reverse" | "sort", true) => {
+                            Type::List(item)
+                        }
                         ("join", true) => Type::Text,
                         _ => Type::Other,
                     }
@@ -426,7 +472,11 @@ impl<'a> Text<'a> {
                 (Type::Text, Link::Name(name)) => {
                     let called = links.next_if_eq(&Link::Call).is_some();
                     match (name, called) {
-                        ("toUpperCase" | "toLowerCase" | "trim" | "substring" | "slice" | "replace" | "concat", true) => Type::Text,
+                        (
+                            "toUpperCase" | "toLowerCase" | "trim" | "substring" | "slice"
+                            | "replace" | "concat",
+                            true,
+                        ) => Type::Text,
                         ("split", true) => Type::List(Box::new(Type::Text)),
                         _ => Type::Other,
                     }
@@ -446,44 +496,148 @@ fn is_word_char(c: char) -> bool {
 
 const LIST_MEMBERS: &[(&str, &str, &str)] = &[
     ("length", ": number", "How many items the list has."),
-    ("forEach", "(callback: (item, index) => void): void", "Calls a function with each item."),
-    ("map", "(callback: (item, index) => U): U[]", "A list of what a function gives for each item."),
-    ("filter", "(callback: (item, index) => boolean): T[]", "The items a function keeps."),
-    ("find", "(callback: (item, index) => boolean): T | undefined", "The first item a function accepts."),
-    ("some", "(callback: (item, index) => boolean): boolean", "Whether a function accepts an item."),
-    ("every", "(callback: (item, index) => boolean): boolean", "Whether a function accepts every item."),
-    ("indexOf", "(item: T): number", "The place of an item; -1 when it is not there."),
-    ("includes", "(item: T): boolean", "Whether an item is in the list."),
-    ("slice", "(start?: number, end?: number): T[]", "A part of the list."),
-    ("concat", "(...items: T[]): T[]", "This list followed by others."),
-    ("join", "(separator?: string): string", "The items as one text."),
+    (
+        "forEach",
+        "(callback: (item, index) => void): void",
+        "Calls a function with each item.",
+    ),
+    (
+        "map",
+        "(callback: (item, index) => U): U[]",
+        "A list of what a function gives for each item.",
+    ),
+    (
+        "filter",
+        "(callback: (item, index) => boolean): T[]",
+        "The items a function keeps.",
+    ),
+    (
+        "find",
+        "(callback: (item, index) => boolean): T | undefined",
+        "The first item a function accepts.",
+    ),
+    (
+        "some",
+        "(callback: (item, index) => boolean): boolean",
+        "Whether a function accepts an item.",
+    ),
+    (
+        "every",
+        "(callback: (item, index) => boolean): boolean",
+        "Whether a function accepts every item.",
+    ),
+    (
+        "indexOf",
+        "(item: T): number",
+        "The place of an item; -1 when it is not there.",
+    ),
+    (
+        "includes",
+        "(item: T): boolean",
+        "Whether an item is in the list.",
+    ),
+    (
+        "slice",
+        "(start?: number, end?: number): T[]",
+        "A part of the list.",
+    ),
+    (
+        "concat",
+        "(...items: T[]): T[]",
+        "This list followed by others.",
+    ),
+    (
+        "join",
+        "(separator?: string): string",
+        "The items as one text.",
+    ),
     ("push", "(...items: T[]): number", "Adds items at the end."),
     ("pop", "(): T | undefined", "Takes the last item away."),
     ("reverse", "(): T[]", "Turns the list round."),
-    ("sort", "(compare?: (a: T, b: T) => number): T[]", "Sorts the list."),
+    (
+        "sort",
+        "(compare?: (a: T, b: T) => number): T[]",
+        "Sorts the list.",
+    ),
 ];
 
 const TEXT_MEMBERS: &[(&str, &str, &str)] = &[
     ("length", ": number", "How many characters the text has."),
     ("toUpperCase", "(): string", "The text in capitals."),
     ("toLowerCase", "(): string", "The text in small letters."),
-    ("trim", "(): string", "The text without the blanks around it."),
-    ("includes", "(search: string): boolean", "Whether the text holds another."),
-    ("startsWith", "(search: string): boolean", "Whether the text starts with another."),
-    ("endsWith", "(search: string): boolean", "Whether the text ends with another."),
-    ("indexOf", "(search: string): number", "Where another text is in this one; -1 when it is not."),
-    ("split", "(separator: string): string[]", "The parts of the text between a separator."),
-    ("replace", "(search: string, replacement: string): string", "The text with one part replaced."),
-    ("substring", "(start: number, end?: number): string", "A part of the text."),
-    ("slice", "(start?: number, end?: number): string", "A part of the text."),
+    (
+        "trim",
+        "(): string",
+        "The text without the blanks around it.",
+    ),
+    (
+        "includes",
+        "(search: string): boolean",
+        "Whether the text holds another.",
+    ),
+    (
+        "startsWith",
+        "(search: string): boolean",
+        "Whether the text starts with another.",
+    ),
+    (
+        "endsWith",
+        "(search: string): boolean",
+        "Whether the text ends with another.",
+    ),
+    (
+        "indexOf",
+        "(search: string): number",
+        "Where another text is in this one; -1 when it is not.",
+    ),
+    (
+        "split",
+        "(separator: string): string[]",
+        "The parts of the text between a separator.",
+    ),
+    (
+        "replace",
+        "(search: string, replacement: string): string",
+        "The text with one part replaced.",
+    ),
+    (
+        "substring",
+        "(start: number, end?: number): string",
+        "A part of the text.",
+    ),
+    (
+        "slice",
+        "(start?: number, end?: number): string",
+        "A part of the text.",
+    ),
 ];
 
 const CONSOLE_MEMBERS: &[(&str, &str, &str)] = &[
-    ("log", "(...data: any[]): void", "Writes to the Output list."),
-    ("info", "(...data: any[]): void", "Writes to the Output list."),
-    ("debug", "(...data: any[]): void", "Writes to the Output list."),
-    ("warn", "(...data: any[]): void", "Writes a warning to the Output list."),
-    ("error", "(...data: any[]): void", "Writes an error to the Output list."),
+    (
+        "log",
+        "(...data: any[]): void",
+        "Writes to the Output list.",
+    ),
+    (
+        "info",
+        "(...data: any[]): void",
+        "Writes to the Output list.",
+    ),
+    (
+        "debug",
+        "(...data: any[]): void",
+        "Writes to the Output list.",
+    ),
+    (
+        "warn",
+        "(...data: any[]): void",
+        "Writes a warning to the Output list.",
+    ),
+    (
+        "error",
+        "(...data: any[]): void",
+        "Writes an error to the Output list.",
+    ),
 ];
 
 fn fixed(members: &[(&'static str, &'static str, &'static str)]) -> Vec<Entry> {
@@ -550,8 +704,12 @@ fn matching(entries: Vec<Entry>, typed: &str) -> Vec<Entry> {
         return entries;
     }
     let typed = typed.to_lowercase();
-    let (starts, rest): (Vec<Entry>, Vec<Entry>) = entries.into_iter().partition(|entry| entry.name.to_lowercase().starts_with(&typed));
-    let holds = rest.into_iter().filter(|entry| entry.name.to_lowercase().contains(&typed));
+    let (starts, rest): (Vec<Entry>, Vec<Entry>) = entries
+        .into_iter()
+        .partition(|entry| entry.name.to_lowercase().starts_with(&typed));
+    let holds = rest
+        .into_iter()
+        .filter(|entry| entry.name.to_lowercase().contains(&typed));
     starts.into_iter().chain(holds).collect()
 }
 
@@ -569,15 +727,27 @@ pub(crate) fn complete(source: &str, caret: usize) -> Option<Completion> {
     // The engine first: it knows the types of the model.
     let known = opensheet_script::complete(source, caret);
     if known.of.is_some() && !known.items.is_empty() && known.start <= caret {
-        let ordered = known.items.iter().all(|item| item.kind == opensheet_script::CompletionKind::EnumMember);
+        let ordered = known
+            .items
+            .iter()
+            .all(|item| item.kind == opensheet_script::CompletionKind::EnumMember);
         let mut entries: Vec<Entry> = known
             .items
             .iter()
             .map(|item| Entry {
                 name: item.name.to_string(),
                 detail: match item.kind {
-                    opensheet_script::CompletionKind::Method => item.signature.strip_prefix(item.name).unwrap_or(&item.signature).to_string(),
-                    opensheet_script::CompletionKind::EnumMember => item.signature.strip_prefix(item.name).unwrap_or(&item.signature).trim_start().to_string(),
+                    opensheet_script::CompletionKind::Method => item
+                        .signature
+                        .strip_prefix(item.name)
+                        .unwrap_or(&item.signature)
+                        .to_string(),
+                    opensheet_script::CompletionKind::EnumMember => item
+                        .signature
+                        .strip_prefix(item.name)
+                        .unwrap_or(&item.signature)
+                        .trim_start()
+                        .to_string(),
                     opensheet_script::CompletionKind::Enum => "enum".to_string(),
                 },
                 about: item.description,
@@ -588,7 +758,10 @@ pub(crate) fn complete(source: &str, caret: usize) -> Option<Completion> {
             entries.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         }
         let entries = matching(entries, &source[known.start..caret]);
-        return (!entries.is_empty()).then_some(Completion { start: known.start, entries });
+        return (!entries.is_empty()).then_some(Completion {
+            start: known.start,
+            entries,
+        });
     }
     let text = Text::new(source);
     let start = text.word_start(caret);
@@ -634,7 +807,12 @@ pub(crate) fn hint(source: &str, caret: usize) -> Option<Hint> {
             // body of a function: not the call itself.
             b'[' | b'{' if depth == 0 => {
                 commas = 0;
-                if text.bytes[at] == b'{' && !text.before_blanks(at).checked_sub(1).is_some_and(|last| matches!(text.bytes[last], b'(' | b',' | b':' | b'[')) {
+                if text.bytes[at] == b'{'
+                    && !text
+                        .before_blanks(at)
+                        .checked_sub(1)
+                        .is_some_and(|last| matches!(text.bytes[last], b'(' | b',' | b':' | b'['))
+                {
                     return None;
                 }
             }
@@ -656,13 +834,22 @@ pub(crate) fn hint(source: &str, caret: usize) -> Option<Hint> {
     // The class before the dot: the engine's word, else what the text
     // tells.
     let known = opensheet_script::complete(source, start);
-    let signature = match known.items.iter().find(|item| item.name == name && item.kind == opensheet_script::CompletionKind::Method) {
+    let signature = match known
+        .items
+        .iter()
+        .find(|item| item.name == name && item.kind == opensheet_script::CompletionKind::Method)
+    {
         Some(item) => item.signature.clone(),
         None => {
             let Type::Class(class) = text.type_at(before - 1, 0)? else {
                 return None;
             };
-            class.members.iter().find(|member| member.name == name)?.signature.to_string()
+            class
+                .members
+                .iter()
+                .find(|member| member.name == name)?
+                .signature
+                .to_string()
         }
     };
     // The parameters are between the first parenthesis and the `):`.
@@ -672,7 +859,10 @@ pub(crate) fn hint(source: &str, caret: usize) -> Option<Hint> {
     let mut from = list_start;
     let mut depth = 0i32;
     let mut index = 0;
-    for (offset, ch) in signature[list_start..list_end].char_indices().chain([(list_end - list_start, ',')]) {
+    for (offset, ch) in signature[list_start..list_end]
+        .char_indices()
+        .chain([(list_end - list_start, ',')])
+    {
         match ch {
             '(' | '[' | '<' | '{' => depth += 1,
             ')' | ']' | '>' | '}' => depth -= 1,
@@ -688,7 +878,11 @@ pub(crate) fn hint(source: &str, caret: usize) -> Option<Hint> {
             _ => {}
         }
     }
-    Some(Hint { signature, active, open })
+    Some(Hint {
+        signature,
+        active,
+        open,
+    })
 }
 
 #[cfg(test)]
@@ -699,7 +893,15 @@ mod tests {
     fn names(marked: &str) -> Vec<String> {
         let caret = marked.find('|').expect("a caret");
         let source = marked.replace('|', "");
-        complete(&source, caret).map(|completion| completion.entries.into_iter().map(|entry| entry.name).collect()).unwrap_or_default()
+        complete(&source, caret)
+            .map(|completion| {
+                completion
+                    .entries
+                    .into_iter()
+                    .map(|entry| entry.name)
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
     fn has(marked: &str, name: &str) -> bool {
@@ -712,20 +914,48 @@ mod tests {
     fn members_follow_the_type_before_the_dot() {
         // The parameter of main.
         let all = names(&format!("{MAIN}  workbook.|"));
-        assert!(all.contains(&"getActiveWorksheet".to_string()) && all.contains(&"addTable".to_string()));
+        assert!(
+            all.contains(&"getActiveWorksheet".to_string())
+                && all.contains(&"addTable".to_string())
+        );
         assert!(!all.contains(&"getRange".to_string()));
         // A chain of calls.
-        assert!(has(&format!("{MAIN}  workbook.getActiveWorksheet().|"), "getRange"));
-        assert!(has(&format!("{MAIN}  workbook.getActiveWorksheet().getRange(\"A1:B2\").getFormat().|"), "getFill"));
-        assert!(has(&format!("{MAIN}  workbook.getActiveWorksheet().getRange(\"A1\").getFormat().getFont().|"), "setBold"));
+        assert!(has(
+            &format!("{MAIN}  workbook.getActiveWorksheet().|"),
+            "getRange"
+        ));
+        assert!(has(
+            &format!("{MAIN}  workbook.getActiveWorksheet().getRange(\"A1:B2\").getFormat().|"),
+            "getFill"
+        ));
+        assert!(has(
+            &format!(
+                "{MAIN}  workbook.getActiveWorksheet().getRange(\"A1\").getFormat().getFont().|"
+            ),
+            "setBold"
+        ));
         // A variable, declared with a value or with a type.
-        let script = format!("{MAIN}  let sheet = workbook.getActiveWorksheet();\n  const range = sheet\n    .getRange(\"A1\");\n  range.|");
+        let script = format!(
+            "{MAIN}  let sheet = workbook.getActiveWorksheet();\n  const range = sheet\n    .getRange(\"A1\");\n  range.|"
+        );
         assert!(has(&script, "setValues"));
-        assert!(has(&format!("{MAIN}  let table: ExcelScript.Table;\n  table.|"), "getColumnByName"));
+        assert!(has(
+            &format!("{MAIN}  let table: ExcelScript.Table;\n  table.|"),
+            "getColumnByName"
+        ));
         // What may be undefined is still what it is.
-        assert!(has(&format!("{MAIN}  workbook.getTable(\"T\").|"), "setShowTotals"));
-        assert!(has(&format!("{MAIN}  workbook.getTable(\"T\")!.|"), "setShowTotals"));
-        assert!(has(&format!("{MAIN}  workbook.getWorksheet(\"S\")?.|"), "getRange"));
+        assert!(has(
+            &format!("{MAIN}  workbook.getTable(\"T\").|"),
+            "setShowTotals"
+        ));
+        assert!(has(
+            &format!("{MAIN}  workbook.getTable(\"T\")!.|"),
+            "setShowTotals"
+        ));
+        assert!(has(
+            &format!("{MAIN}  workbook.getWorksheet(\"S\")?.|"),
+            "getRange"
+        ));
         // Every list is sorted by name.
         let mut sorted = all.clone();
         sorted.sort_by_key(|name| name.to_lowercase());
@@ -735,23 +965,59 @@ mod tests {
     #[test]
     fn lists_loops_and_callbacks() {
         assert!(has(&format!("{MAIN}  workbook.getTables().|"), "forEach"));
-        assert!(has(&format!("{MAIN}  workbook.getTables()[0].|"), "getName"));
-        assert!(has(&format!("{MAIN}  for (const table of workbook.getTables()) {{\n    table.|"), "getHeaderRowRange"));
-        assert!(has(&format!("{MAIN}  workbook.getWorksheets().forEach((sheet) => {{\n    sheet.|"), "getUsedRange"));
-        assert!(has(&format!("{MAIN}  workbook.getWorksheets().forEach(sheet => sheet.|"), "getName"));
-        assert!(has(&format!("{MAIN}  let first = workbook.getWorksheets().find(s => s.getName() == \"a\");\n  first.|"), "activate"));
+        assert!(has(
+            &format!("{MAIN}  workbook.getTables()[0].|"),
+            "getName"
+        ));
+        assert!(has(
+            &format!("{MAIN}  for (const table of workbook.getTables()) {{\n    table.|"),
+            "getHeaderRowRange"
+        ));
+        assert!(has(
+            &format!("{MAIN}  workbook.getWorksheets().forEach((sheet) => {{\n    sheet.|"),
+            "getUsedRange"
+        ));
+        assert!(has(
+            &format!("{MAIN}  workbook.getWorksheets().forEach(sheet => sheet.|"),
+            "getName"
+        ));
+        assert!(has(
+            &format!(
+                "{MAIN}  let first = workbook.getWorksheets().find(s => s.getName() == \"a\");\n  first.|"
+            ),
+            "activate"
+        ));
         // A text has the members of texts.
-        assert!(has(&format!("{MAIN}  workbook.getActiveWorksheet().getName().|"), "toUpperCase"));
+        assert!(has(
+            &format!("{MAIN}  workbook.getActiveWorksheet().getName().|"),
+            "toUpperCase"
+        ));
         assert!(has(&format!("{MAIN}  console.|"), "log"));
     }
 
     #[test]
     fn enums_of_the_namespace() {
         let all = names(&format!("{MAIN}  let a = ExcelScript.|"));
-        assert!(all.contains(&"HorizontalAlignment".to_string()) && all.contains(&"ChartType".to_string()));
-        assert_eq!(names(&format!("{MAIN}  let a = ExcelScript.HorizontalAlignment.|"))[..3], ["general", "left", "center"]);
-        assert_eq!(names(&format!("{MAIN}  let a = ExcelScript.Horiz|"))[0], "HorizontalAlignment");
-        assert_eq!(names(&format!("{MAIN}  x.setHorizontalAlignment(ExcelScript.HorizontalAlignment.cen|")), ["center", "centerAcrossSelection"]);
+        assert!(
+            all.contains(&"HorizontalAlignment".to_string())
+                && all.contains(&"ChartType".to_string())
+        );
+        assert_eq!(
+            names(&format!(
+                "{MAIN}  let a = ExcelScript.HorizontalAlignment.|"
+            ))[..3],
+            ["general", "left", "center"]
+        );
+        assert_eq!(
+            names(&format!("{MAIN}  let a = ExcelScript.Horiz|"))[0],
+            "HorizontalAlignment"
+        );
+        assert_eq!(
+            names(&format!(
+                "{MAIN}  x.setHorizontalAlignment(ExcelScript.HorizontalAlignment.cen|"
+            )),
+            ["center", "centerAcrossSelection"]
+        );
     }
 
     #[test]
@@ -762,11 +1028,19 @@ mod tests {
         // before what holds it.
         let found = names(&format!("{MAIN}  workbook.getActiveWorksheet().range|"));
         assert_eq!(found[..2], ["getRange", "getRangeByIndexes"]);
-        assert!(found.contains(&"getUsedRange".to_string()) && found.iter().all(|name| name.to_lowercase().contains("range")));
+        assert!(
+            found.contains(&"getUsedRange".to_string())
+                && found
+                    .iter()
+                    .all(|name| name.to_lowercase().contains("range"))
+        );
         assert!(names(&format!("{MAIN}  workbook.getActiveWorksheet().zzz|")).is_empty());
         // The place the word starts at.
         let source = format!("{MAIN}  workbook.getAc");
-        assert_eq!(complete(&source, source.len()).map(|c| c.start), Some(source.len() - 5));
+        assert_eq!(
+            complete(&source, source.len()).map(|c| c.start),
+            Some(source.len() - 5)
+        );
     }
 
     #[test]
@@ -781,8 +1055,14 @@ mod tests {
         assert!(names(&format!("{MAIN}  // workbook.|")).is_empty());
         assert!(names(&format!("{MAIN}  /* workbook.| */")).is_empty());
         // A string before does not hide the code after it.
-        assert!(has(&format!("{MAIN}  let s = \"a.b\"; workbook.|"), "getTables"));
-        assert!(has(&format!("{MAIN}  // workbook.\n  workbook.|"), "getTables"));
+        assert!(has(
+            &format!("{MAIN}  let s = \"a.b\"; workbook.|"),
+            "getTables"
+        ));
+        assert!(has(
+            &format!("{MAIN}  // workbook.\n  workbook.|"),
+            "getTables"
+        ));
         // No caret after a dot.
         assert!(names(&format!("{MAIN}  workbook|")).is_empty());
     }
@@ -790,8 +1070,14 @@ mod tests {
     #[test]
     fn the_details_are_the_signatures() {
         let source = format!("{MAIN}  workbook.getActiveWorksheet().getCell");
-        let entry = complete(&source, source.len()).expect("a list").entries.remove(0);
-        assert_eq!((entry.name.as_str(), entry.detail.as_str()), ("getCell", "(row: number, column: number): Range"));
+        let entry = complete(&source, source.len())
+            .expect("a list")
+            .entries
+            .remove(0);
+        assert_eq!(
+            (entry.name.as_str(), entry.detail.as_str()),
+            ("getCell", "(row: number, column: number): Range")
+        );
         assert!(!entry.about.is_empty());
     }
 
@@ -801,7 +1087,12 @@ mod tests {
         let caret = marked.find('|').expect("a caret");
         let source = marked.replace('|', "");
         hint(&source, caret).map(|hint| match hint.active {
-            Some(active) => format!("{}[{}]{}", &hint.signature[..active.start], &hint.signature[active.clone()], &hint.signature[active.end..]),
+            Some(active) => format!(
+                "{}[{}]{}",
+                &hint.signature[..active.start],
+                &hint.signature[active.clone()],
+                &hint.signature[active.end..]
+            ),
             None => hint.signature,
         })
     }
@@ -809,23 +1100,51 @@ mod tests {
     #[test]
     fn the_parameters_of_the_call_the_caret_is_in() {
         let sheet = format!("{MAIN}  let sheet = workbook.getActiveWorksheet();\n");
-        assert_eq!(hinted(&format!("{sheet}  sheet.getCell(|")).as_deref(), Some("getCell([row: number], column: number): Range"));
-        assert_eq!(hinted(&format!("{sheet}  sheet.getCell(1, |")).as_deref(), Some("getCell(row: number, [column: number]): Range"));
-        assert_eq!(hinted(&format!("{sheet}  sheet.getCell(1, 2|)")).as_deref(), Some("getCell(row: number, [column: number]): Range"));
+        assert_eq!(
+            hinted(&format!("{sheet}  sheet.getCell(|")).as_deref(),
+            Some("getCell([row: number], column: number): Range")
+        );
+        assert_eq!(
+            hinted(&format!("{sheet}  sheet.getCell(1, |")).as_deref(),
+            Some("getCell(row: number, [column: number]): Range")
+        );
+        assert_eq!(
+            hinted(&format!("{sheet}  sheet.getCell(1, 2|)")).as_deref(),
+            Some("getCell(row: number, [column: number]): Range")
+        );
         // A comma of an inner call or of a string is not one of this call.
         assert_eq!(
-            hinted(&format!("{sheet}  sheet.getRangeByIndexes(Math.max(1, 2), \"a,b\", |")).as_deref(),
-            Some("getRangeByIndexes(startRow: number, startColumn: number, [rowCount: number], columnCount: number): Range")
+            hinted(&format!(
+                "{sheet}  sheet.getRangeByIndexes(Math.max(1, 2), \"a,b\", |"
+            ))
+            .as_deref(),
+            Some(
+                "getRangeByIndexes(startRow: number, startColumn: number, [rowCount: number], columnCount: number): Range"
+            )
         );
         // Past the last parameter, and without parameters.
-        assert_eq!(hinted(&format!("{sheet}  sheet.getCell(1, 2, |")).as_deref(), Some("getCell(row: number, column: number): Range"));
-        assert_eq!(hinted(&format!("{sheet}  sheet.activate(|")).as_deref(), Some("activate(): void"));
+        assert_eq!(
+            hinted(&format!("{sheet}  sheet.getCell(1, 2, |")).as_deref(),
+            Some("getCell(row: number, column: number): Range")
+        );
+        assert_eq!(
+            hinted(&format!("{sheet}  sheet.activate(|")).as_deref(),
+            Some("activate(): void")
+        );
         // The innermost call.
-        assert_eq!(hinted(&format!("{sheet}  sheet.getRange(sheet.getCell(0, |")).as_deref(), Some("getCell(row: number, [column: number]): Range"));
+        assert_eq!(
+            hinted(&format!("{sheet}  sheet.getRange(sheet.getCell(0, |")).as_deref(),
+            Some("getCell(row: number, [column: number]): Range")
+        );
         // An object typed as an argument is still in the call.
         assert_eq!(
-            hinted(&format!("{sheet}  sheet.getAutoFilter().apply(\"A1:C5\", 0, {{ filterOn: |")).as_deref(),
-            Some("apply(range: Range | string, columnIndex?: number, [criteria?: ExcelScript.FilterCriteria]): void")
+            hinted(&format!(
+                "{sheet}  sheet.getAutoFilter().apply(\"A1:C5\", 0, {{ filterOn: |"
+            ))
+            .as_deref(),
+            Some(
+                "apply(range: Range | string, columnIndex?: number, [criteria?: ExcelScript.FilterCriteria]): void"
+            )
         );
         // Outside a call, after it, or in a call of something unknown.
         assert_eq!(hinted(&format!("{sheet}  sheet.getCell(1, 2)|")), None);
@@ -838,7 +1157,12 @@ mod tests {
     fn every_member_of_the_api_has_a_signature_that_reads() {
         for class in opensheet_script::api() {
             for member in class.members {
-                assert!(member.signature.starts_with(member.name) && member.signature.contains("): "), "{}.{}", class.name, member.signature);
+                assert!(
+                    member.signature.starts_with(member.name) && member.signature.contains("): "),
+                    "{}.{}",
+                    class.name,
+                    member.signature
+                );
             }
         }
     }

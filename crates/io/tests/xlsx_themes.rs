@@ -16,7 +16,9 @@ use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -44,7 +46,14 @@ fn bare(theme: &Theme) -> Theme {
 /// one can be kept.
 fn sample() -> Workbook {
     let mut wb = Workbook::new(Locale::en());
-    for (cell, text) in [("A1", "1"), ("A2", "2"), ("B1", "3"), ("B2", "4"), ("D1", "themed"), ("D2", "standard")] {
+    for (cell, text) in [
+        ("A1", "1"),
+        ("A2", "2"),
+        ("B1", "3"),
+        ("B2", "4"),
+        ("D1", "themed"),
+        ("D2", "standard"),
+    ] {
         enter(&mut wb, 0, cell, text);
     }
     wb.set_theme(Theme::builtin("Facet").unwrap());
@@ -71,8 +80,12 @@ fn sample() -> Workbook {
         fill: Some(Some(theme.accent(5, 0.8))),
         ..StylePatch::default()
     };
-    let greater = Rule::greater_than(opensheet_engine::parser::parse_formula("1", Locale::en()).unwrap());
-    wb.add_cond_format(0, CondFormat::new(vec![rect("A1:A2")], greater).with_format(format));
+    let greater =
+        Rule::greater_than(opensheet_engine::parser::parse_formula("1", Locale::en()).unwrap());
+    wb.add_cond_format(
+        0,
+        CondFormat::new(vec![rect("A1:A2")], greater).with_format(format),
+    );
     let scale = ColorScale {
         stops: vec![
             ColorStop {
@@ -85,13 +98,22 @@ fn sample() -> Workbook {
             },
         ],
     };
-    wb.add_cond_format(0, CondFormat::new(vec![rect("B1:B2")], Rule::ColorScale(scale)));
-    wb.add_shape(0, ShapeTool::Rectangle, Frame::new(300.0, 100.0, 90.0, 40.0)).unwrap();
+    wb.add_cond_format(
+        0,
+        CondFormat::new(vec![rect("B1:B2")], Rule::ColorScale(scale)),
+    );
+    wb.add_shape(
+        0,
+        ShapeTool::Rectangle,
+        Frame::new(300.0, 100.0, 90.0, 40.0),
+    )
+    .unwrap();
     let mut chart = wb.chart_from_range(0, rect("A1:B2"), ChartKind::Column);
     chart.series[0].color = Some(theme.accent(3, 0.6));
     chart.series[1].color = Some(Color(0x123456));
     wb.add_chart(0, chart);
-    wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:B2")), rect("F1:F2")).unwrap();
+    wb.add_sparklines(0, SparklineType::Line, (0, rect("A1:B2")), rect("F1:F2"))
+        .unwrap();
     let series = theme.accent(5, -0.5);
     wb.update_sparkline_groups(0, &[rect("F1")], |group| group.colors.series = series);
     wb.commit("setup");
@@ -108,29 +130,59 @@ fn a_workbook_keeps_its_theme_and_its_references() {
     // The theme of the workbook is the theme of the package.
     let part_xml = part(&bytes, "xl/theme/theme1.xml");
     assert_well_formed("theme1.xml", &part_xml);
-    assert!(part_xml.contains("name=\"Facet\"><a:themeElements><a:clrScheme name=\"Facet\">"), "{part_xml}");
+    assert!(
+        part_xml.contains("name=\"Facet\"><a:themeElements><a:clrScheme name=\"Facet\">"),
+        "{part_xml}"
+    );
     assert!(part_xml.contains("<a:accent1><a:srgbClr val=\"90C226\"/></a:accent1>"));
-    assert!(part_xml.contains("<a:minorFont><a:latin typeface=\"Trebuchet MS\" panose=\"020B0603020202020204\"/>"));
+    assert!(part_xml.contains(
+        "<a:minorFont><a:latin typeface=\"Trebuchet MS\" panose=\"020B0603020202020204\"/>"
+    ));
     assert!(part_xml.contains("<a:fmtScheme name=\"Facet\">"));
 
     // Cells: theme and tint where the colour is of the theme, the font of
     // the theme by its role.
     let styles = part(&bytes, "xl/styles.xml");
-    assert!(styles.contains("<fgColor theme=\"5\" tint=\"0.3999755851924192\"/>"), "{styles}");
+    assert!(
+        styles.contains("<fgColor theme=\"5\" tint=\"0.3999755851924192\"/>"),
+        "{styles}"
+    );
     assert!(styles.contains("<fgColor rgb=\"FFFFC000\"/>"));
-    assert!(styles.contains("<color theme=\"0\"/><name val=\"Trebuchet MS\"/><scheme val=\"major\"/></font>"), "{styles}");
-    assert!(styles.contains("<color rgb=\"FF90C226\"/><name val=\"Georgia\"/></font>"), "{styles}");
-    assert!(styles.contains("<sz val=\"11\"/><name val=\"Trebuchet MS\"/><scheme val=\"minor\"/></font>"));
-    assert!(styles.contains("<bottom style=\"thin\"><color theme=\"4\" tint=\"-0.249977111117893\"/></bottom>"));
+    assert!(
+        styles.contains(
+            "<color theme=\"0\"/><name val=\"Trebuchet MS\"/><scheme val=\"major\"/></font>"
+        ),
+        "{styles}"
+    );
+    assert!(
+        styles.contains("<color rgb=\"FF90C226\"/><name val=\"Georgia\"/></font>"),
+        "{styles}"
+    );
+    assert!(
+        styles
+            .contains("<sz val=\"11\"/><name val=\"Trebuchet MS\"/><scheme val=\"minor\"/></font>")
+    );
+    assert!(styles.contains(
+        "<bottom style=\"thin\"><color theme=\"4\" tint=\"-0.249977111117893\"/></bottom>"
+    ));
     // The differential format of the rule.
     assert!(styles.contains("<dxf><font><color theme=\"8\" tint=\"-0.499984740745262\"/></font><fill><patternFill><bgColor theme=\"8\" tint=\"0.7999816888943144\"/></patternFill></fill></dxf>"), "{styles}");
     let sheet = part(&bytes, "xl/worksheets/sheet1.xml");
     assert!(sheet.contains("<tabColor theme=\"9\"/>"), "{sheet}");
-    assert!(sheet.contains("<color theme=\"0\"/><color theme=\"7\"/></colorScale>"), "{sheet}");
-    assert!(sheet.contains("<x14:colorSeries theme=\"8\" tint=\"-0.499984740745262\"/>"), "{sheet}");
+    assert!(
+        sheet.contains("<color theme=\"0\"/><color theme=\"7\"/></colorScale>"),
+        "{sheet}"
+    );
+    assert!(
+        sheet.contains("<x14:colorSeries theme=\"8\" tint=\"-0.499984740745262\"/>"),
+        "{sheet}"
+    );
     // Shapes and charts: the name of the colour and its lightness.
     let drawing = part(&bytes, "xl/drawings/drawing1.xml");
-    assert!(drawing.contains("<a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill>"), "{drawing}");
+    assert!(
+        drawing.contains("<a:solidFill><a:schemeClr val=\"accent1\"/></a:solidFill>"),
+        "{drawing}"
+    );
     let chart = part(&bytes, "xl/charts/chart1.xml");
     assert!(chart.contains("<a:solidFill><a:schemeClr val=\"accent3\"><a:lumMod val=\"40000\"/><a:lumOff val=\"60000\"/></a:schemeClr></a:solidFill>"), "{chart}");
     assert!(chart.contains("<a:solidFill><a:srgbClr val=\"123456\"/></a:solidFill>"));
@@ -147,12 +199,27 @@ fn a_workbook_keeps_its_theme_and_its_references() {
     assert_eq!(read.cell_style_at(0, 2, 3), "Accent3");
     assert_eq!(read.sheets[0].tab_color, wb.sheets[0].tab_color);
     assert_eq!(read.sheets[0].cond_formats, wb.sheets[0].cond_formats);
-    assert_eq!(read.sheets[0].drawings[0].as_shape(), wb.sheets[0].drawings[0].as_shape());
-    assert_eq!(read.sheets[0].charts[0].series[0].color, Some(facet.accent(3, 0.6)));
-    assert_eq!(read.sheets[0].charts[0].series[1].color, Some(Color(0x123456)));
-    assert_eq!(read.sheets[0].sparklines[0].colors, wb.sheets[0].sparklines[0].colors);
+    assert_eq!(
+        read.sheets[0].drawings[0].as_shape(),
+        wb.sheets[0].drawings[0].as_shape()
+    );
+    assert_eq!(
+        read.sheets[0].charts[0].series[0].color,
+        Some(facet.accent(3, 0.6))
+    );
+    assert_eq!(
+        read.sheets[0].charts[0].series[1].color,
+        Some(Color(0x123456))
+    );
+    assert_eq!(
+        read.sheets[0].sparklines[0].colors,
+        wb.sheets[0].sparklines[0].colors
+    );
     assert_eq!(read.font_metrics(), wb.font_metrics());
-    assert_eq!(read.sheets[0].default_col_width, wb.sheets[0].default_col_width);
+    assert_eq!(
+        read.sheets[0].default_col_width,
+        wb.sheets[0].default_col_width
+    );
 
     // What was read follows another theme; what is not of the theme stays.
     let mut read = read;
@@ -165,12 +232,24 @@ fn a_workbook_keeps_its_theme_and_its_references() {
     assert_eq!(style(&read, "D2").fill, Some(Color(0xFFC000)));
     assert_eq!(&*style(&read, "D2").font.name, "Georgia");
     assert_eq!(read.sheets[0].tab_color, Some(office.accent(6, 0.0)));
-    assert_eq!(read.sheets[0].charts[0].series[0].color, Some(office.accent(3, 0.6)));
-    assert_eq!(read.sheets[0].drawings[0].as_shape().unwrap().fill, Some(office.accent(1, 0.0)));
-    assert_eq!(read.sheets[0].sparklines[0].colors.series, office.accent(5, -0.5));
+    assert_eq!(
+        read.sheets[0].charts[0].series[0].color,
+        Some(office.accent(3, 0.6))
+    );
+    assert_eq!(
+        read.sheets[0].drawings[0].as_shape().unwrap().fill,
+        Some(office.accent(1, 0.0))
+    );
+    assert_eq!(
+        read.sheets[0].sparklines[0].colors.series,
+        office.accent(5, -0.5)
+    );
     // Saved again, it is the Office theme that is written.
     let again = to_bytes(&read);
-    assert!(part(&again, "xl/theme/theme1.xml").contains("name=\"Office Theme\"><a:themeElements><a:clrScheme name=\"Office\">"));
+    assert!(
+        part(&again, "xl/theme/theme1.xml")
+            .contains("name=\"Office Theme\"><a:themeElements><a:clrScheme name=\"Office\">")
+    );
     assert_eq!(bare(load(&again).theme()), office);
 }
 
@@ -193,8 +272,16 @@ fn a_theme_of_ones_own_and_its_effects() {
     keep_sample("themes-custom.xlsx", &bytes);
     let part_xml = part(&bytes, "xl/theme/theme1.xml");
     assert_well_formed("theme1.xml", &part_xml);
-    assert!(part_xml.contains("<a:clrScheme name=\"Mine &amp; yours\"><a:dk1><a:srgbClr val=\"202020\"/></a:dk1>"), "{part_xml}");
-    assert!(part_xml.contains("<a:fontScheme name=\"My fonts\"><a:majorFont><a:latin typeface=\"Georgia\""));
+    assert!(
+        part_xml.contains(
+            "<a:clrScheme name=\"Mine &amp; yours\"><a:dk1><a:srgbClr val=\"202020\"/></a:dk1>"
+        ),
+        "{part_xml}"
+    );
+    assert!(
+        part_xml
+            .contains("<a:fontScheme name=\"My fonts\"><a:majorFont><a:latin typeface=\"Georgia\"")
+    );
     assert!(part_xml.contains("<a:fmtScheme name=\"Glossy\">"));
     let read = load(&bytes);
     assert_eq!(bare(read.theme()), *wb.theme());
@@ -273,7 +360,9 @@ fn company_workbook() -> Vec<u8> {
     package(&[
         (
             "xl/workbook.xml",
-            &format!(r#"<workbook {MAIN}><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>"#),
+            &format!(
+                r#"<workbook {MAIN}><sheets><sheet name="Sheet1" sheetId="1" r:id="rId1"/></sheets></workbook>"#
+            ),
         ),
         ("xl/theme/theme1.xml", COMPANY_THEME),
         ("xl/styles.xml", COMPANY_STYLES),
@@ -285,26 +374,48 @@ fn company_workbook() -> Vec<u8> {
 fn a_file_from_excel_in_another_theme() {
     let wb = load(&company_workbook());
     let theme = wb.theme().clone();
-    assert_eq!((theme.name.as_str(), theme.colors.name.as_str(), theme.effects.as_str()), ("Company", "Company", "Company"));
+    assert_eq!(
+        (
+            theme.name.as_str(),
+            theme.colors.name.as_str(),
+            theme.effects.as_str()
+        ),
+        ("Company", "Company", "Company")
+    );
     assert_eq!(theme.rgb(ThemeSlot::Accent1), 0xE4002B);
-    assert_eq!((&*theme.fonts.major, &*theme.fonts.minor), ("Georgia", "Verdana"));
+    assert_eq!(
+        (&*theme.fonts.major, &*theme.fonts.minor),
+        ("Georgia", "Verdana")
+    );
     assert!(Theme::builtin(&theme.name).is_none());
 
     // The right colours, and they are colours of the theme.
     let a1 = style(&wb, "A1");
     assert_eq!(a1.fill, Some(theme.accent(2, 0.8)));
-    assert_eq!(a1.fill.unwrap().value(), opensheet_engine::theme::tint(Color(0x00A3E0), 0.79998168889431442).value());
+    assert_eq!(
+        a1.fill.unwrap().value(),
+        opensheet_engine::theme::tint(Color(0x00A3E0), 0.79998168889431442).value()
+    );
     assert_eq!(a1.font.color, Some(theme.accent(1, -0.25)));
-    assert_eq!((&*a1.font.name, a1.font.theme), ("Georgia", Some(ThemeFont::Major)));
+    assert_eq!(
+        (&*a1.font.name, a1.font.theme),
+        ("Georgia", Some(ThemeFont::Major))
+    );
     assert_eq!(a1.borders.bottom.color.map(|c| c.value()), Some(0x003057));
     // A colour and a font given outright are not: the red of B1 is the
     // value of accent 1, and no reference to it.
     let b1 = style(&wb, "B1");
     assert_eq!(b1.fill, Some(Color(0xE4002B)));
-    assert_eq!((b1.font.color, &*b1.font.name, b1.font.theme), (Some(Color(0x00B050)), "Arial", None));
+    assert_eq!(
+        (b1.font.color, &*b1.font.name, b1.font.theme),
+        (Some(Color(0x00B050)), "Arial", None)
+    );
     // Plain text is in the body font, automatic.
     let c1 = style(&wb, "C1");
-    assert_eq!((&*c1.font.name, c1.font.theme, c1.font.color), ("Verdana", Some(ThemeFont::Minor), None));
+    assert_eq!(
+        (&*c1.font.name, c1.font.theme, c1.font.color),
+        ("Verdana", Some(ThemeFont::Minor), None)
+    );
     assert_eq!(wb.sheets[0].tab_color, Some(theme.accent(4, 0.0)));
 
     // Saved again: the theme part to the letter, references as references.
@@ -312,7 +423,10 @@ fn a_file_from_excel_in_another_theme() {
     keep_sample("themes-company-saved.xlsx", &bytes);
     assert_eq!(part(&bytes, "xl/theme/theme1.xml"), COMPANY_THEME);
     let styles = part(&bytes, "xl/styles.xml");
-    assert!(styles.contains("<fgColor theme=\"5\" tint=\"0.7999816888943144\"/>"), "{styles}");
+    assert!(
+        styles.contains("<fgColor theme=\"5\" tint=\"0.7999816888943144\"/>"),
+        "{styles}"
+    );
     assert!(styles.contains("<color theme=\"4\" tint=\"-0.249977111117893\"/><name val=\"Georgia\"/><scheme val=\"major\"/>"));
     assert!(styles.contains("<fgColor rgb=\"FFE4002B\"/>"));
     assert!(styles.contains("<name val=\"Arial\"/></font>"));
@@ -325,17 +439,28 @@ fn a_file_from_excel_in_another_theme() {
 
     // Recoloured here, the rest of the theme part stays what it was.
     let mut wb = wb;
-    let blue = Theme::builtin_colors().into_iter().find(|c| c.name == "Blue Warm").unwrap();
+    let blue = Theme::builtin_colors()
+        .into_iter()
+        .find(|c| c.name == "Blue Warm")
+        .unwrap();
     wb.set_theme_colors(blue);
     wb.commit("Theme Colors");
-    assert_eq!(style(&wb, "A1").fill.map(|c| c.value()), Some(wb.theme().accent(2, 0.8).value()));
+    assert_eq!(
+        style(&wb, "A1").fill.map(|c| c.value()),
+        Some(wb.theme().accent(2, 0.8).value())
+    );
     assert_eq!(style(&wb, "B1").fill, Some(Color(0xE4002B)));
     let bytes = to_bytes(&wb);
     let written = part(&bytes, "xl/theme/theme1.xml");
     assert_well_formed("theme1.xml", &written);
-    assert!(written.contains("<a:clrScheme name=\"Blue Warm\">") && written.contains("<a:accent1><a:srgbClr val=\"4A66AC\"/></a:accent1>"));
+    assert!(
+        written.contains("<a:clrScheme name=\"Blue Warm\">")
+            && written.contains("<a:accent1><a:srgbClr val=\"4A66AC\"/></a:accent1>")
+    );
     assert!(written.contains("<a:font script=\"Jpan\" typeface=\"游ゴシック\"/>"));
-    assert!(written.contains("thm15:themeFamily") && written.contains("<a:srgbClr val=\"ABCDEF\"/>"));
+    assert!(
+        written.contains("thm15:themeFamily") && written.contains("<a:srgbClr val=\"ABCDEF\"/>")
+    );
     assert_eq!(bare(load(&bytes).theme()), bare(wb.theme()));
 }
 
@@ -343,20 +468,36 @@ fn a_file_from_excel_in_another_theme() {
 fn files_without_a_theme_or_with_a_damaged_one() {
     // No theme part: the Office theme of the years such files were made.
     let bytes = company_workbook();
-    let parts: Vec<(String, String)> = ["xl/workbook.xml", "xl/styles.xml", "xl/worksheets/sheet1.xml"]
+    let parts: Vec<(String, String)> = [
+        "xl/workbook.xml",
+        "xl/styles.xml",
+        "xl/worksheets/sheet1.xml",
+    ]
+    .iter()
+    .map(|name| (name.to_string(), part(&bytes, name)))
+    .collect();
+    let without: Vec<(&str, &str)> = parts
         .iter()
-        .map(|name| (name.to_string(), part(&bytes, name)))
+        .map(|(n, c)| (n.as_str(), c.as_str()))
         .collect();
-    let without: Vec<(&str, &str)> = parts.iter().map(|(n, c)| (n.as_str(), c.as_str())).collect();
     let wb = load(&package(&without));
     assert_eq!(wb.theme().name, "Office 2013 - 2022 Theme");
-    assert_eq!(style(&wb, "A1").fill, Some(Theme::office_2013().accent(2, 0.8)));
+    assert_eq!(
+        style(&wb, "A1").fill,
+        Some(Theme::office_2013().accent(2, 0.8))
+    );
     // The fonts are named as the file names them; they are not those of
     // this theme, and so no fonts of the theme.
-    assert_eq!((&*style(&wb, "C1").font.name, style(&wb, "C1").font.theme), ("Verdana", None));
+    assert_eq!(
+        (&*style(&wb, "C1").font.name, style(&wb, "C1").font.theme),
+        ("Verdana", None)
+    );
 
     // A theme part cut short anywhere is read as far as it goes.
-    for cut in (0..COMPANY_THEME.len()).filter(|i| COMPANY_THEME.is_char_boundary(*i)).step_by(37) {
+    for cut in (0..COMPANY_THEME.len())
+        .filter(|i| COMPANY_THEME.is_char_boundary(*i))
+        .step_by(37)
+    {
         let mut damaged = without.clone();
         damaged.push(("xl/theme/theme1.xml", &COMPANY_THEME[..cut]));
         let wb = load(&package(&damaged));

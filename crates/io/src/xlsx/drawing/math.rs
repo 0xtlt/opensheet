@@ -14,7 +14,9 @@
 //! letters) is not kept.
 
 use super::*;
-use opensheet_engine::math::{Equation, Math, PLACEHOLDER, Row, limits_beside, parse, to_linear, tokens};
+use opensheet_engine::math::{
+    Equation, Math, PLACEHOLDER, Row, limits_beside, parse, to_linear, tokens,
+};
 
 const NS_MATH: &str = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 pub(super) const NS_A14: &str = "http://schemas.microsoft.com/office/drawing/2010/main";
@@ -42,7 +44,9 @@ impl Writer<'_> {
     /// A row inside an element (`m:e`, `m:num`…). An empty place is an
     /// empty element.
     fn part(&self, x: &mut String, name: &str, row: &Row) {
-        if row.is_empty() || matches!(row.as_slice(), [Math::Text(text)] if text.chars().eq([PLACEHOLDER])) {
+        if row.is_empty()
+            || matches!(row.as_slice(), [Math::Text(text)] if text.chars().eq([PLACEHOLDER]))
+        {
             w!(x, "<m:{name}/>");
             return;
         }
@@ -115,14 +119,24 @@ impl Writer<'_> {
                 self.part(x, "e", body);
                 x.push_str("</m:rad>");
             }
-            Math::Nary { op, sub, sup, limits_beside, body } => {
+            Math::Nary {
+                op,
+                sub,
+                sup,
+                limits_beside,
+                body,
+            } => {
                 x.push_str("<m:nary><m:naryPr>");
                 // The integral sign is the operator of an element that
                 // names none.
                 if *op != '∫' {
                     w!(x, "<m:chr m:val=\"{op}\"/>");
                 }
-                w!(x, "<m:limLoc m:val=\"{}\"/>", if *limits_beside { "subSup" } else { "undOvr" });
+                w!(
+                    x,
+                    "<m:limLoc m:val=\"{}\"/>",
+                    if *limits_beside { "subSup" } else { "undOvr" }
+                );
                 if sub.is_none() {
                     x.push_str("<m:subHide m:val=\"1\"/>");
                 }
@@ -163,7 +177,11 @@ impl Writer<'_> {
                 x.push_str("</m:acc>");
             }
             Math::Bar { over, body } => {
-                w!(x, "<m:bar><m:barPr><m:pos m:val=\"{}\"/></m:barPr>", if *over { "top" } else { "bot" });
+                w!(
+                    x,
+                    "<m:bar><m:barPr><m:pos m:val=\"{}\"/></m:barPr>",
+                    if *over { "top" } else { "bot" }
+                );
                 self.part(x, "e", body);
                 x.push_str("</m:bar>");
             }
@@ -243,7 +261,11 @@ pub(super) fn push_paragraph(x: &mut String, equation: &Equation, font: &Font) {
     } else {
         writer.row(x, &equation.body, false);
     }
-    w!(x, "</m:oMath></m:oMathPara></a14:m><a:endParaRPr sz=\"{}\"/>", font.size as u32 * 50);
+    w!(
+        x,
+        "</m:oMath></m:oMathPara></a14:m><a:endParaRPr sz=\"{}\"/>",
+        font.size as u32 * 50
+    );
 }
 
 // ---- reading -------------------------------------------------------------------
@@ -265,7 +287,11 @@ fn first_char(text: Option<String>) -> Option<char> {
 /// The row an element holds; an empty place is a placeholder.
 fn part<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Row {
     let found = row(r, tag);
-    if found.is_empty() { vec![Math::Text(PLACEHOLDER.to_string())] } else { found }
+    if found.is_empty() {
+        vec![Math::Text(PLACEHOLDER.to_string())]
+    } else {
+        found
+    }
 }
 
 /// Letters side by side as one word: the name of a function.
@@ -277,7 +303,11 @@ fn as_name(row: Row) -> Row {
                 Some(Math::Text(word)) => word.push_str(&text),
                 _ => out.push(Math::Text(text)),
             },
-            Math::Script { base, sub, sup } => out.push(Math::Script { base: as_name(base), sub, sup }),
+            Math::Script { base, sub, sup } => out.push(Math::Script {
+                base: as_name(base),
+                sub,
+                sup,
+            }),
             Math::Limit { base, limit, upper } => out.push(Math::Limit {
                 base: as_name(base),
                 limit,
@@ -340,7 +370,8 @@ fn row<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Row {
             });
         }
         "nary" => {
-            let (mut op, mut beside, mut sub, mut sup, mut body) = ('∫', None, None, None, Vec::new());
+            let (mut op, mut beside, mut sub, mut sup, mut body) =
+                ('∫', None, None, None, Vec::new());
             let (mut no_sub, mut no_sup) = (false, false);
             each_child(r, t, |r, c| match c.name {
                 "naryPr" => each_child(r, c, |r, p| {
@@ -454,10 +485,12 @@ fn row<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Row {
             out.push(Math::Matrix { rows });
         }
         // Structures the engine has not: what they hold is kept.
-        "box" | "borderBox" | "groupChr" | "phant" | "eqArr" | "oMath" | "oMathPara" => each_child(r, t, |r, c| match c.name {
-            "e" | "oMath" => out.extend(row(r, c)),
-            _ => r.skip(c),
-        }),
+        "box" | "borderBox" | "groupChr" | "phant" | "eqArr" | "oMath" | "oMathPara" => {
+            each_child(r, t, |r, c| match c.name {
+                "e" | "oMath" => out.extend(row(r, c)),
+                _ => r.skip(c),
+            })
+        }
         _ => r.skip(t),
     });
     out
@@ -471,8 +504,14 @@ pub(super) fn parse_equation<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Equation 
     if !body.is_empty() && body.iter().all(|node| matches!(node, Math::Text(_))) {
         let built = parse(&to_linear(&body));
         if built != body {
-            return Equation { body: built, linear: true };
+            return Equation {
+                body: built,
+                linear: true,
+            };
         }
     }
-    Equation { body, linear: false }
+    Equation {
+        body,
+        linear: false,
+    }
 }

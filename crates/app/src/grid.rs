@@ -9,14 +9,16 @@ use crate::features::{self, PaintLayer, Painter, Zone};
 use crate::theme::{self, c, ca};
 use gpui::{
     App, BorderStyle, Bounds, ContentMask, Font, FontStyle, FontWeight, Hsla, PaintQuad, Pixels,
-    Point, ShapedLine, SharedString, StrikethroughStyle, TextAlign, TextRun, UnderlineStyle, Window,
-    WindowTextSystem, WrappedLine, fill, point, px, quad, size,
+    Point, ShapedLine, SharedString, StrikethroughStyle, TextAlign, TextRun, UnderlineStyle,
+    Window, WindowTextSystem, WrappedLine, fill, point, px, quad, size,
 };
+use opensheet_engine::features::CellDisplay;
 use opensheet_engine::format;
 use opensheet_engine::refs::{MAX_COLS, MAX_ROWS, col_to_letters};
-use opensheet_engine::style::{Border, BorderStyle as CellBorderStyle, HAlign, Style, Underline, VAlign};
+use opensheet_engine::style::{
+    Border, BorderStyle as CellBorderStyle, HAlign, Style, Underline, VAlign,
+};
 use opensheet_engine::workbook::{Content, Sheet};
-use opensheet_engine::features::CellDisplay;
 use opensheet_engine::{Rect, StyleId, Value, Workbook};
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
@@ -197,7 +199,10 @@ fn build_axis(
     hidden: &std::collections::BTreeSet<u32>,
 ) -> Axis {
     let d = (default * zoom).round().max(1.0);
-    let mut merged: Vec<(u32, f32)> = custom.iter().map(|(i, s)| (*i, (s * zoom).round())).collect();
+    let mut merged: Vec<(u32, f32)> = custom
+        .iter()
+        .map(|(i, s)| (*i, (s * zoom).round()))
+        .collect();
     if !hidden.is_empty() {
         let mut map: std::collections::BTreeMap<u32, f32> = merged.into_iter().collect();
         for h in hidden {
@@ -234,7 +239,13 @@ pub struct GridLayout {
 }
 
 impl GridLayout {
-    pub fn new(sheet: &Sheet, bounds: Bounds<Pixels>, zoom: f32, scroll_x: f64, scroll_y: f64) -> GridLayout {
+    pub fn new(
+        sheet: &Sheet,
+        bounds: Bounds<Pixels>,
+        zoom: f32,
+        scroll_x: f64,
+        scroll_y: f64,
+    ) -> GridLayout {
         // The size of the tracks nobody resized is asked from the sheet (a
         // sheet may have its own default): from the last track that has no
         // size of its own and is shown.
@@ -247,9 +258,21 @@ impl GridLayout {
             .rev()
             .find(|r| !sheet.row_heights.contains_key(r) && !not_shown.contains(r))
             .unwrap_or(MAX_ROWS - 1);
-        let cols = build_axis(sheet.col_width(plain_col), MAX_COLS, zoom, &sheet.col_widths, &sheet.hidden_cols);
+        let cols = build_axis(
+            sheet.col_width(plain_col),
+            MAX_COLS,
+            zoom,
+            &sheet.col_widths,
+            &sheet.hidden_cols,
+        );
         // Rows a filter hides take no room either.
-        let rows = build_axis(sheet.row_height(plain_row), MAX_ROWS, zoom, &sheet.row_heights, &not_shown);
+        let rows = build_axis(
+            sheet.row_height(plain_row),
+            MAX_ROWS,
+            zoom,
+            &sheet.row_heights,
+            &not_shown,
+        );
         let frozen_w = cols.start(sheet.frozen_cols) as f32;
         let frozen_h = rows.start(sheet.frozen_rows) as f32;
         let (header_w, header_h) = if sheet.show_headers {
@@ -393,18 +416,27 @@ impl GridLayout {
     }
 
     pub fn bounds_px(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> Bounds<Pixels> {
-        Bounds::new(self.to_window(x0, y0), size(px((x1 - x0).max(0.0)), px((y1 - y0).max(0.0))))
+        Bounds::new(
+            self.to_window(x0, y0),
+            size(px((x1 - x0).max(0.0)), px((y1 - y0).max(0.0))),
+        )
     }
 
     /// Visible scrolled columns (those after the frozen ones).
     pub fn scrolled_cols(&self) -> Range<u32> {
-        let first = self.cols.index_at(self.frozen_w as f64 + self.scroll_x).max(self.frozen_cols);
+        let first = self
+            .cols
+            .index_at(self.frozen_w as f64 + self.scroll_x)
+            .max(self.frozen_cols);
         let last = self.cols.index_at(self.view_w() as f64 + self.scroll_x);
         first..(last + 1).min(MAX_COLS)
     }
 
     pub fn scrolled_rows(&self) -> Range<u32> {
-        let first = self.rows.index_at(self.frozen_h as f64 + self.scroll_y).max(self.frozen_rows);
+        let first = self
+            .rows
+            .index_at(self.frozen_h as f64 + self.scroll_y)
+            .max(self.frozen_rows);
         let last = self.rows.index_at(self.view_h() as f64 + self.scroll_y);
         first..(last + 1).min(MAX_ROWS)
     }
@@ -427,7 +459,8 @@ impl GridLayout {
             if start < view_start {
                 sx = start - self.frozen_w as f64;
             } else if end > view_end {
-                sx = (end - (self.view_w() - theme::SCROLLBAR) as f64).min(start - self.frozen_w as f64);
+                sx = (end - (self.view_w() - theme::SCROLLBAR) as f64)
+                    .min(start - self.frozen_w as f64);
             }
         }
         if row >= self.frozen_rows {
@@ -438,10 +471,14 @@ impl GridLayout {
             if start < view_start {
                 sy = start - self.frozen_h as f64;
             } else if end > view_end {
-                sy = (end - (self.view_h() - theme::SCROLLBAR) as f64).min(start - self.frozen_h as f64);
+                sy = (end - (self.view_h() - theme::SCROLLBAR) as f64)
+                    .min(start - self.frozen_h as f64);
             }
         }
-        (sx.clamp(0.0, self.max_scroll_x()), sy.clamp(0.0, self.max_scroll_y()))
+        (
+            sx.clamp(0.0, self.max_scroll_x()),
+            sy.clamp(0.0, self.max_scroll_y()),
+        )
     }
 
     /// Vertical scrollbar: (track_x, track_y, track_len, thumb_pos, thumb_len)
@@ -452,7 +489,9 @@ impl GridLayout {
         let track_len = (self.view_h() - theme::SCROLLBAR).max(1.0);
         let view = self.view_h() as f64;
         let range = content.max(self.scroll_y + view).max(view + 1.0);
-        let thumb_len = ((view / range) * track_len as f64).max(28.0).min(track_len as f64) as f32;
+        let thumb_len = ((view / range) * track_len as f64)
+            .max(28.0)
+            .min(track_len as f64) as f32;
         let max_scroll = (range - view).max(1.0);
         let thumb_pos = ((self.scroll_y / max_scroll) * (track_len - thumb_len) as f64) as f32;
         (track_x, track_y, track_len, thumb_pos, thumb_len)
@@ -464,7 +503,9 @@ impl GridLayout {
         let track_len = (self.view_w() - theme::SCROLLBAR).max(1.0);
         let view = self.view_w() as f64;
         let range = content.max(self.scroll_x + view).max(view + 1.0);
-        let thumb_len = ((view / range) * track_len as f64).max(28.0).min(track_len as f64) as f32;
+        let thumb_len = ((view / range) * track_len as f64)
+            .max(28.0)
+            .min(track_len as f64) as f32;
         let max_scroll = (range - view).max(1.0);
         let thumb_pos = ((self.scroll_x / max_scroll) * (track_len - thumb_len) as f64) as f32;
         (track_x, track_y, track_len, thumb_pos, thumb_len)
@@ -503,8 +544,12 @@ impl FontResolver {
             return true;
         }
         // An unknown family resolves to the fallback stack's font.
-        let fallback = self.text_system.resolve_font(&gpui::font("opensheet-missing-font"));
-        self.text_system.resolve_font(&gpui::font(family.to_string())) != fallback
+        let fallback = self
+            .text_system
+            .resolve_font(&gpui::font("opensheet-missing-font"));
+        self.text_system
+            .resolve_font(&gpui::font(family.to_string()))
+            != fallback
     }
 
     pub fn resolve(&self, name: &Arc<str>) -> SharedString {
@@ -516,8 +561,17 @@ impl FontResolver {
             // Seravek ships with macOS and is the closest match in digit
             // width and overall colour to Aptos Narrow / Calibri. Condensed
             // faces (Arial Narrow) look squashed next to the real thing.
-            "aptos narrow" => &["Aptos", "Calibri", "Carlito", "Seravek", "Helvetica Neue", "Arial"],
-            "aptos" | "aptos display" => &["Calibri", "Carlito", "Seravek", "Helvetica Neue", "Arial"],
+            "aptos narrow" => &[
+                "Aptos",
+                "Calibri",
+                "Carlito",
+                "Seravek",
+                "Helvetica Neue",
+                "Arial",
+            ],
+            "aptos" | "aptos display" => {
+                &["Calibri", "Carlito", "Seravek", "Helvetica Neue", "Arial"]
+            }
             "calibri" | "calibri light" => &["Carlito", "Seravek", "Helvetica Neue", "Arial"],
             "cambria" => &["Georgia", "Times New Roman"],
             "segoe ui" => &["Helvetica Neue", "Arial"],
@@ -535,7 +589,9 @@ impl FontResolver {
                 }
             }
         }
-        let family: SharedString = chosen.unwrap_or_else(|| "Helvetica Neue".to_string()).into();
+        let family: SharedString = chosen
+            .unwrap_or_else(|| "Helvetica Neue".to_string())
+            .into();
         if std::env::var("OPENSHEET_DEBUG").is_ok() {
             eprintln!("font {name:?} -> {family:?}");
         }
@@ -669,7 +725,10 @@ fn solid(layout: &GridLayout, x0: f32, y0: f32, x1: f32, y1: f32, color: Hsla) -
 fn border_width(style: CellBorderStyle) -> f32 {
     match style {
         CellBorderStyle::None => 0.0,
-        CellBorderStyle::Hair | CellBorderStyle::Thin | CellBorderStyle::Dashed | CellBorderStyle::Dotted => 1.0,
+        CellBorderStyle::Hair
+        | CellBorderStyle::Thin
+        | CellBorderStyle::Dashed
+        | CellBorderStyle::Dotted => 1.0,
         CellBorderStyle::Medium => 2.0,
         CellBorderStyle::Thick | CellBorderStyle::Double => 3.0,
     }
@@ -677,7 +736,15 @@ fn border_width(style: CellBorderStyle) -> f32 {
 
 /// One border edge as quads. `horizontal` edges run along x from `a0` to
 /// `a1` centred on `pos`; vertical edges run along y.
-fn border_edge(layout: &GridLayout, out: &mut Vec<Draw>, b: Border, horizontal: bool, pos: f32, a0: f32, a1: f32) {
+fn border_edge(
+    layout: &GridLayout,
+    out: &mut Vec<Draw>,
+    b: Border,
+    horizontal: bool,
+    pos: f32,
+    a0: f32,
+    a1: f32,
+) {
     if b.is_none() {
         return;
     }
@@ -724,7 +791,11 @@ fn border_edge(layout: &GridLayout, out: &mut Vec<Draw>, b: Border, horizontal: 
 
 impl<'a> PaneCtx<'a> {
     fn digit_width(&self, font: &Font, size: f32) -> f32 {
-        let key = (font.family.clone(), (size * 8.0) as u32, font.weight == FontWeight::BOLD);
+        let key = (
+            font.family.clone(),
+            (size * 8.0) as u32,
+            font.weight == FontWeight::BOLD,
+        );
         if let Some(w) = self.digit_w.borrow().get(&key) {
             return *w;
         }
@@ -766,8 +837,22 @@ impl<'a> PaneCtx<'a> {
     }
 
     /// What the features draw for one pane and layer.
-    fn feature_layer(&self, layer: PaintLayer, visible: Rect, clip: (f32, f32, f32, f32), items: &mut Vec<Draw>) {
-        let mut painter = Painter::new(self.input.app, self.layout, self.ts, layer, visible, clip, self.input.scale);
+    fn feature_layer(
+        &self,
+        layer: PaintLayer,
+        visible: Rect,
+        clip: (f32, f32, f32, f32),
+        items: &mut Vec<Draw>,
+    ) {
+        let mut painter = Painter::new(
+            self.input.app,
+            self.layout,
+            self.ts,
+            layer,
+            visible,
+            clip,
+            self.input.scale,
+        );
         features::paint(&mut painter);
         items.append(&mut painter.items);
         self.zones.borrow_mut().append(&mut painter.zones);
@@ -813,32 +898,69 @@ impl<'a> PaneCtx<'a> {
         } else {
             None
         };
-        for area in gridline_areas.iter().flatten().filter_map(|area| area.intersection(&visible)) {
+        for area in gridline_areas
+            .iter()
+            .flatten()
+            .filter_map(|area| area.intersection(&visible))
+        {
             let line = c(theme::GRIDLINE);
             let (ax0, ay0, ax1, ay1) = layout.rect_px(area);
-            let (ax0, ay0, ax1, ay1) = (ax0.max(clip.0), ay0.max(clip.1), ax1.min(clip.2), ay1.min(clip.3));
-            for (_, y, h) in ys.iter().filter(|(row, _, _)| *row >= area.r0 && *row <= area.r1) {
+            let (ax0, ay0, ax1, ay1) = (
+                ax0.max(clip.0),
+                ay0.max(clip.1),
+                ax1.min(clip.2),
+                ay1.min(clip.3),
+            );
+            for (_, y, h) in ys
+                .iter()
+                .filter(|(row, _, _)| *row >= area.r0 && *row <= area.r1)
+            {
                 items.push(solid(layout, ax0, y + h - self.hair, ax1, y + h, line));
             }
-            for (_, x, w) in xs.iter().filter(|(col, _, _)| *col >= area.c0 && *col <= area.c1) {
+            for (_, x, w) in xs
+                .iter()
+                .filter(|(col, _, _)| *col >= area.c0 && *col <= area.c1)
+            {
                 items.push(solid(layout, x + w - self.hair, ay0, x + w, ay1, line));
             }
         }
         if sheet.show_gridlines && gridline_areas.is_none() {
             let line = c(theme::GRIDLINE);
             for (_, y, h) in &ys {
-                items.push(solid(layout, clip.0, y + h - self.hair, clip.2, y + h, line));
+                items.push(solid(
+                    layout,
+                    clip.0,
+                    y + h - self.hair,
+                    clip.2,
+                    y + h,
+                    line,
+                ));
             }
             for (_, x, w) in &xs {
-                items.push(solid(layout, x + w - self.hair, clip.1, x + w, clip.3, line));
+                items.push(solid(
+                    layout,
+                    x + w - self.hair,
+                    clip.1,
+                    x + w,
+                    clip.3,
+                    line,
+                ));
             }
         }
 
         // Merged areas touching this pane.
-        let merges: Vec<Rect> = sheet.merges.iter().filter(|m| m.intersects(&visible)).copied().collect();
-        let in_merge = |row: u32, col: u32| -> Option<Rect> { merges.iter().find(|m| m.contains(row, col)).copied() };
+        let merges: Vec<Rect> = sheet
+            .merges
+            .iter()
+            .filter(|m| m.intersects(&visible))
+            .copied()
+            .collect();
+        let in_merge = |row: u32, col: u32| -> Option<Rect> {
+            merges.iter().find(|m| m.contains(row, col)).copied()
+        };
 
-        let has_inherited = self.layered || !sheet.col_styles.is_empty() || !sheet.row_styles.is_empty();
+        let has_inherited =
+            self.layered || !sheet.col_styles.is_empty() || !sheet.row_styles.is_empty();
         let pad = (3.0 * zoom).round().max(1.0);
 
         // Every cell that needs drawing: (row, col, pixel box, style id).
@@ -859,7 +981,8 @@ impl<'a> PaneCtx<'a> {
                     }
                 }
             } else {
-                for ((_, col), cell) in sheet.cells.range((*row, cols.start)..=(*row, cols.end - 1)) {
+                for ((_, col), cell) in sheet.cells.range((*row, cols.start)..=(*row, cols.end - 1))
+                {
                     if in_merge(*row, *col).is_some() {
                         continue;
                     }
@@ -883,7 +1006,8 @@ impl<'a> PaneCtx<'a> {
                 if let Some(overlap) = area.intersection(&visible) {
                     for row in overlap.r0..=overlap.r1 {
                         for col in overlap.c0..=overlap.c1 {
-                            if sheet.cells.contains_key(&(row, col)) || in_merge(row, col).is_some() {
+                            if sheet.cells.contains_key(&(row, col)) || in_merge(row, col).is_some()
+                            {
                                 continue;
                             }
                             let (x, y) = (layout.col_x(col), layout.row_y(row));
@@ -901,7 +1025,14 @@ impl<'a> PaneCtx<'a> {
             cells.push((m.r0, m.c0, (x0, y0, x1, y1), sheet.style_id_at(m.r0, m.c0)));
             // A merged area hides the gridlines inside it: painted over the
             // gridlines, under the fill of the area.
-            items.push(solid(layout, x0, y0, x1 - self.hair, y1 - self.hair, c(theme::GRID_BG)));
+            items.push(solid(
+                layout,
+                x0,
+                y0,
+                x1 - self.hair,
+                y1 - self.hair,
+                c(theme::GRID_BG),
+            ));
         }
 
         // Text from the nearest non-blank cell left of the pane may overflow
@@ -909,12 +1040,16 @@ impl<'a> PaneCtx<'a> {
         let mut overflow_sources: Vec<(u32, u32, (f32, f32, f32, f32), StyleId)> = Vec::new();
         if cols.start > 0 {
             for (row, y, h) in &ys {
-                if let Some(((_, col), cell)) = sheet.cells.range((*row, 0)..(*row, cols.start)).next_back() {
+                if let Some(((_, col), cell)) =
+                    sheet.cells.range((*row, 0)..(*row, cols.start)).next_back()
+                {
                     if matches!(cell.value, Value::Text(_)) && in_merge(*row, *col).is_none() {
                         let x = layout.col_x(*col);
                         let w = layout.col_w(*col);
                         // Only when it lies in the same scrolling region.
-                        if (*col >= layout.frozen_cols) == (cols.start >= layout.frozen_cols) && w > 0.0 {
+                        if (*col >= layout.frozen_cols) == (cols.start >= layout.frozen_cols)
+                            && w > 0.0
+                        {
                             overflow_sources.push((*row, *col, (x, *y, x + w, y + h), cell.style));
                         }
                     }
@@ -926,7 +1061,9 @@ impl<'a> PaneCtx<'a> {
             for (row, col, (x0, y0, x1, y1), style_id) in list.iter() {
                 // The cell's own formatting with table styles and
                 // conditional formats laid over it.
-                let display: Option<CellDisplay> = self.layered.then(|| wb.display(self.input.sheet, *row, *col));
+                let display: Option<CellDisplay> = self
+                    .layered
+                    .then(|| wb.display(self.input.sheet, *row, *col));
                 let style: &Style = match &display {
                     Some(d) => &d.style,
                     None => wb.styles.get(*style_id),
@@ -937,7 +1074,9 @@ impl<'a> PaneCtx<'a> {
                 // without their number format.
                 let mut num_fmt: &str = &style.num_fmt;
                 if self.formulas {
-                    if let Some(text) = features::misc::shown_formula(wb, self.input.sheet, *row, *col) {
+                    if let Some(text) =
+                        features::misc::shown_formula(wb, self.input.sheet, *row, *col)
+                    {
                         value = Value::text(text);
                     }
                     num_fmt = "General";
@@ -958,9 +1097,25 @@ impl<'a> PaneCtx<'a> {
                     if !style.borders.is_none() {
                         let b = &style.borders;
                         border_edge(layout, &mut borders, b.top, true, y0 - 1.0, x0 - 1.0, *x1);
-                        border_edge(layout, &mut borders, b.bottom, true, y1 - 1.0, x0 - 1.0, *x1);
+                        border_edge(
+                            layout,
+                            &mut borders,
+                            b.bottom,
+                            true,
+                            y1 - 1.0,
+                            x0 - 1.0,
+                            *x1,
+                        );
                         border_edge(layout, &mut borders, b.left, false, x0 - 1.0, y0 - 1.0, *y1);
-                        border_edge(layout, &mut borders, b.right, false, x1 - 1.0, y0 - 1.0, *y1);
+                        border_edge(
+                            layout,
+                            &mut borders,
+                            b.right,
+                            false,
+                            x1 - 1.0,
+                            y0 - 1.0,
+                            *y1,
+                        );
                     }
                     if let Some(adornment) = display.as_ref().and_then(|d| d.adornment.as_ref()) {
                         // Data bars and icons: under the text, or beside it.
@@ -1035,7 +1190,8 @@ impl<'a> PaneCtx<'a> {
                         Some(px(avail.max(4.0))),
                         None,
                     ) {
-                        let count: usize = lines.iter().map(|l| l.wrap_boundaries().len() + 1).sum();
+                        let count: usize =
+                            lines.iter().map(|l| l.wrap_boundaries().len() + 1).sum();
                         let ty = text_y(count as f32).max(y0 + 1.0);
                         texts.push(Draw::Wrapped {
                             lines: lines.into_iter().collect(),
@@ -1072,9 +1228,7 @@ impl<'a> PaneCtx<'a> {
                             }
                         }
                         if !fitted {
-                            let hash_w = self
-                                .shape("#", &font, font_px, color, style)
-                                .width;
+                            let hash_w = self.shape("#", &font, font_px, color, style).width;
                             let n = (avail / f32::from(hash_w).max(1.0)).floor().max(0.0) as usize;
                             line = self.shape(&"#".repeat(n), &font, font_px, color, style);
                         }
@@ -1085,7 +1239,8 @@ impl<'a> PaneCtx<'a> {
                             let mut c2 = *col;
                             let mut edge = *x1;
                             while edge - x0 < needed && c2 + 1 < MAX_COLS && c2 < cols.end + 64 {
-                                if !sheet.is_blank(*row, c2 + 1) || in_merge(*row, c2 + 1).is_some() {
+                                if !sheet.is_blank(*row, c2 + 1) || in_merge(*row, c2 + 1).is_some()
+                                {
                                     break;
                                 }
                                 // Hide the gridline being crossed.
@@ -1095,7 +1250,14 @@ impl<'a> PaneCtx<'a> {
                                     .and_then(|cell| wb.styles.get(cell.style).fill)
                                     .map(theme::engine_color)
                                     .unwrap_or(c(theme::GRID_BG));
-                                erasers.push(solid(layout, edge - self.hair, *y0, edge, y1 - self.hair, bg));
+                                erasers.push(solid(
+                                    layout,
+                                    edge - self.hair,
+                                    *y0,
+                                    edge,
+                                    y1 - self.hair,
+                                    bg,
+                                ));
                                 c2 += 1;
                                 edge += layout.col_w(c2);
                             }
@@ -1105,10 +1267,18 @@ impl<'a> PaneCtx<'a> {
                             let mut c2 = *col;
                             let mut edge = *x0;
                             while x1 - edge < needed && c2 > 0 && c2 + 64 > cols.start {
-                                if !sheet.is_blank(*row, c2 - 1) || in_merge(*row, c2 - 1).is_some() {
+                                if !sheet.is_blank(*row, c2 - 1) || in_merge(*row, c2 - 1).is_some()
+                                {
                                     break;
                                 }
-                                erasers.push(solid(layout, edge - self.hair, *y0, edge, y1 - self.hair, c(theme::GRID_BG)));
+                                erasers.push(solid(
+                                    layout,
+                                    edge - self.hair,
+                                    *y0,
+                                    edge,
+                                    y1 - self.hair,
+                                    c(theme::GRID_BG),
+                                ));
                                 c2 -= 1;
                                 edge -= layout.col_w(c2);
                             }
@@ -1139,7 +1309,15 @@ impl<'a> PaneCtx<'a> {
         items.append(&mut erasers);
         items.append(&mut borders);
         // Sparklines lie over the fill of their cell and under its text.
-        let mut sparklines = Painter::new(self.input.app, layout, self.ts, PaintLayer::Under, visible, clip, self.input.scale);
+        let mut sparklines = Painter::new(
+            self.input.app,
+            layout,
+            self.ts,
+            PaintLayer::Under,
+            visible,
+            clip,
+            self.input.scale,
+        );
         features::sparklines::paint_cells(&mut sparklines);
         items.append(&mut sparklines.items);
         items.append(&mut texts);
@@ -1154,9 +1332,12 @@ impl<'a> PaneCtx<'a> {
 
     fn outline(&self, items: &mut Vec<Draw>, rect: Rect, width: f32, color: Hsla, outset: f32) {
         let (x0, y0, x1, y1) = self.layout.rect_px(rect);
-        let b = self
-            .layout
-            .bounds_px(x0 - 1.0 - outset, y0 - 1.0 - outset, x1 + outset, y1 + outset);
+        let b = self.layout.bounds_px(
+            x0 - 1.0 - outset,
+            y0 - 1.0 - outset,
+            x1 + outset,
+            y1 + outset,
+        );
         items.push(Draw::Quad(quad(
             b,
             px(0.),
@@ -1170,7 +1351,12 @@ impl<'a> PaneCtx<'a> {
     fn dashed_outline(&self, items: &mut Vec<Draw>, rect: Rect, color: Hsla) {
         let layout = self.layout;
         let (x0, y0, x1, y1) = layout.rect_px(rect);
-        let (x0, y0, x1, y1) = (x0 - 1.0, y0 - 1.0, x1.min(layout.width() + 8.0), y1.min(layout.height() + 8.0));
+        let (x0, y0, x1, y1) = (
+            x0 - 1.0,
+            y0 - 1.0,
+            x1.min(layout.width() + 8.0),
+            y1.min(layout.height() + 8.0),
+        );
         let (dash, gap) = (4.0, 3.0);
         let mut x = x0.max(-8.0);
         while x < x1 {
@@ -1215,7 +1401,11 @@ impl<'a> PaneCtx<'a> {
                 let single = *range == active_rect;
                 if !single {
                     // Tint everything but the active cell.
-                    let hole = if is_current { active_rect.intersection(&vis) } else { None };
+                    let hole = if is_current {
+                        active_rect.intersection(&vis)
+                    } else {
+                        None
+                    };
                     let mut pieces: Vec<Rect> = Vec::new();
                     match hole {
                         Some(a) => {
@@ -1266,21 +1456,45 @@ impl<'a> PaneCtx<'a> {
             let cur = sel.current();
             if visible.contains(cur.r1, cur.c1) {
                 let (_, _, x1, y1) = layout.rect_px(cur);
-                items.push(solid(layout, x1 - 4.0, y1 - 4.0, x1 + 3.0, y1 + 3.0, c(0xFFFFFF)));
-                items.push(solid(layout, x1 - 3.0, y1 - 3.0, x1 + 3.0, y1 + 3.0, accent));
+                items.push(solid(
+                    layout,
+                    x1 - 4.0,
+                    y1 - 4.0,
+                    x1 + 3.0,
+                    y1 + 3.0,
+                    c(0xFFFFFF),
+                ));
+                items.push(solid(
+                    layout,
+                    x1 - 3.0,
+                    y1 - 3.0,
+                    x1 + 3.0,
+                    y1 + 3.0,
+                    accent,
+                ));
             }
         }
     }
 }
 
-fn header_text(ts: &WindowTextSystem, text: String, size: f32, color: Hsla, bold: bool) -> ShapedLine {
+fn header_text(
+    ts: &WindowTextSystem,
+    text: String,
+    size: f32,
+    color: Hsla,
+    bold: bool,
+) -> ShapedLine {
     let run = TextRun {
         len: text.len(),
         font: Font {
             family: ".SystemUIFont".into(),
             features: Default::default(),
             fallbacks: None,
-            weight: if bold { FontWeight::SEMIBOLD } else { FontWeight::NORMAL },
+            weight: if bold {
+                FontWeight::SEMIBOLD
+            } else {
+                FontWeight::NORMAL
+            },
             style: FontStyle::Normal,
         },
         color,
@@ -1301,7 +1515,9 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         sheet,
         ts,
         hair: if input.scale >= 2.0 { 0.5 } else { 1.0 },
-        layered: !sheet.tables.is_empty() || !sheet.pivots.is_empty() || !sheet.cond_formats.is_empty(),
+        layered: !sheet.tables.is_empty()
+            || !sheet.pivots.is_empty()
+            || !sheet.cond_formats.is_empty(),
         formulas: features::misc::shows_formulas(input.app),
         digit_w: RefCell::new(HashMap::new()),
         zones: RefCell::new(Vec::new()),
@@ -1349,20 +1565,38 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
 
     // Charts, pictures and shapes float over the cells and scroll with them.
     let all_visible = Rect::new(
-        if layout.frozen_rows > 0 { 0 } else { s_rows.start },
-        if layout.frozen_cols > 0 { 0 } else { s_cols.start },
+        if layout.frozen_rows > 0 {
+            0
+        } else {
+            s_rows.start
+        },
+        if layout.frozen_cols > 0 {
+            0
+        } else {
+            s_cols.start
+        },
         s_rows.end.max(1) - 1,
         s_cols.end.max(1) - 1,
     );
     let objects = features::objects(input.app, input.sheet);
     if !objects.is_empty() {
         let clip = (hw, hh, w, h);
-        let mut painter = Painter::new(input.app, layout, ts, PaintLayer::Top, all_visible, clip, input.scale);
+        let mut painter = Painter::new(
+            input.app,
+            layout,
+            ts,
+            PaintLayer::Top,
+            all_visible,
+            clip,
+            input.scale,
+        );
         for (id, object) in &objects {
             let rect = crate::objects::object_rect(layout, &object.place);
             let feature = features::all()[id.owner];
             // What shows of a rotated shape is not its frame.
-            let shown = feature.object_extent(input.app, id.id, layout).unwrap_or(rect);
+            let shown = feature
+                .object_extent(input.app, id.id, layout)
+                .unwrap_or(rect);
             if shown.2 < hw || shown.3 < hh || shown.0 > w || shown.1 > h {
                 continue;
             }
@@ -1411,7 +1645,10 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
             }
         };
 
-        for (range, clip) in [(s_cols.clone(), (fx, mh, w, hh)), (f_cols.clone(), (hw, mh, fx, hh))] {
+        for (range, clip) in [
+            (s_cols.clone(), (fx, mh, w, hh)),
+            (f_cols.clone(), (hw, mh, fx, hh)),
+        ] {
             let mut items = vec![solid(layout, clip.0, mh, clip.2, hh, c(theme::HEADER_BG))];
             for col in range {
                 let (x, cw) = (layout.col_x(col), layout.col_w(col));
@@ -1423,13 +1660,23 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
                 if state > 0 {
                     items.push(solid(layout, x, mh, x + cw, hh, bg));
                 }
-                items.push(solid(layout, x + cw - 1.0, mh, x + cw, hh, c(theme::HEADER_BORDER)));
+                items.push(solid(
+                    layout,
+                    x + cw - 1.0,
+                    mh,
+                    x + cw,
+                    hh,
+                    c(theme::HEADER_BORDER),
+                ));
                 let line = header_text(ts, col_to_letters(col), font_size, fg, state > 0);
                 let lw = f32::from(line.width);
                 if lw + 2.0 <= cw {
                     items.push(Draw::Text {
                         line,
-                        origin: layout.to_window(x + ((cw - lw) / 2.0).round(), mh + ((hh - mh - line_h) / 2.0).round()),
+                        origin: layout.to_window(
+                            x + ((cw - lw) / 2.0).round(),
+                            mh + ((hh - mh - line_h) / 2.0).round(),
+                        ),
                         line_height: px(line_h),
                         clip: layout.bounds_px(x, mh, x + cw, hh),
                     });
@@ -1438,13 +1685,23 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
                     items.push(solid(layout, x, hh - 2.0, x + cw, hh, c(theme::SELECTION)));
                 }
             }
-            items.push(solid(layout, clip.0, hh - 1.0, clip.2, hh, c(theme::HEADER_BORDER)));
+            items.push(solid(
+                layout,
+                clip.0,
+                hh - 1.0,
+                clip.2,
+                hh,
+                c(theme::HEADER_BORDER),
+            ));
             layers.push(Layer {
                 clip: layout.bounds_px(clip.0, clip.1, clip.2, clip.3),
                 items,
             });
         }
-        for (range, clip) in [(s_rows.clone(), (mw, fy, hw, h)), (f_rows.clone(), (mw, hh, hw, fy))] {
+        for (range, clip) in [
+            (s_rows.clone(), (mw, fy, hw, h)),
+            (f_rows.clone(), (mw, hh, hw, fy)),
+        ] {
             let mut items = vec![solid(layout, mw, clip.1, hw, clip.3, c(theme::HEADER_BG))];
             for row in range {
                 let (y, rh) = (layout.row_y(row), layout.row_h(row));
@@ -1456,13 +1713,23 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
                 if state > 0 {
                     items.push(solid(layout, mw, y, hw, y + rh, bg));
                 }
-                items.push(solid(layout, mw, y + rh - 1.0, hw, y + rh, c(theme::HEADER_BORDER)));
+                items.push(solid(
+                    layout,
+                    mw,
+                    y + rh - 1.0,
+                    hw,
+                    y + rh,
+                    c(theme::HEADER_BORDER),
+                ));
                 if rh >= line_h * 0.7 {
                     let line = header_text(ts, (row + 1).to_string(), font_size, fg, state > 0);
                     let lw = f32::from(line.width);
                     items.push(Draw::Text {
                         line,
-                        origin: layout.to_window(mw + ((hw - mw - lw) / 2.0).round(), y + ((rh - line_h) / 2.0).round()),
+                        origin: layout.to_window(
+                            mw + ((hw - mw - lw) / 2.0).round(),
+                            y + ((rh - line_h) / 2.0).round(),
+                        ),
                         line_height: px(line_h),
                         clip: layout.bounds_px(mw, y, hw, y + rh),
                     });
@@ -1471,7 +1738,14 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
                     items.push(solid(layout, hw - 2.0, y, hw, y + rh, c(theme::SELECTION)));
                 }
             }
-            items.push(solid(layout, hw - 1.0, clip.1, hw, clip.3, c(theme::HEADER_BORDER)));
+            items.push(solid(
+                layout,
+                hw - 1.0,
+                clip.1,
+                hw,
+                clip.3,
+                c(theme::HEADER_BORDER),
+            ));
             layers.push(Layer {
                 clip: layout.bounds_px(clip.0, clip.1, clip.2, clip.3),
                 items,
@@ -1517,13 +1791,27 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
     let thumb = |hot: bool| ca(0x000000, if hot { 0.45 } else { 0.25 });
     {
         let (tx, ty, _len, pos, tl) = layout.v_scrollbar(input.content_h);
-        let b = layout.bounds_px(tx + 3.0, ty + pos + 2.0, tx + theme::SCROLLBAR - 3.0, ty + pos + tl - 2.0);
-        bars.push(Draw::Quad(fill(b, thumb(input.hot_scrollbar == 1)).corner_radii(px(3.))));
+        let b = layout.bounds_px(
+            tx + 3.0,
+            ty + pos + 2.0,
+            tx + theme::SCROLLBAR - 3.0,
+            ty + pos + tl - 2.0,
+        );
+        bars.push(Draw::Quad(
+            fill(b, thumb(input.hot_scrollbar == 1)).corner_radii(px(3.)),
+        ));
     }
     {
         let (tx, ty, _len, pos, tl) = layout.h_scrollbar(input.content_w);
-        let b = layout.bounds_px(tx + pos + 2.0, ty + 3.0, tx + pos + tl - 2.0, ty + theme::SCROLLBAR - 3.0);
-        bars.push(Draw::Quad(fill(b, thumb(input.hot_scrollbar == 2)).corner_radii(px(3.))));
+        let b = layout.bounds_px(
+            tx + pos + 2.0,
+            ty + 3.0,
+            tx + pos + tl - 2.0,
+            ty + theme::SCROLLBAR - 3.0,
+        );
+        bars.push(Draw::Quad(
+            fill(b, thumb(input.hot_scrollbar == 2)).corner_radii(px(3.)),
+        ));
     }
     layers.push(Layer {
         clip: layout.bounds,
@@ -1562,7 +1850,9 @@ pub fn paint_layers(layers: Vec<Layer>, window: &mut Window, cx: &mut App) {
                         clip,
                     } => {
                         window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
-                            crate::chart_view::paint_turned(path, bounds, pivot, turn, color, window, cx);
+                            crate::chart_view::paint_turned(
+                                path, bounds, pivot, turn, color, window, cx,
+                            );
                         });
                     }
                     Draw::Wrapped {
@@ -1577,13 +1867,21 @@ pub fn paint_layers(layers: Vec<Layer>, window: &mut Window, cx: &mut App) {
                             let text_bounds = Bounds::new(
                                 point(origin.x, bounds.origin.y),
                                 size(
-                                    (bounds.size.width - (origin.x - bounds.origin.x) * 2.0).max(px(1.)),
+                                    (bounds.size.width - (origin.x - bounds.origin.x) * 2.0)
+                                        .max(px(1.)),
                                     bounds.size.height,
                                 ),
                             );
                             for line in &lines {
                                 let rows = line.wrap_boundaries().len() + 1;
-                                let _ = line.paint(point(origin.x, y), line_height, align, Some(text_bounds), window, cx);
+                                let _ = line.paint(
+                                    point(origin.x, y),
+                                    line_height,
+                                    align,
+                                    Some(text_bounds),
+                                    window,
+                                    cx,
+                                );
                                 y += line_height * rows as f32;
                             }
                         });
@@ -1591,7 +1889,9 @@ pub fn paint_layers(layers: Vec<Layer>, window: &mut Window, cx: &mut App) {
                     Draw::Image { image, bounds } => {
                         let _ = window.paint_image(bounds, Default::default(), image, 0, false);
                     }
-                    Draw::Clipped { clip, items } => paint_layers(vec![Layer { clip, items }], window, cx),
+                    Draw::Clipped { clip, items } => {
+                        paint_layers(vec![Layer { clip, items }], window, cx)
+                    }
                 }
             }
         });
@@ -1599,7 +1899,13 @@ pub fn paint_layers(layers: Vec<Layer>, window: &mut Window, cx: &mut App) {
 }
 
 /// Width in pixels (at 100 %) a column needs to show all its content.
-pub fn autofit_col_width(wb: &Workbook, sheet: usize, col: u32, fonts: &FontResolver, ts: &WindowTextSystem) -> Option<f32> {
+pub fn autofit_col_width(
+    wb: &Workbook,
+    sheet: usize,
+    col: u32,
+    fonts: &FontResolver,
+    ts: &WindowTextSystem,
+) -> Option<f32> {
     let sh = wb.sheets.get(sheet)?;
     let mut max_w: f32 = 0.0;
     let mut any = false;
@@ -1626,7 +1932,10 @@ pub fn autofit_col_width(wb: &Workbook, sheet: usize, col: u32, fonts: &FontReso
             strikethrough: None,
         };
         let text = text.replace(['\n', '\r'], " ");
-        let run = TextRun { len: text.len(), ..run };
+        let run = TextRun {
+            len: text.len(),
+            ..run
+        };
         let w = f32::from(ts.shape_line(text.into(), px(size), &[run], None).width);
         max_w = max_w.max(w + style.indent as f32 * 9.0);
         any = true;
@@ -1695,8 +2004,14 @@ mod tests {
         });
         let fill: gpui::Background = theme::engine_color(Color(0x7B4B8A)).into();
         let white: gpui::Background = c(theme::GRID_BG).into();
-        let fill_at = colors.iter().position(|b| *b == fill).expect("the fill is painted");
-        assert!(!colors[fill_at..].contains(&white), "nothing white over the fill");
+        let fill_at = colors
+            .iter()
+            .position(|b| *b == fill)
+            .expect("the fill is painted");
+        assert!(
+            !colors[fill_at..].contains(&white),
+            "nothing white over the fill"
+        );
     }
 
     /// A workbook whose A1 is merged opens with the whole merged area

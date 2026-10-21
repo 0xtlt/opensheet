@@ -136,16 +136,29 @@ impl ChartKind {
     pub fn family(self) -> Family {
         use ChartKind::*;
         match self {
-            Column | StackedColumn | PercentStackedColumn | Column3D | StackedColumn3D | PercentStackedColumn3D => {
-                Family::Column
+            Column
+            | StackedColumn
+            | PercentStackedColumn
+            | Column3D
+            | StackedColumn3D
+            | PercentStackedColumn3D => Family::Column,
+            Bar | StackedBar | PercentStackedBar | Bar3D | StackedBar3D | PercentStackedBar3D => {
+                Family::Bar
             }
-            Bar | StackedBar | PercentStackedBar | Bar3D | StackedBar3D | PercentStackedBar3D => Family::Bar,
-            Line | StackedLine | PercentStackedLine | LineMarkers | StackedLineMarkers | PercentStackedLineMarkers
+            Line
+            | StackedLine
+            | PercentStackedLine
+            | LineMarkers
+            | StackedLineMarkers
+            | PercentStackedLineMarkers
             | Line3D => Family::Line,
-            Area | StackedArea | PercentStackedArea | Area3D | StackedArea3D | PercentStackedArea3D => Family::Area,
+            Area | StackedArea | PercentStackedArea | Area3D | StackedArea3D
+            | PercentStackedArea3D => Family::Area,
             Pie | Pie3D => Family::Pie,
             Doughnut => Family::Doughnut,
-            Scatter | ScatterSmoothMarkers | ScatterSmooth | ScatterLinesMarkers | ScatterLines => Family::Scatter,
+            Scatter | ScatterSmoothMarkers | ScatterSmooth | ScatterLinesMarkers | ScatterLines => {
+                Family::Scatter
+            }
             Bubble => Family::Bubble,
             Radar | RadarMarkers | RadarFilled => Family::Radar,
         }
@@ -154,12 +167,16 @@ impl ChartKind {
     pub fn grouping(self) -> Grouping {
         use ChartKind::*;
         match self {
-            StackedColumn | StackedColumn3D | StackedBar | StackedBar3D | StackedLine | StackedLineMarkers
-            | StackedArea | StackedArea3D => Grouping::Stacked,
-            PercentStackedColumn | PercentStackedColumn3D | PercentStackedBar | PercentStackedBar3D
-            | PercentStackedLine | PercentStackedLineMarkers | PercentStackedArea | PercentStackedArea3D => {
-                Grouping::Percent
-            }
+            StackedColumn | StackedColumn3D | StackedBar | StackedBar3D | StackedLine
+            | StackedLineMarkers | StackedArea | StackedArea3D => Grouping::Stacked,
+            PercentStackedColumn
+            | PercentStackedColumn3D
+            | PercentStackedBar
+            | PercentStackedBar3D
+            | PercentStackedLine
+            | PercentStackedLineMarkers
+            | PercentStackedArea
+            | PercentStackedArea3D => Grouping::Percent,
             _ => Grouping::Standard,
         }
     }
@@ -234,7 +251,10 @@ impl ChartKind {
 
     /// Whether the line of a series of this kind is a curve by default.
     pub fn is_smooth(self) -> bool {
-        matches!(self, ChartKind::ScatterSmooth | ChartKind::ScatterSmoothMarkers)
+        matches!(
+            self,
+            ChartKind::ScatterSmooth | ChartKind::ScatterSmoothMarkers
+        )
     }
 
     /// Automatic width of the line of a series of this kind, in points.
@@ -281,7 +301,9 @@ impl ChartKind {
         let upright = |f: Family| matches!(f, Family::Column | Family::Line | Family::Area);
         match (self.family(), other.family()) {
             (a, b) if upright(a) && upright(b) => true,
-            (Family::Bar, Family::Bar) | (Family::Scatter, Family::Scatter) | (Family::Radar, Family::Radar) => true,
+            (Family::Bar, Family::Bar)
+            | (Family::Scatter, Family::Scatter)
+            | (Family::Radar, Family::Radar) => true,
             _ => false,
         }
     }
@@ -357,7 +379,12 @@ pub struct ManualLayout {
 impl ManualLayout {
     /// An element moved to (x, y) that keeps its own size.
     pub fn at(x: f64, y: f64) -> ManualLayout {
-        ManualLayout { x, y, w: None, h: None }
+        ManualLayout {
+            x,
+            y,
+            w: None,
+            h: None,
+        }
     }
 }
 
@@ -682,7 +709,10 @@ impl Series {
 
     /// How far the label of a point was dragged from its place.
     pub fn label_offset(&self, index: usize) -> Option<(f64, f64)> {
-        self.label_offsets.iter().find(|o| o.index as usize == index).map(|o| (o.dx, o.dy))
+        self.label_offsets
+            .iter()
+            .find(|o| o.index as usize == index)
+            .map(|o| (o.dx, o.dy))
     }
 
     /// Put the label of a point (dx, dy) away from its place; (0, 0) puts
@@ -913,7 +943,11 @@ impl Axes {
             ..Axis::new()
         };
         Axes {
-            category: if kind.is_xy() { lined.clone() } else { Axis::new() },
+            category: if kind.is_xy() {
+                lined.clone()
+            } else {
+                Axis::new()
+            },
             value: lined,
             secondary_category: Axis {
                 visible: false,
@@ -1200,11 +1234,19 @@ impl ChartData {
     /// the next label of its level, or of a level further out, begins.
     pub fn level_groups(&self, level: usize, points: usize) -> Vec<(usize, usize, String)> {
         let mut groups: Vec<(usize, usize, String)> = Vec::new();
-        let starts = |k: usize| self.outer_levels[level..].iter().any(|texts| texts.get(k).is_some_and(|text| !text.is_empty()));
+        let starts = |k: usize| {
+            self.outer_levels[level..]
+                .iter()
+                .any(|texts| texts.get(k).is_some_and(|text| !text.is_empty()))
+        };
         for k in 0..points {
             match groups.last_mut() {
                 Some(group) if !starts(k) => group.1 = k,
-                _ => groups.push((k, k, self.outer_levels[level].get(k).cloned().unwrap_or_default())),
+                _ => groups.push((
+                    k,
+                    k,
+                    self.outer_levels[level].get(k).cloned().unwrap_or_default(),
+                )),
             }
         }
         groups
@@ -1215,8 +1257,15 @@ impl ChartData {
     pub fn category_name(&self, point: usize) -> String {
         let mut parts: Vec<String> = Vec::new();
         for level in (0..self.outer_levels.len()).rev() {
-            let group = self.level_groups(level, self.categories.len()).into_iter().find(|(first, last, _)| (*first..=*last).contains(&point));
-            parts.extend(group.map(|(_, _, text)| text).filter(|text| !text.is_empty()));
+            let group = self
+                .level_groups(level, self.categories.len())
+                .into_iter()
+                .find(|(first, last, _)| (*first..=*last).contains(&point));
+            parts.extend(
+                group
+                    .map(|(_, _, text)| text)
+                    .filter(|text| !text.is_empty()),
+            );
         }
         parts.extend(self.categories.get(point).cloned());
         parts.join(" ")
@@ -1313,7 +1362,12 @@ impl Chart {
         self.plot_layout = None;
         self.plot_layout_outer = false;
         let axes = &mut self.axes;
-        for axis in [&mut axes.category, &mut axes.value, &mut axes.secondary_category, &mut axes.secondary_value] {
+        for axis in [
+            &mut axes.category,
+            &mut axes.value,
+            &mut axes.secondary_category,
+            &mut axes.secondary_value,
+        ] {
             axis.title_layout = None;
         }
         for s in &mut self.series {
@@ -1323,9 +1377,18 @@ impl Chart {
 
     /// The font of every text of the chart, for what applies to them all.
     pub fn text_formats_mut(&mut self) -> Vec<&mut TextFormat> {
-        let mut out = vec![&mut self.title_text, &mut self.legend_text, &mut self.label_options.text];
+        let mut out = vec![
+            &mut self.title_text,
+            &mut self.legend_text,
+            &mut self.label_options.text,
+        ];
         let axes = &mut self.axes;
-        for axis in [&mut axes.category, &mut axes.value, &mut axes.secondary_category, &mut axes.secondary_value] {
+        for axis in [
+            &mut axes.category,
+            &mut axes.value,
+            &mut axes.secondary_category,
+            &mut axes.secondary_value,
+        ] {
             out.push(&mut axis.text);
             out.push(&mut axis.title_text);
         }
@@ -1355,7 +1418,10 @@ impl Chart {
     /// Whether a series is plotted against the secondary axes. Pies, radar
     /// and 3-D charts have a single set of axes.
     pub fn on_secondary(&self, series: &Series) -> bool {
-        series.secondary && !self.kind.is_3d() && !self.kind.is_round() && self.kind.family() != Family::Radar
+        series.secondary
+            && !self.kind.is_3d()
+            && !self.kind.is_round()
+            && self.kind.family() != Family::Radar
     }
 
     pub fn has_secondary_axis(&self) -> bool {
@@ -1363,13 +1429,17 @@ impl Chart {
     }
 
     pub fn gap_width_or_default(&self) -> u32 {
-        self.gap_width.unwrap_or(self.kind.default_gap_width()).min(500)
+        self.gap_width
+            .unwrap_or(self.kind.default_gap_width())
+            .min(500)
     }
 
     /// Overlap of the bars of kind `kind` (stacked bars always sit on top
     /// of each other unless told otherwise).
     pub fn overlap_for(&self, kind: ChartKind) -> i32 {
-        self.overlap.unwrap_or(kind.default_overlap()).clamp(-100, 100)
+        self.overlap
+            .unwrap_or(kind.default_overlap())
+            .clamp(-100, 100)
     }
 
     pub fn view3d_or_default(&self) -> View3D {
@@ -1428,12 +1498,12 @@ impl Chart {
     /// Follow rows / columns inserted into or deleted from `edited_sheet`.
     /// `own_sheet` is the sheet holding the chart.
     pub fn adjust(&mut self, edit: StructuralEdit, edited_sheet: &str, own_sheet: &str) {
-        self.map_refs(&mut |r| {
-            match Expr::Ref(r.clone()).adjusted(edit, edited_sheet, own_sheet) {
+        self.map_refs(
+            &mut |r| match Expr::Ref(r.clone()).adjusted(edit, edited_sheet, own_sheet) {
                 Expr::Ref(r) => Some(r),
                 _ => None,
-            }
-        });
+            },
+        );
         if !edited_sheet.eq_ignore_ascii_case(own_sheet) {
             return;
         }
@@ -1449,17 +1519,28 @@ impl Chart {
             }
         };
         match edit {
-            StructuralEdit::InsertRows { at, count } => self.anchor.0 = shift(self.anchor.0, true, at, count),
-            StructuralEdit::DeleteRows { at, count } => self.anchor.0 = shift(self.anchor.0, false, at, count),
-            StructuralEdit::InsertCols { at, count } => self.anchor.1 = shift(self.anchor.1, true, at, count),
-            StructuralEdit::DeleteCols { at, count } => self.anchor.1 = shift(self.anchor.1, false, at, count),
+            StructuralEdit::InsertRows { at, count } => {
+                self.anchor.0 = shift(self.anchor.0, true, at, count)
+            }
+            StructuralEdit::DeleteRows { at, count } => {
+                self.anchor.0 = shift(self.anchor.0, false, at, count)
+            }
+            StructuralEdit::InsertCols { at, count } => {
+                self.anchor.1 = shift(self.anchor.1, true, at, count)
+            }
+            StructuralEdit::DeleteCols { at, count } => {
+                self.anchor.1 = shift(self.anchor.1, false, at, count)
+            }
         }
     }
 
     pub fn rename_sheet(&mut self, old: &str, new: &str) {
         self.map_refs(&mut |r| {
             let mut out = r.clone();
-            if r.sheet.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(old)) {
+            if r.sheet
+                .as_deref()
+                .is_some_and(|s| s.eq_ignore_ascii_case(old))
+            {
                 out.sheet = Some(Arc::from(new));
             }
             Some(out)
@@ -1529,7 +1610,13 @@ impl Workbook {
 
     /// `by_rows`: force series to run along rows (`Some(true)`) or columns
     /// (`Some(false)`); `None` picks the orientation with fewer series.
-    pub fn chart_from_block(&self, sheet: usize, rect: Rect, kind: ChartKind, by_rows: Option<bool>) -> Chart {
+    pub fn chart_from_block(
+        &self,
+        sheet: usize,
+        rect: Rect,
+        kind: ChartKind,
+        by_rows: Option<bool>,
+    ) -> Chart {
         let mut chart = Chart::new(kind);
         let Some(sh) = self.sheets.get(sheet) else {
             return chart;
@@ -1537,7 +1624,9 @@ impl Workbook {
         let name = sh.name.as_str();
         // A cell is a label when it holds text or a date; numbers are data.
         let is_number = |r: u32, c: u32| match sh.value_at(r, c) {
-            Value::Number(_) => !format::is_date_format(&self.styles.get(sh.style_id_at(r, c)).num_fmt),
+            Value::Number(_) => {
+                !format::is_date_format(&self.styles.get(sh.style_id_at(r, c)).num_fmt)
+            }
             _ => false,
         };
         let is_blank = |r: u32, c: u32| sh.is_blank(r, c);
@@ -1595,7 +1684,8 @@ impl Workbook {
                         } else {
                             SeriesName::None
                         },
-                        categories: header_row.then(|| abs_ref(name, Rect::new(rect.r0, data.c0, rect.r0, data.c1))),
+                        categories: header_row
+                            .then(|| abs_ref(name, Rect::new(rect.r0, data.c0, rect.r0, data.c1))),
                         ..Series::new(abs_ref(name, Rect::new(r, data.c0, r, data.c1)))
                     });
                 }
@@ -1603,7 +1693,8 @@ impl Workbook {
                 for c in data.c0..=data.c1 {
                     chart.series.push(Series {
                         name: header(c),
-                        categories: label_col.then(|| abs_ref(name, Rect::new(data.r0, rect.c0, data.r1, rect.c0))),
+                        categories: label_col
+                            .then(|| abs_ref(name, Rect::new(data.r0, rect.c0, data.r1, rect.c0))),
                         ..Series::new(column(c))
                     });
                 }
@@ -1612,7 +1703,9 @@ impl Workbook {
         // Columns without a single number are not worth a series.
         chart.series.retain(|s| {
             let r = s.values.rect();
-            (r.r0..=r.r1).any(|row| (r.c0..=r.c1).any(|col| matches!(sh.value_at(row, col), Value::Number(_))))
+            (r.r0..=r.r1).any(|row| {
+                (r.c0..=r.c1).any(|col| matches!(sh.value_at(row, col), Value::Number(_)))
+            })
         });
         // A pie shows one series; a doughnut has a ring for each.
         if kind.family() == Family::Pie {
@@ -1676,7 +1769,11 @@ impl Workbook {
                 }
                 _ => (0..values.len()).map(|k| Some(k as f64 + 1.0)).collect(),
             };
-            let sizes = s.bubble_sizes.as_ref().map(|r| numbers(r).0).unwrap_or_default();
+            let sizes = s
+                .bubble_sizes
+                .as_ref()
+                .map(|r| numbers(r).0)
+                .unwrap_or_default();
             points = points.max(values.len());
             let name = match &s.name {
                 SeriesName::None => String::new(),
@@ -1696,21 +1793,35 @@ impl Workbook {
             });
         }
         // Categories / X values come from the first series that has them.
-        if let Some((cats, values)) = chart.series.iter().find_map(|s| Some((s.categories.as_ref()?, &s.values))) {
+        if let Some((cats, values)) = chart
+            .series
+            .iter()
+            .find_map(|s| Some((s.categories.as_ref()?, &s.values)))
+        {
             if let Some((si, rect)) = self.resolve_chart_ref(cats, own_sheet) {
                 let sh = &self.sheets[si];
                 // A block of labels holds one level per column (per row
                 // when the series run along rows), the one next to the
                 // data last; a scatter chart reads all of it as X values.
-                let levels = if chart.kind.is_xy() { None } else { category_levels(cats.rect(), values.rect()) };
+                let levels = if chart.kind.is_xy() {
+                    None
+                } else {
+                    category_levels(cats.rect(), values.rect())
+                };
                 let (inner, outer): (Rect, Vec<Rect>) = match levels {
                     Some(true) => (
                         Rect::new(rect.r0, rect.c1, rect.r1, rect.c1),
-                        (rect.c0..rect.c1).rev().map(|c| Rect::new(rect.r0, c, rect.r1, c)).collect(),
+                        (rect.c0..rect.c1)
+                            .rev()
+                            .map(|c| Rect::new(rect.r0, c, rect.r1, c))
+                            .collect(),
                     ),
                     Some(false) => (
                         Rect::new(rect.r1, rect.c0, rect.r1, rect.c1),
-                        (rect.r0..rect.r1).rev().map(|r| Rect::new(r, rect.c0, r, rect.c1)).collect(),
+                        (rect.r0..rect.r1)
+                            .rev()
+                            .map(|r| Rect::new(r, rect.c0, r, rect.c1))
+                            .collect(),
                     ),
                     None => (rect, Vec::new()),
                 };
@@ -1719,7 +1830,8 @@ impl Workbook {
                     for c in inner.c0..=inner.c1 {
                         let v = sh.value_at(r, c);
                         if first && matches!(v, Value::Number(_)) {
-                            data.x_format = self.styles.get(sh.style_id_at(r, c)).num_fmt.to_string();
+                            data.x_format =
+                                self.styles.get(sh.style_id_at(r, c)).num_fmt.to_string();
                             first = false;
                         }
                         data.x_values.push(match v {
@@ -1743,7 +1855,11 @@ impl Workbook {
         if let Some(plan) = self.pivot_chart_points(chart.id) {
             let keep = |list: &mut Vec<Option<f64>>| {
                 if !list.is_empty() {
-                    *list = plan.keep.iter().map(|k| list.get(*k).copied().flatten()).collect();
+                    *list = plan
+                        .keep
+                        .iter()
+                        .map(|k| list.get(*k).copied().flatten())
+                        .collect();
                 }
             };
             for series in &mut data.series {
@@ -1772,7 +1888,9 @@ impl Workbook {
             // A pie only shows its first series, so that is its title too.
             ChartTitle::Auto => match data.series.as_slice() {
                 [only] if !only.name.is_empty() => Some(only.name.clone()),
-                [first, ..] if chart.kind.family() == Family::Pie && !first.name.is_empty() => Some(first.name.clone()),
+                [first, ..] if chart.kind.family() == Family::Pie && !first.name.is_empty() => {
+                    Some(first.name.clone())
+                }
                 _ => None,
             },
         };
@@ -1823,9 +1941,17 @@ impl Workbook {
         self.snapshot();
         chart.id = self.next_chart_id();
         let id = chart.id;
-        let base = crate::validation::localized(self.locale, ["Chart", "Graphique", "Gráfico", "Diagramm", "Grafico"]);
+        let base = crate::validation::localized(
+            self.locale,
+            ["Chart", "Graphique", "Gráfico", "Diagramm", "Grafico"],
+        );
         let sh = &mut self.sheets[sheet];
-        if chart.name.is_empty() || sh.charts.iter().any(|c| c.name.eq_ignore_ascii_case(&chart.name)) {
+        if chart.name.is_empty()
+            || sh
+                .charts
+                .iter()
+                .any(|c| c.name.eq_ignore_ascii_case(&chart.name))
+        {
             chart.name = sh.drawing_name(base);
         }
         chart.z = sh.top_z();
@@ -1870,11 +1996,19 @@ mod tests {
     #[test]
     fn category_labels_in_two_columns_make_two_levels() {
         let w = wb(&[
-            ("A1", "Year"), ("B1", "Quarter"), ("C1", "Sales"),
-            ("A2", "2024"), ("B2", "Q1"), ("C2", "10"),
-            ("B3", "Q2"), ("C3", "12"),
-            ("A4", "2025"), ("B4", "Q1"), ("C4", "9"),
-            ("B5", "Q2"), ("C5", "14"),
+            ("A1", "Year"),
+            ("B1", "Quarter"),
+            ("C1", "Sales"),
+            ("A2", "2024"),
+            ("B2", "Q1"),
+            ("C2", "10"),
+            ("B3", "Q2"),
+            ("C3", "12"),
+            ("A4", "2025"),
+            ("B4", "Q1"),
+            ("C4", "9"),
+            ("B5", "Q2"),
+            ("C5", "14"),
         ]);
         let mut chart = w.chart_from_range(0, Rect::parse("B1:C5").unwrap(), ChartKind::Column);
         let name = w.sheets[0].name.clone();
@@ -1882,12 +2016,24 @@ mod tests {
         let data = w.chart_data(0, &chart);
         assert_eq!(data.categories, ["Q1", "Q2", "Q1", "Q2"]);
         assert_eq!(data.outer_levels, [["2024", "", "2025", ""]]);
-        assert_eq!(data.series[0].values, [Some(10.0), Some(12.0), Some(9.0), Some(14.0)]);
-        assert_eq!(data.level_groups(0, 4), [(0, 1, "2024".to_string()), (2, 3, "2025".to_string())]);
+        assert_eq!(
+            data.series[0].values,
+            [Some(10.0), Some(12.0), Some(9.0), Some(14.0)]
+        );
+        assert_eq!(
+            data.level_groups(0, 4),
+            [(0, 1, "2024".to_string()), (2, 3, "2025".to_string())]
+        );
         assert_eq!(data.category_name(3), "2025 Q2");
         // Series along rows: one level per row, the one next to the data last.
-        assert_eq!(category_levels(Rect::parse("B1:E2").unwrap(), Rect::parse("B3:E3").unwrap()), Some(false));
-        assert_eq!(category_levels(Rect::parse("A2:A5").unwrap(), Rect::parse("C2:C5").unwrap()), None);
+        assert_eq!(
+            category_levels(Rect::parse("B1:E2").unwrap(), Rect::parse("B3:E3").unwrap()),
+            Some(false)
+        );
+        assert_eq!(
+            category_levels(Rect::parse("A2:A5").unwrap(), Rect::parse("C2:C5").unwrap()),
+            None
+        );
     }
 
     fn table() -> Workbook {
@@ -1913,12 +2059,18 @@ mod tests {
         let chart = w.chart_from_range(0, Rect::parse("A1:C4").unwrap(), ChartKind::Column);
         assert_eq!(chart.series.len(), 2);
         assert_eq!(chart.series[0].values.to_text(), "Sheet1!$B$2:$B$4");
-        assert_eq!(chart.series[0].categories.as_ref().unwrap().to_text(), "Sheet1!$A$2:$A$4");
+        assert_eq!(
+            chart.series[0].categories.as_ref().unwrap().to_text(),
+            "Sheet1!$A$2:$A$4"
+        );
         assert_eq!(chart.legend, LegendPos::Bottom);
         let data = w.chart_data(0, &chart);
         assert_eq!(data.categories, vec!["Keyboard", "Mouse", "Screen"]);
         assert_eq!(data.series[0].name, "Q1");
-        assert_eq!(data.series[1].values, vec![Some(15.0), Some(5.0), Some(45.0)]);
+        assert_eq!(
+            data.series[1].values,
+            vec![Some(15.0), Some(5.0), Some(45.0)]
+        );
         assert_eq!(data.title, None);
 
         // A single cell expands to the block around it; a pie keeps one series.
@@ -1956,7 +2108,14 @@ mod tests {
 
     #[test]
     fn scatter_uses_first_column_as_x() {
-        let w = wb(&[("A1", "x"), ("B1", "y"), ("A2", "1"), ("B2", "10"), ("A3", "2"), ("B3", "20")]);
+        let w = wb(&[
+            ("A1", "x"),
+            ("B1", "y"),
+            ("A2", "1"),
+            ("B2", "10"),
+            ("A3", "2"),
+            ("B3", "20"),
+        ]);
         let chart = w.chart_from_range(0, Rect::parse("A1:B3").unwrap(), ChartKind::Scatter);
         assert_eq!(chart.series.len(), 1);
         let data = w.chart_data(0, &chart);
@@ -1969,9 +2128,15 @@ mod tests {
         use ChartKind::*;
         for kind in ChartKind::ALL {
             // Every kind is in exactly one family, and says so consistently.
-            assert_eq!(kind.is_round(), matches!(kind.family(), Family::Pie | Family::Doughnut));
+            assert_eq!(
+                kind.is_round(),
+                matches!(kind.family(), Family::Pie | Family::Doughnut)
+            );
             assert_eq!(kind.is_stacked(), format!("{kind:?}").contains("Stacked"));
-            assert_eq!(kind.is_percent(), format!("{kind:?}").starts_with("Percent"));
+            assert_eq!(
+                kind.is_percent(),
+                format!("{kind:?}").starts_with("Percent")
+            );
             assert_eq!(kind.is_3d(), format!("{kind:?}").ends_with("3D"));
             assert!(kind.combines_with(kind));
             assert_eq!(ChartKind::ALL.iter().filter(|k| **k == kind).count(), 1);
@@ -1979,17 +2144,36 @@ mod tests {
         assert!(Column.combines_with(LineMarkers) && StackedArea.combines_with(Column));
         assert!(Scatter.combines_with(ScatterSmooth) && Radar.combines_with(RadarFilled));
         assert!(Bar.combines_with(StackedBar) && !Bar.combines_with(Line));
-        assert!(!Column.combines_with(Pie) && !Column3D.combines_with(Line) && !Bubble.combines_with(Scatter));
+        assert!(
+            !Column.combines_with(Pie)
+                && !Column3D.combines_with(Line)
+                && !Bubble.combines_with(Scatter)
+        );
         // What Excel gives new charts.
-        assert_eq!((Column.default_gap_width(), Column.default_overlap()), (219, -27));
+        assert_eq!(
+            (Column.default_gap_width(), Column.default_overlap()),
+            (219, -27)
+        );
         assert_eq!((Bar.default_gap_width(), Bar.default_overlap()), (182, 0));
-        assert_eq!((StackedBar.default_gap_width(), PercentStackedColumn.default_overlap()), (150, 100));
+        assert_eq!(
+            (
+                StackedBar.default_gap_width(),
+                PercentStackedColumn.default_overlap()
+            ),
+            (150, 100)
+        );
         assert_eq!(Column3D.default_gap_width(), 150);
         assert!(LineMarkers.has_markers() && !Line.has_markers() && Scatter.has_markers());
         assert!(Line.has_lines() && !Scatter.has_lines() && ScatterSmooth.is_smooth());
-        assert!(View3D::for_kind(Column3D).right_angle_axes && !View3D::for_kind(Line3D).right_angle_axes);
+        assert!(
+            View3D::for_kind(Column3D).right_angle_axes
+                && !View3D::for_kind(Line3D).right_angle_axes
+        );
         assert_eq!(View3D::for_kind(Pie3D).rot_x, 30);
-        assert!(Axes::for_kind(Scatter).category.major_gridlines && !Axes::for_kind(Column).category.major_gridlines);
+        assert!(
+            Axes::for_kind(Scatter).category.major_gridlines
+                && !Axes::for_kind(Column).category.major_gridlines
+        );
     }
 
     #[test]
@@ -2006,7 +2190,10 @@ mod tests {
         assert!(chart.series.iter().all(|s| s.kind.is_none()));
         // Markers and lines follow the kind until the series says otherwise.
         let s = &mut chart.series[0];
-        assert_eq!(s.marker_for(ChartKind::LineMarkers).shape, MarkerShape::Circle);
+        assert_eq!(
+            s.marker_for(ChartKind::LineMarkers).shape,
+            MarkerShape::Circle
+        );
         assert_eq!(s.marker_for(ChartKind::Line).shape, MarkerShape::None);
         assert!(s.line_shown(ChartKind::Line) && !s.line_shown(ChartKind::Scatter));
         s.marker = Some(Marker::new(MarkerShape::Diamond));
@@ -2050,7 +2237,10 @@ mod tests {
         }));
         let id = w.add_chart(0, chart).unwrap();
         w.commit("chart");
-        assert_eq!(w.chart(0, id).unwrap().unchanged_source(), Some("<c:chartSpace/>"));
+        assert_eq!(
+            w.chart(0, id).unwrap().unchanged_source(),
+            Some("<c:chartSpace/>")
+        );
         // Moving and resizing leave what the chart shows alone.
         w.update_chart(0, id, |c| {
             c.anchor = (5, 5);
@@ -2086,7 +2276,10 @@ mod tests {
         ]);
         let chart = w.chart_from_range(0, Rect::parse("A1:D3").unwrap(), ChartKind::Bubble);
         assert_eq!(chart.series.len(), 2);
-        assert_eq!(chart.series[0].bubble_sizes.as_ref().unwrap().to_text(), "Sheet1!$C$2:$C$3");
+        assert_eq!(
+            chart.series[0].bubble_sizes.as_ref().unwrap().to_text(),
+            "Sheet1!$C$2:$C$3"
+        );
         assert!(chart.series[1].bubble_sizes.is_none());
         let data = w.chart_data(0, &chart);
         assert_eq!(data.series[0].sizes, vec![Some(3.0), Some(5.0)]);
@@ -2095,8 +2288,18 @@ mod tests {
         assert_eq!(w.chart_ranges(0, &chart).len(), 6);
         // A doughnut has a ring per series (here the two rows), a pie
         // shows the first one.
-        assert_eq!(w.chart_from_range(0, Rect::parse("A1:D3").unwrap(), ChartKind::Doughnut).series.len(), 2);
-        assert_eq!(w.chart_from_range(0, Rect::parse("A1:D3").unwrap(), ChartKind::Pie3D).series.len(), 1);
+        assert_eq!(
+            w.chart_from_range(0, Rect::parse("A1:D3").unwrap(), ChartKind::Doughnut)
+                .series
+                .len(),
+            2
+        );
+        assert_eq!(
+            w.chart_from_range(0, Rect::parse("A1:D3").unwrap(), ChartKind::Pie3D)
+                .series
+                .len(),
+            1
+        );
         // Each series keeps the format of its own numbers.
         assert_eq!(data.series[0].format, "General");
     }
@@ -2114,11 +2317,20 @@ mod tests {
         assert_eq!(chart.anchor.0, 2);
         assert!(w.rename_sheet(0, "Data"));
         w.commit("rename");
-        assert_eq!(w.chart(0, id).unwrap().series[0].values.to_text(), "Data!$B$4:$B$6");
-        assert_eq!(w.chart_data(0, w.chart(0, id).unwrap()).series[0].values[0], Some(10.0));
+        assert_eq!(
+            w.chart(0, id).unwrap().series[0].values.to_text(),
+            "Data!$B$4:$B$6"
+        );
+        assert_eq!(
+            w.chart_data(0, w.chart(0, id).unwrap()).series[0].values[0],
+            Some(10.0)
+        );
         w.undo();
         w.undo();
-        assert_eq!(w.chart(0, id).unwrap().series[0].values.to_text(), "Sheet1!$B$2:$B$4");
+        assert_eq!(
+            w.chart(0, id).unwrap().series[0].values.to_text(),
+            "Sheet1!$B$2:$B$4"
+        );
         w.undo();
         assert!(w.chart(0, id).is_none());
         w.redo();

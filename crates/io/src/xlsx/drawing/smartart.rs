@@ -37,9 +37,11 @@
 //!   group, which they show as it is drawn here.
 
 use super::*;
-use opensheet_engine::smartart::{ColorScheme, Foreign, Layout, Node, NodeFormat, Origin, Piece, QuickStyle, SmartArt};
-use opensheet_engine::wordart::{TextEffects, TextOutline};
+use opensheet_engine::smartart::{
+    ColorScheme, Foreign, Layout, Node, NodeFormat, Origin, Piece, QuickStyle, SmartArt,
+};
 use opensheet_engine::theme::Theme as DocumentTheme;
+use opensheet_engine::wordart::{TextEffects, TextOutline};
 
 const NS_DIAGRAM: &str = "http://schemas.openxmlformats.org/drawingml/2006/diagram";
 const NS_DSP: &str = "http://schemas.microsoft.com/office/drawing/2008/diagram";
@@ -71,7 +73,11 @@ const PARTS: [(&str, &str, &str); 5] = [
         "colors",
         "application/vnd.openxmlformats-officedocument.drawingml.diagramColors+xml",
     ),
-    ("diagramDrawing", "drawing", "application/vnd.ms-office.drawingml.diagramDrawing+xml"),
+    (
+        "diagramDrawing",
+        "drawing",
+        "application/vnd.ms-office.drawingml.diagramDrawing+xml",
+    ),
 ];
 
 // ---- writing -------------------------------------------------------------------
@@ -105,16 +111,29 @@ fn push_point_look(x: &mut String, format: &NodeFormat, placeholder: bool) {
     }
     if let Some((across, down)) = format.scale {
         let percent = |factor: f32| (factor as f64 * 100_000.0).round() as i64;
-        w!(x, " custScaleX=\"{}\" custScaleY=\"{}\"", percent(across), percent(down));
+        w!(
+            x,
+            " custScaleX=\"{}\" custScaleY=\"{}\"",
+            percent(across),
+            percent(down)
+        );
     }
     x.push_str("/>");
-    if format.preset.is_none() && format.fill.is_none() && format.outline.is_none() && format.effects.is_none() {
+    if format.preset.is_none()
+        && format.fill.is_none()
+        && format.outline.is_none()
+        && format.effects.is_none()
+    {
         x.push_str("<dgm:spPr/>");
         return;
     }
     x.push_str("<dgm:spPr>");
     if let Some(preset) = format.preset {
-        w!(x, "<a:prstGeom prst=\"{}\"><a:avLst/></a:prstGeom>", preset.ooxml_name());
+        w!(
+            x,
+            "<a:prstGeom prst=\"{}\"><a:avLst/></a:prstGeom>",
+            preset.ooxml_name()
+        );
     }
     match format.fill {
         Some(Some(color)) => push_solid_fill(x, color),
@@ -139,7 +158,11 @@ fn push_point_look(x: &mut String, format: &NodeFormat, placeholder: bool) {
 /// what "Text Outline" and "Text Fill" set.
 fn push_letters(x: &mut String, color: Option<Color>, effects: Option<&TextEffects>) {
     if let Some(outline) = effects.and_then(|effects| effects.outline) {
-        w!(x, "<a:ln w=\"{}\">", (outline.width.max(0.0) as f64 * EMU_PER_PT).round() as i64);
+        w!(
+            x,
+            "<a:ln w=\"{}\">",
+            (outline.width.max(0.0) as f64 * EMU_PER_PT).round() as i64
+        );
         push_solid_fill(x, outline.color);
         x.push_str("<a:prstDash val=\"solid\"/></a:ln>");
     }
@@ -158,7 +181,13 @@ fn push_empty_text(x: &mut String) {
 /// the connection to its parent with the two transition points Office
 /// hangs on it.
 fn data_xml(art: &SmartArt, drawing_rel: usize) -> String {
-    fn walk(nodes: &[Node], parent: &str, next: &mut usize, points: &mut String, connections: &mut String) {
+    fn walk(
+        nodes: &[Node],
+        parent: &str,
+        next: &mut usize,
+        points: &mut String,
+        connections: &mut String,
+    ) {
         for (order, node) in nodes.iter().enumerate() {
             let index = *next;
             *next += 1;
@@ -170,15 +199,24 @@ fn data_xml(art: &SmartArt, drawing_rel: usize) -> String {
                 push_empty_text(points);
             } else if node.text.is_empty() {
                 // The look of the text that will be typed.
-                points.push_str("<dgm:t><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\">");
-                push_letters(points, node.format.text_color, node.format.text_effects.as_ref());
+                points
+                    .push_str("<dgm:t><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\">");
+                push_letters(
+                    points,
+                    node.format.text_color,
+                    node.format.text_effects.as_ref(),
+                );
                 points.push_str("</a:endParaRPr></a:p></dgm:t>");
             } else {
                 points.push_str("<dgm:t><a:bodyPr/><a:lstStyle/>");
                 for paragraph in node.text.split('\n') {
                     if lettered {
                         points.push_str("<a:p><a:r><a:rPr lang=\"en-US\">");
-                        push_letters(points, node.format.text_color, node.format.text_effects.as_ref());
+                        push_letters(
+                            points,
+                            node.format.text_color,
+                            node.format.text_effects.as_ref(),
+                        );
                         points.push_str("</a:rPr><a:t>");
                     } else {
                         points.push_str("<a:p><a:r><a:rPr lang=\"en-US\"/><a:t>");
@@ -209,7 +247,9 @@ fn data_xml(art: &SmartArt, drawing_rel: usize) -> String {
         }
     }
     let root = model_id(0, 0);
-    let mut x = format!("{XML_DECL}<dgm:dataModel xmlns:dgm=\"{NS_DIAGRAM}\" xmlns:a=\"{NS_DRAWING}\"><dgm:ptLst>");
+    let mut x = format!(
+        "{XML_DECL}<dgm:dataModel xmlns:dgm=\"{NS_DIAGRAM}\" xmlns:a=\"{NS_DRAWING}\"><dgm:ptLst>"
+    );
     w!(
         x,
         "<dgm:pt modelId=\"{root}\" type=\"doc\"><dgm:prSet loTypeId=\"{}\" loCatId=\"{}\" qsTypeId=\"{}\" qsCatId=\"simple\" csTypeId=\"{}\" csCatId=\"{}\"",
@@ -253,7 +293,9 @@ fn between(arrow: bool) -> String {
     } else {
         "<dgm:layoutNode name=\"sibTrans\"><dgm:alg type=\"sp\"/><dgm:shape r:blip=\"\"><dgm:adjLst/></dgm:shape><dgm:presOf/><dgm:constrLst/><dgm:ruleLst/></dgm:layoutNode>"
     };
-    format!("<dgm:forEach name=\"sibTransForEach\" axis=\"followSib\" ptType=\"sibTrans\" cnt=\"1\">{body}</dgm:forEach>")
+    format!(
+        "<dgm:forEach name=\"sibTransForEach\" axis=\"followSib\" ptType=\"sibTrans\" cnt=\"1\">{body}</dgm:forEach>"
+    )
 }
 
 /// The layout part: a definition written for this project that lays the
@@ -330,12 +372,23 @@ fn layout_xml(layout: Layout) -> String {
         "{XML_DECL}<dgm:layoutDef xmlns:dgm=\"{NS_DIAGRAM}\" xmlns:a=\"{NS_DRAWING}\" uniqueId=\"{}\"><dgm:title val=\"\"/><dgm:desc val=\"\"/><dgm:catLst><dgm:cat type=\"{}\" pri=\"{priority}\"/></dgm:catLst><dgm:layoutNode name=\"diagram\"><dgm:varLst><dgm:dir/><dgm:resizeHandles val=\"exact\"/></dgm:varLst>{algorithm}<dgm:shape xmlns:r=\"{NS_DOC_REL}\" r:blip=\"\"><dgm:adjLst/></dgm:shape><dgm:presOf/>{}</dgm:layoutNode></dgm:layoutDef>",
         layout.unique_id(),
         layout.category().ooxml_name(),
-        body.replace("<dgm:shape ", &format!("<dgm:shape xmlns:r=\"{NS_DOC_REL}\" "))
+        body.replace(
+            "<dgm:shape ",
+            &format!("<dgm:shape xmlns:r=\"{NS_DOC_REL}\" ")
+        )
     )
 }
 
 /// The labels the layouts above give their shapes.
-const LABELS: [&str; 7] = ["node0", "node1", "vennNode1", "sibTrans2D1", "parChTrans1D2", "revTx", "bgShp"];
+const LABELS: [&str; 7] = [
+    "node0",
+    "node1",
+    "vennNode1",
+    "sibTrans2D1",
+    "parChTrans1D2",
+    "revTx",
+    "bgShp",
+];
 
 /// The style part: for each label, which of the theme's lines, fills and
 /// fonts its shapes take.
@@ -352,7 +405,12 @@ fn style_xml(style: QuickStyle) -> String {
     let mut x = format!(
         "{XML_DECL}<dgm:styleDef xmlns:dgm=\"{NS_DIAGRAM}\" xmlns:a=\"{NS_DRAWING}\" uniqueId=\"{}\"><dgm:title val=\"\"/><dgm:desc val=\"\"/><dgm:catLst><dgm:cat type=\"simple\" pri=\"{}\"/></dgm:catLst>{scene}",
         style.unique_id(),
-        10_100 + 100 * QuickStyle::ALL.iter().position(|other| *other == style).unwrap_or(0)
+        10_100
+            + 100
+                * QuickStyle::ALL
+                    .iter()
+                    .position(|other| *other == style)
+                    .unwrap_or(0)
     );
     for label in LABELS {
         // Text without a shape, and the lines of a chart, have no fill.
@@ -374,7 +432,10 @@ fn style_xml(style: QuickStyle) -> String {
 /// (those that say how much themselves keep their own word).
 fn half_shown(colors: &str) -> String {
     let mut out = String::new();
-    for entry in colors.split("<a:schemeClr ").filter(|entry| !entry.is_empty()) {
+    for entry in colors
+        .split("<a:schemeClr ")
+        .filter(|entry| !entry.is_empty())
+    {
         out.push_str("<a:schemeClr ");
         if entry.contains("<a:alpha") {
             out.push_str(entry);
@@ -382,7 +443,9 @@ fn half_shown(colors: &str) -> String {
             out.push_str(open);
             out.push_str("><a:alpha val=\"50000\"/></a:schemeClr>");
         } else {
-            out.push_str(&entry.replace("</a:schemeClr>", "<a:alpha val=\"50000\"/></a:schemeClr>"));
+            out.push_str(
+                &entry.replace("</a:schemeClr>", "<a:alpha val=\"50000\"/></a:schemeClr>"),
+            );
         }
     }
     out
@@ -392,7 +455,9 @@ fn half_shown(colors: &str) -> String {
 /// run through.
 fn colors_xml(colors: ColorScheme) -> String {
     let scheme = |name: &str| format!("<a:schemeClr val=\"{name}\"/>");
-    let tinted = |name: &str, tint: u32| format!("<a:schemeClr val=\"{name}\"><a:tint val=\"{tint}\"/></a:schemeClr>");
+    let tinted = |name: &str, tint: u32| {
+        format!("<a:schemeClr val=\"{name}\"><a:tint val=\"{tint}\"/></a:schemeClr>")
+    };
     // How shapes are filled and outlined, and how the colours of the list
     // are handed out (`repeat` one after the other, `span` from the first
     // to the last).
@@ -419,13 +484,16 @@ fn colors_xml(colors: ColorScheme) -> String {
                 1 => ("repeat", scheme("lt1"), scheme(&name), priority),
                 3 | 4 => (
                     if variant == 3 { "span" } else { "cycle" },
-                    format!("<a:schemeClr val=\"{name}\"><a:shade val=\"80000\"/></a:schemeClr>") + &tinted(&name, 50_000),
+                    format!("<a:schemeClr val=\"{name}\"><a:shade val=\"80000\"/></a:schemeClr>")
+                        + &tinted(&name, 50_000),
                     scheme("lt1"),
                     priority,
                 ),
                 5 => (
                     "span",
-                    format!("<a:schemeClr val=\"{name}\"><a:alpha val=\"90000\"/></a:schemeClr><a:schemeClr val=\"{name}\"><a:alpha val=\"40000\"/></a:schemeClr>"),
+                    format!(
+                        "<a:schemeClr val=\"{name}\"><a:alpha val=\"90000\"/></a:schemeClr><a:schemeClr val=\"{name}\"><a:alpha val=\"40000\"/></a:schemeClr>"
+                    ),
                     scheme("lt1"),
                     priority,
                 ),
@@ -447,7 +515,11 @@ fn colors_xml(colors: ColorScheme) -> String {
     for label in LABELS {
         let (method, fills, lines) = match label {
             "sibTrans2D1" => ("repeat", tinted(&base, 60_000), tinted(&base, 60_000)),
-            "parChTrans1D2" => ("repeat", scheme(&base), format!("<a:schemeClr val=\"{base}\"><a:shade val=\"60000\"/></a:schemeClr>")),
+            "parChTrans1D2" => (
+                "repeat",
+                scheme(&base),
+                format!("<a:schemeClr val=\"{base}\"><a:shade val=\"60000\"/></a:schemeClr>"),
+            ),
             "revTx" | "bgShp" => (
                 "repeat",
                 "<a:schemeClr val=\"lt1\"><a:alpha val=\"0\"/></a:schemeClr>".to_string(),
@@ -495,7 +567,8 @@ fn cache_xml(pieces: &[Piece]) -> String {
         push_geometry(&mut x, shape);
         match shape.fill {
             Some(color) => {
-                let alpha = (piece.opacity < 1.0).then(|| (piece.opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32);
+                let alpha = (piece.opacity < 1.0)
+                    .then(|| (piece.opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as u32);
                 x.push_str("<a:solidFill>");
                 push_drawing_color(&mut x, color, alpha);
                 x.push_str("</a:solidFill>");
@@ -530,7 +603,10 @@ fn cache_xml(pieces: &[Piece]) -> String {
                     size as u64 * 127 * 35 / 10
                 );
                 if paragraph.is_empty() {
-                    w!(x, "<a:endParaRPr lang=\"en-US\" sz=\"{size}\" kern=\"1200\"/>");
+                    w!(
+                        x,
+                        "<a:endParaRPr lang=\"en-US\" sz=\"{size}\" kern=\"1200\"/>"
+                    );
                 } else {
                     w!(x, "<a:r><a:rPr lang=\"en-US\" sz=\"{size}\" kern=\"1200\">");
                     push_letters(&mut x, shape.font.color, Some(&shape.effects));
@@ -565,7 +641,9 @@ fn with_drawing_rel(data: &str, drawing_rel: usize) -> String {
     let Some(start) = data[at..].find("relId=\"").map(|found| at + found + 7) else {
         return data.to_string();
     };
-    let end = data[start..].find('"').map_or(data.len(), |found| start + found);
+    let end = data[start..]
+        .find('"')
+        .map_or(data.len(), |found| start + found);
     format!("{}rId{drawing_rel}{}", &data[..start], &data[end..])
 }
 
@@ -573,7 +651,14 @@ fn with_drawing_rel(data: &str, drawing_rel: usize) -> String {
 /// drawing part relates to, in order: (relationship type, target). The
 /// relationship of the first is `first`, the others follow it. `number`
 /// counts the graphics of the workbook.
-pub(super) fn add_parts(art: &SmartArt, theme: &DocumentTheme, size: (f64, f64), number: usize, first: usize, extras: &mut Extras) -> Vec<(String, String)> {
+pub(super) fn add_parts(
+    art: &SmartArt,
+    theme: &DocumentTheme,
+    size: (f64, f64),
+    number: usize,
+    first: usize,
+    extras: &mut Extras,
+) -> Vec<(String, String)> {
     let drawing_rel = first + 4;
     let contents: [String; 5] = match art.kept_parts() {
         Some(kept) => {
@@ -606,7 +691,10 @@ pub(super) fn add_parts(art: &SmartArt, theme: &DocumentTheme, size: (f64, f64),
 /// Open the choice a graphic made here is written in: what follows is
 /// its anchor for this application.
 pub(super) fn push_choice_start(x: &mut String) {
-    w!(x, "<mc:AlternateContent xmlns:mc=\"{NS_COMPATIBILITY}\"><mc:Choice xmlns:ossa=\"{NS_OWN}\" Requires=\"ossa\">");
+    w!(
+        x,
+        "<mc:AlternateContent xmlns:mc=\"{NS_COMPATIBILITY}\"><mc:Choice xmlns:ossa=\"{NS_OWN}\" Requires=\"ossa\">"
+    );
 }
 
 /// Between the anchor for this application and the one for the others.
@@ -623,15 +711,26 @@ fn make_translucent(shape: &mut String, opacity: f32) {
     let Some(start) = shape.find("<a:solidFill>") else {
         return;
     };
-    let Some(end) = shape[start..].find("</a:solidFill>").map(|found| start + found) else {
+    let Some(end) = shape[start..]
+        .find("</a:solidFill>")
+        .map(|found| start + found)
+    else {
         return;
     };
-    let alpha = format!("<a:alpha val=\"{}\"/>", (opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as i64);
+    let alpha = format!(
+        "<a:alpha val=\"{}\"/>",
+        (opacity.clamp(0.0, 1.0) as f64 * 100_000.0).round() as i64
+    );
     let colour = &shape[start + "<a:solidFill>".len()..end];
     let with_alpha = match colour.strip_suffix("/>") {
         // `<a:srgbClr val="…"/>`: opened, to hold the opacity.
         Some(open) if !open.contains('>') => {
-            let name = open.trim_start_matches('<').split(' ').next().unwrap_or("a:srgbClr").to_string();
+            let name = open
+                .trim_start_matches('<')
+                .split(' ')
+                .next()
+                .unwrap_or("a:srgbClr")
+                .to_string();
             format!("{open}>{alpha}</{name}>")
         }
         _ => match colour.rfind("</") {
@@ -645,7 +744,13 @@ fn make_translucent(shape: &mut String, opacity: f32) {
 /// The graphic as a group of the shapes it is laid out as, in `frame`:
 /// what an application that does not read the choice above shows. The
 /// group and its members take ids from `next_id` on.
-pub(super) fn push_group(x: &mut String, drawing: &Drawing, pieces: &[Piece], frame: Frame, next_id: &mut usize) {
+pub(super) fn push_group(
+    x: &mut String,
+    drawing: &Drawing,
+    pieces: &[Piece],
+    frame: Frame,
+    next_id: &mut usize,
+) {
     x.push_str("<xdr:grpSp><xdr:nvGrpSpPr>");
     push_identity(x, drawing, *next_id);
     *next_id += 1;
@@ -666,7 +771,12 @@ pub(super) fn push_group(x: &mut String, drawing: &Drawing, pieces: &[Piece], fr
         member.rotation = piece.rotation;
         member.flip_h = piece.flip_h;
         member.effects = piece.effects;
-        let place = Frame::new(frame.x + piece.x as f64, frame.y + piece.y as f64, piece.width as f64, piece.height as f64);
+        let place = Frame::new(
+            frame.x + piece.x as f64,
+            frame.y + piece.y as f64,
+            piece.width as f64,
+            piece.height as f64,
+        );
         let mut shape = String::new();
         push_shape(&mut shape, &member, &piece.shape, *next_id, place);
         *next_id += 1;
@@ -683,7 +793,11 @@ pub(super) fn push_group(x: &mut String, drawing: &Drawing, pieces: &[Piece], fr
 /// The relationships of a `<xdr:graphicFrame>` that holds a graphic: its
 /// data, layout, style and colours parts. `None` for any other frame (a
 /// chart). Consumes the frame.
-pub(super) fn parse_frame<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, object: &mut RawObject) -> Option<[String; 4]> {
+pub(super) fn parse_frame<'a>(
+    r: &mut Reader<'a>,
+    tag: &Tag<'a>,
+    object: &mut RawObject,
+) -> Option<[String; 4]> {
     let mut found = None;
     each_child(r, tag, |r, t| match t.name {
         "nvGraphicFramePr" => {
@@ -692,7 +806,11 @@ pub(super) fn parse_frame<'a>(r: &mut Reader<'a>, tag: &Tag<'a>, object: &mut Ra
         "graphic" => each_child(r, t, |r, data| {
             each_child(r, data, |r, ids| {
                 if ids.name == "relIds" {
-                    let id = |name: &str| ids.attr_local(name).map(|id| id.into_owned()).unwrap_or_default();
+                    let id = |name: &str| {
+                        ids.attr_local(name)
+                            .map(|id| id.into_owned())
+                            .unwrap_or_default()
+                    };
                     found = Some([id("dm"), id("lo"), id("qs"), id("cs")]);
                 }
                 r.skip(ids);
@@ -716,7 +834,12 @@ struct Data {
 
 /// The fill and the outline of letters in the properties of a run; the
 /// first properties met are those of the entry.
-fn parse_letters<'a>(r: &mut Reader<'a>, properties: &Tag<'a>, palette: &Palette, letters: &mut Option<(Paint, Option<RawLine>)>) {
+fn parse_letters<'a>(
+    r: &mut Reader<'a>,
+    properties: &Tag<'a>,
+    palette: &Palette,
+    letters: &mut Option<(Paint, Option<RawLine>)>,
+) {
     let (mut fill, mut line) = (Paint::Unset, None);
     each_child(r, properties, |r, part| match part.name {
         "ln" => line = Some(parse_line(r, part, palette)),
@@ -753,7 +876,10 @@ fn parse_data(xml: &str, palette: &Palette) -> Data {
                 "dataModel" | "ptLst" | "cxnLst" | "extLst" | "ext" => {}
                 "pt" => {
                     let id = t.attr("modelId").unwrap_or_default().into_owned();
-                    let kind = t.attr("type").map(|kind| kind.into_owned()).unwrap_or_else(|| "node".to_string());
+                    let kind = t
+                        .attr("type")
+                        .map(|kind| kind.into_owned())
+                        .unwrap_or_else(|| "node".to_string());
                     let mut text = String::new();
                     let mut format = NodeFormat::default();
                     // The letters of the entry: those of its first run,
@@ -762,7 +888,9 @@ fn parse_data(xml: &str, palette: &Palette) -> Data {
                     each_child(&mut r, &t, |r, c| match c.name {
                         "spPr" => each_child(r, c, |r, part| match part.name {
                             "prstGeom" => {
-                                format.preset = part.attr("prst").and_then(|name| ShapePreset::from_ooxml_name(&name));
+                                format.preset = part
+                                    .attr("prst")
+                                    .and_then(|name| ShapePreset::from_ooxml_name(&name));
                                 r.skip(part);
                             }
                             "ln" => {
@@ -791,17 +919,23 @@ fn parse_data(xml: &str, palette: &Palette) -> Data {
                             }
                         }),
                         "prSet" => {
-                            if let (Some(across), Some(down)) = (c.attr_f64("custScaleX"), c.attr_f64("custScaleY")) {
-                                let factor = |percent: f64| (percent / 100_000.0).clamp(0.1, 10.0) as f32;
+                            if let (Some(across), Some(down)) =
+                                (c.attr_f64("custScaleX"), c.attr_f64("custScaleY"))
+                            {
+                                let factor =
+                                    |percent: f64| (percent / 100_000.0).clamp(0.1, 10.0) as f32;
                                 format.scale = Some((factor(across), factor(down)));
                             }
                             if kind == "doc" {
-                                let named = |name: &str| c.attr(name).unwrap_or_default().into_owned();
-                                (data.layout, data.style, data.colors) = (named("loTypeId"), named("qsTypeId"), named("csTypeId"));
+                                let named =
+                                    |name: &str| c.attr(name).unwrap_or_default().into_owned();
+                                (data.layout, data.style, data.colors) =
+                                    (named("loTypeId"), named("qsTypeId"), named("csTypeId"));
                                 each_child(r, c, |r, variables| {
                                     each_child(r, variables, |r, variable| {
                                         if variable.name == "dir" {
-                                            data.rtl = variable.attr("val").as_deref() == Some("rev");
+                                            data.rtl =
+                                                variable.attr("val").as_deref() == Some("rev");
                                         }
                                         r.skip(variable);
                                     });
@@ -869,7 +1003,11 @@ fn parse_data(xml: &str, palette: &Palette) -> Data {
                     // of its start.
                     if t.attr("type").is_none_or(|kind| kind == "parOf") {
                         let end = |name: &str| t.attr(name).unwrap_or_default().into_owned();
-                        links.push((end("srcId"), end("destId"), t.attr_u32("srcOrd").unwrap_or(0)));
+                        links.push((
+                            end("srcId"),
+                            end("destId"),
+                            t.attr_u32("srcOrd").unwrap_or(0),
+                        ));
                     }
                     r.skip(&t);
                 }
@@ -886,7 +1024,12 @@ fn parse_data(xml: &str, palette: &Palette) -> Data {
     links.sort_by_key(|(_, _, order)| *order);
     /// The entries under a point; `depth` guards against outlines that
     /// go round in circles.
-    fn children(parent: &str, points: &[Point], links: &[(String, String, u32)], depth: usize) -> Vec<Node> {
+    fn children(
+        parent: &str,
+        points: &[Point],
+        links: &[(String, String, u32)],
+        depth: usize,
+    ) -> Vec<Node> {
         if depth > 32 {
             return Vec::new();
         }
@@ -936,7 +1079,12 @@ fn parse_cache(xml: &str, theme: &Theme) -> Vec<Piece> {
                                 return;
                             }
                             each_child(r, xfrm, |r, part| {
-                                let pair = |a: &str, b: &str| (part.attr_f64(a).map_or(0.0, px), part.attr_f64(b).map_or(0.0, px));
+                                let pair = |a: &str, b: &str| {
+                                    (
+                                        part.attr_f64(a).map_or(0.0, px),
+                                        part.attr_f64(b).map_or(0.0, px),
+                                    )
+                                };
                                 match part.name {
                                     "off" => at = pair("x", "y"),
                                     "ext" => size = pair("cx", "cy"),
@@ -974,22 +1122,42 @@ fn parse_cache(xml: &str, theme: &Theme) -> Vec<Piece> {
 
 /// Read the graphic a frame names. `rels` are the relationships of the
 /// drawing part. `None` when its data part is missing.
-pub(super) fn load<R: Read + Seek>(pkg: &mut Package<R>, rels: &[Rel], ids: &[String; 4], theme: &Theme, own: bool) -> Option<SmartArt> {
-    let target_of = |id: &str| rels.iter().find(|rel| rel.id == id).map(|rel| rel.target.clone());
-    let mut read = |target: Option<String>| target.and_then(|target| pkg.read(&target).ok().flatten());
+pub(super) fn load<R: Read + Seek>(
+    pkg: &mut Package<R>,
+    rels: &[Rel],
+    ids: &[String; 4],
+    theme: &Theme,
+    own: bool,
+) -> Option<SmartArt> {
+    let target_of = |id: &str| {
+        rels.iter()
+            .find(|rel| rel.id == id)
+            .map(|rel| rel.target.clone())
+    };
+    let mut read =
+        |target: Option<String>| target.and_then(|target| pkg.read(&target).ok().flatten());
     let data_xml = read(target_of(&ids[0]))?;
-    let definitions = [read(target_of(&ids[1])), read(target_of(&ids[2])), read(target_of(&ids[3]))];
+    let definitions = [
+        read(target_of(&ids[1])),
+        read(target_of(&ids[2])),
+        read(target_of(&ids[3])),
+    ];
     let data = parse_data(&data_xml, theme.palette);
     // The drawing part: named by the outline, or the only one there is.
-    let drawing_target = data
-        .drawing_rel
-        .as_deref()
-        .and_then(target_of)
-        .or_else(|| rels.iter().find(|rel| rel.kind == "diagramDrawing").map(|rel| rel.target.clone()));
+    let drawing_target = data.drawing_rel.as_deref().and_then(target_of).or_else(|| {
+        rels.iter()
+            .find(|rel| rel.kind == "diagramDrawing")
+            .map(|rel| rel.target.clone())
+    });
     let drawing = read(drawing_target).unwrap_or_default();
     // The definitions say what they are; the root of the outline says it
     // too, for a file that lost one.
-    let named = |index: usize, fallback: &str| definitions[index].as_deref().and_then(unique_id).unwrap_or_else(|| fallback.to_string());
+    let named = |index: usize, fallback: &str| {
+        definitions[index]
+            .as_deref()
+            .and_then(unique_id)
+            .unwrap_or_else(|| fallback.to_string())
+    };
     let layout = Layout::from_unique_id(&named(0, &data.layout));
     let mut art = SmartArt {
         layout: layout.unwrap_or(Layout::BlockList),

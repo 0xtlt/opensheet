@@ -7,7 +7,13 @@ use opensheet_engine::{Content, Expr, Reference, Workbook};
 /// The cells an expression written in the cell (`sheet`, `row`, `col`)
 /// refers to: its references, the cells its names and its structured
 /// references stand for, every sheet of its 3-D references.
-pub(crate) fn expr_refs(wb: &Workbook, sheet: usize, row: u32, col: u32, expr: &Expr) -> Vec<Reference> {
+pub(crate) fn expr_refs(
+    wb: &Workbook,
+    sheet: usize,
+    row: u32,
+    col: u32,
+    expr: &Expr,
+) -> Vec<Reference> {
     let mut out: Vec<Reference> = Vec::new();
     let mut add = |reference: Reference| {
         if !out.contains(&reference) {
@@ -38,7 +44,9 @@ pub(crate) fn expr_refs(wb: &Workbook, sheet: usize, row: u32, col: u32, expr: &
             }
         }
         Expr::Ref3D(span) => {
-            if let (Some(first), Some(last)) = (wb.sheet_index(&span.first), wb.sheet_index(&span.last)) {
+            if let (Some(first), Some(last)) =
+                (wb.sheet_index(&span.first), wb.sheet_index(&span.last))
+            {
                 for on in first.min(last)..=first.max(last) {
                     add(Reference::new(on, span.cells.rect()));
                 }
@@ -51,7 +59,8 @@ pub(crate) fn expr_refs(wb: &Workbook, sheet: usize, row: u32, col: u32, expr: &
             }
         }
         Expr::Table(table) => {
-            if let Ok(reference) = opensheet_engine::structured::resolve(wb, table, sheet, row, col) {
+            if let Ok(reference) = opensheet_engine::structured::resolve(wb, table, sheet, row, col)
+            {
                 add(reference);
             }
         }
@@ -80,7 +89,9 @@ pub(crate) fn dependents(wb: &Workbook, target: Reference) -> Vec<(usize, u32, u
             };
             let reads = expr_refs(wb, index, *row, *col, expr)
                 .iter()
-                .any(|reference| reference.sheet == target.sheet && reference.rect.intersects(&target.rect));
+                .any(|reference| {
+                    reference.sheet == target.sheet && reference.rect.intersects(&target.rect)
+                });
             if reads {
                 out.push((index, *row, *col));
             }
@@ -113,7 +124,10 @@ mod tests {
             let (row, col) = opensheet_engine::refs::parse_cell_name(cell).unwrap();
             wb.set_cell_text(sheet, row, col, text).unwrap();
         }
-        for (name, formula) in [("Rate", "=Sheet1!$A$2"), ("Both", "=(Sheet1!$A$1,Sheet1!$B$1:$B$2)")] {
+        for (name, formula) in [
+            ("Rate", "=Sheet1!$A$2"),
+            ("Both", "=(Sheet1!$A$1,Sheet1!$B$1:$B$2)"),
+        ] {
             let expr = wb.parse_name_formula(formula, 0, 0, 0).unwrap();
             wb.add_name(NameScope::Workbook, name, expr, "").unwrap();
         }
@@ -143,8 +157,14 @@ mod tests {
     #[test]
     fn dependents_are_found_on_every_sheet() {
         let wb = workbook();
-        assert_eq!(dependents(&wb, at(0, "A1")), [(0, 0, 1), (0, 1, 1), (0, 1, 2)]);
-        assert_eq!(dependents(&wb, at(0, "B1")), [(0, 0, 2), (0, 1, 2), (1, 0, 0)]);
+        assert_eq!(
+            dependents(&wb, at(0, "A1")),
+            [(0, 0, 1), (0, 1, 1), (0, 1, 2)]
+        );
+        assert_eq!(
+            dependents(&wb, at(0, "B1")),
+            [(0, 0, 2), (0, 1, 2), (1, 0, 0)]
+        );
         assert_eq!(dependents(&wb, at(0, "A2")), [(0, 0, 2), (0, 1, 1)]);
         assert_eq!(dependents(&wb, at(1, "A1")), [(0, 0, 3)]);
         assert!(dependents(&wb, at(0, "D9")).is_empty());

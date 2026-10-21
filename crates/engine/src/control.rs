@@ -69,13 +69,20 @@ impl ControlKind {
     pub fn has_text(self) -> bool {
         matches!(
             self,
-            ControlKind::Button | ControlKind::CheckBox | ControlKind::OptionButton | ControlKind::GroupBox | ControlKind::Label
+            ControlKind::Button
+                | ControlKind::CheckBox
+                | ControlKind::OptionButton
+                | ControlKind::GroupBox
+                | ControlKind::Label
         )
     }
 
     /// The control has a state its linked cell mirrors.
     pub fn has_link(self) -> bool {
-        !matches!(self, ControlKind::Button | ControlKind::GroupBox | ControlKind::Label)
+        !matches!(
+            self,
+            ControlKind::Button | ControlKind::GroupBox | ControlKind::Label
+        )
     }
 
     /// The control lists the cells of an input range.
@@ -212,7 +219,10 @@ impl FormControl {
             // Excel: a button moves and sizes with its cells, a check box
             // or an option button only moves, the others do both.
             move_with_cells: true,
-            size_with_cells: !matches!(kind, ControlKind::CheckBox | ControlKind::OptionButton | ControlKind::Label),
+            size_with_cells: !matches!(
+                kind,
+                ControlKind::CheckBox | ControlKind::OptionButton | ControlKind::Label
+            ),
             text: String::new(),
             macro_name: None,
             link: None,
@@ -222,7 +232,11 @@ impl FormControl {
             selected: 0,
             value: 0,
             min: 0,
-            max: if kind == ControlKind::SpinButton { MAX_CONTROL_VALUE } else { 100 },
+            max: if kind == ControlKind::SpinButton {
+                MAX_CONTROL_VALUE
+            } else {
+                100
+            },
             inc: 1,
             page: 10,
             drop_lines: 8,
@@ -294,24 +308,41 @@ impl Sheet {
     /// the sheet: those inside the same group box, or those outside every
     /// group box.
     pub fn option_group(&self, id: u32) -> Vec<u32> {
-        let boxes: Vec<(f64, f64, f64, f64)> =
-            self.controls.iter().filter(|c| c.kind == ControlKind::GroupBox).map(|c| self.control_frame(c)).collect();
+        let boxes: Vec<(f64, f64, f64, f64)> = self
+            .controls
+            .iter()
+            .filter(|c| c.kind == ControlKind::GroupBox)
+            .map(|c| self.control_frame(c))
+            .collect();
         // The group box around the middle of a control, if any.
         let home = |control: &FormControl| -> Option<usize> {
             let (x, y, w, h) = self.control_frame(control);
             let (cx, cy) = (x + w / 2.0, y + h / 2.0);
-            boxes.iter().position(|(bx, by, bw, bh)| cx >= *bx && cx <= bx + bw && cy >= *by && cy <= by + bh)
+            boxes.iter().position(|(bx, by, bw, bh)| {
+                cx >= *bx && cx <= bx + bw && cy >= *by && cy <= by + bh
+            })
         };
-        let Some(own) = self.control(id).filter(|c| c.kind == ControlKind::OptionButton) else {
+        let Some(own) = self
+            .control(id)
+            .filter(|c| c.kind == ControlKind::OptionButton)
+        else {
             return Vec::new();
         };
         let group = home(own);
-        self.controls.iter().filter(|c| c.kind == ControlKind::OptionButton && home(c) == group).map(|c| c.id).collect()
+        self.controls
+            .iter()
+            .filter(|c| c.kind == ControlKind::OptionButton && home(c) == group)
+            .map(|c| c.id)
+            .collect()
     }
 
     /// A name no control of the sheet has yet: "Button 3".
     pub fn new_control_name(&self, kind: ControlKind) -> String {
-        let taken = |name: &str| self.controls.iter().any(|c| c.name.eq_ignore_ascii_case(name));
+        let taken = |name: &str| {
+            self.controls
+                .iter()
+                .any(|c| c.name.eq_ignore_ascii_case(name))
+        };
         let mut n = self.controls.len() + 1;
         loop {
             let name = format!("{} {n}", kind.base_name());
@@ -326,7 +357,10 @@ impl Sheet {
 impl Workbook {
     /// Every control of the workbook with its sheet.
     pub fn controls(&self) -> impl Iterator<Item = (usize, &FormControl)> {
-        self.sheets.iter().enumerate().flat_map(|(si, sheet)| sheet.controls.iter().map(move |c| (si, c)))
+        self.sheets
+            .iter()
+            .enumerate()
+            .flat_map(|(si, sheet)| sheet.controls.iter().map(move |c| (si, c)))
     }
 
     pub fn control(&self, id: u32) -> Option<(usize, &FormControl)> {
@@ -348,7 +382,11 @@ impl Workbook {
 
     /// Whole rows or columns stop at the cells in use.
     fn clamp_to_used_or_cell(&self, sheet: usize, rect: Rect) -> Rect {
-        if rect.is_whole_rows() || rect.is_whole_cols() { self.clamp_to_used(sheet, rect) } else { rect }
+        if rect.is_whole_rows() || rect.is_whole_cols() {
+            self.clamp_to_used(sheet, rect)
+        } else {
+            rect
+        }
     }
 
     /// The linked cell of a control: (sheet, row, col).
@@ -360,7 +398,11 @@ impl Workbook {
     /// The lines of a combo or list box: the cells of its input range as
     /// they are displayed.
     pub fn control_items(&self, sheet: usize, control: &FormControl) -> Vec<String> {
-        let Some((si, rect)) = control.input.as_ref().and_then(|input| self.control_ref(input, sheet)) else {
+        let Some((si, rect)) = control
+            .input
+            .as_ref()
+            .and_then(|input| self.control_ref(input, sheet))
+        else {
             return Vec::new();
         };
         let mut out = Vec::new();
@@ -380,23 +422,52 @@ impl Workbook {
             // The option buttons of a group share the link of the group.
             ControlKind::OptionButton => self.sheets.get(sheet).and_then(|sh| {
                 let group = sh.option_group(control.id);
-                let linked = group.iter().filter_map(|id| sh.control(*id)).find(|c| c.link.is_some())?;
+                let linked = group
+                    .iter()
+                    .filter_map(|id| sh.control(*id))
+                    .find(|c| c.link.is_some())?;
                 let rank = group.iter().position(|id| *id == control.id)? as f64 + 1.0;
                 let (si, row, col) = self.control_link(sheet, linked)?;
                 Some((self.value_at(si, row, col), rank))
             }),
-            _ => self.control_link(sheet, control).map(|(si, row, col)| (self.value_at(si, row, col), 0.0)),
+            _ => self
+                .control_link(sheet, control)
+                .map(|(si, row, col)| (self.value_at(si, row, col), 0.0)),
         };
         let Some((value, rank)) = cell else {
             return now;
         };
         match (control.kind, value) {
-            (ControlKind::CheckBox, Value::Bool(on)) => now.checked = if on { CheckState::Checked } else { CheckState::Unchecked },
-            (ControlKind::CheckBox, Value::Number(n)) => now.checked = if n != 0.0 { CheckState::Checked } else { CheckState::Unchecked },
+            (ControlKind::CheckBox, Value::Bool(on)) => {
+                now.checked = if on {
+                    CheckState::Checked
+                } else {
+                    CheckState::Unchecked
+                }
+            }
+            (ControlKind::CheckBox, Value::Number(n)) => {
+                now.checked = if n != 0.0 {
+                    CheckState::Checked
+                } else {
+                    CheckState::Unchecked
+                }
+            }
             (ControlKind::CheckBox, Value::Error(ErrorKind::NA)) => now.checked = CheckState::Mixed,
-            (ControlKind::OptionButton, Value::Number(n)) => now.checked = if n == rank { CheckState::Checked } else { CheckState::Unchecked },
-            (ControlKind::ComboBox | ControlKind::ListBox, Value::Number(n)) if n >= 0.0 && n <= u32::MAX as f64 => now.selected = n as u32,
-            (ControlKind::SpinButton | ControlKind::ScrollBar, Value::Number(n)) if n.is_finite() => {
+            (ControlKind::OptionButton, Value::Number(n)) => {
+                now.checked = if n == rank {
+                    CheckState::Checked
+                } else {
+                    CheckState::Unchecked
+                }
+            }
+            (ControlKind::ComboBox | ControlKind::ListBox, Value::Number(n))
+                if n >= 0.0 && n <= u32::MAX as f64 =>
+            {
+                now.selected = n as u32
+            }
+            (ControlKind::SpinButton | ControlKind::ScrollBar, Value::Number(n))
+                if n.is_finite() =>
+            {
                 now.value = stepped(control, n.clamp(i32::MIN as f64, i32::MAX as f64) as i32, 0);
             }
             _ => {}
@@ -421,7 +492,10 @@ impl Workbook {
         }
         if control.kind == ControlKind::OptionButton {
             // The first of its group is the one a new group starts with.
-            control.first_button = !sh.controls.iter().any(|c| c.kind == ControlKind::OptionButton);
+            control.first_button = !sh
+                .controls
+                .iter()
+                .any(|c| c.kind == ControlKind::OptionButton);
         }
         let id = control.id;
         sh.controls.push(control);
@@ -481,15 +555,33 @@ impl Workbook {
     /// Choose an option button: the others of its group are released and
     /// the linked cell of the group gets its rank (1 for the first).
     pub fn choose_option(&mut self, id: u32) -> bool {
-        let Some((sheet, _)) = self.control(id).filter(|(_, c)| c.kind == ControlKind::OptionButton) else {
+        let Some((sheet, _)) = self
+            .control(id)
+            .filter(|(_, c)| c.kind == ControlKind::OptionButton)
+        else {
             return false;
         };
         let group = self.sheets[sheet].option_group(id);
-        let rank = group.iter().position(|member| *member == id).map_or(1.0, |at| at as f64 + 1.0);
-        let linked = group.iter().filter_map(|member| self.sheets[sheet].control(*member)).find(|c| c.link.is_some()).cloned();
+        let rank = group
+            .iter()
+            .position(|member| *member == id)
+            .map_or(1.0, |at| at as f64 + 1.0);
+        let linked = group
+            .iter()
+            .filter_map(|member| self.sheets[sheet].control(*member))
+            .find(|c| c.link.is_some())
+            .cloned();
         self.snapshot();
-        for control in self.sheets[sheet].controls.iter_mut().filter(|c| group.contains(&c.id)) {
-            control.checked = if control.id == id { CheckState::Checked } else { CheckState::Unchecked };
+        for control in self.sheets[sheet]
+            .controls
+            .iter_mut()
+            .filter(|c| group.contains(&c.id))
+        {
+            control.checked = if control.id == id {
+                CheckState::Checked
+            } else {
+                CheckState::Unchecked
+            };
         }
         if let Some(linked) = linked {
             self.write_control_link(sheet, &linked, Value::Number(rank));
@@ -553,16 +645,26 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     let own = sheet.name.clone();
     let here = own.eq_ignore_ascii_case(edited_sheet);
     for control in &mut sheet.controls {
-        control.map_refs(&mut |r| match Expr::Ref(r.clone()).adjusted(edit, edited_sheet, &own) {
-            Expr::Ref(r) => Some(r),
-            _ => None,
-        });
+        control.map_refs(
+            &mut |r| match Expr::Ref(r.clone()).adjusted(edit, edited_sheet, &own) {
+                Expr::Ref(r) => Some(r),
+                _ => None,
+            },
+        );
         if here && control.move_with_cells {
             match edit {
-                StructuralEdit::InsertRows { at, count } => control.anchor.0 = shift(control.anchor.0, true, at, count),
-                StructuralEdit::DeleteRows { at, count } => control.anchor.0 = shift(control.anchor.0, false, at, count),
-                StructuralEdit::InsertCols { at, count } => control.anchor.1 = shift(control.anchor.1, true, at, count),
-                StructuralEdit::DeleteCols { at, count } => control.anchor.1 = shift(control.anchor.1, false, at, count),
+                StructuralEdit::InsertRows { at, count } => {
+                    control.anchor.0 = shift(control.anchor.0, true, at, count)
+                }
+                StructuralEdit::DeleteRows { at, count } => {
+                    control.anchor.0 = shift(control.anchor.0, false, at, count)
+                }
+                StructuralEdit::InsertCols { at, count } => {
+                    control.anchor.1 = shift(control.anchor.1, true, at, count)
+                }
+                StructuralEdit::DeleteCols { at, count } => {
+                    control.anchor.1 = shift(control.anchor.1, false, at, count)
+                }
             }
         }
     }
@@ -572,7 +674,10 @@ pub(crate) fn on_sheet_renamed(sheet: &mut Sheet, old: &str, new: &str) {
     for control in &mut sheet.controls {
         control.map_refs(&mut |r| {
             let mut out = r.clone();
-            if r.sheet.as_deref().is_some_and(|s| s.eq_ignore_ascii_case(old)) {
+            if r.sheet
+                .as_deref()
+                .is_some_and(|s| s.eq_ignore_ascii_case(old))
+            {
                 out.sheet = Some(Arc::from(new));
             }
             Some(out)
@@ -626,7 +731,12 @@ mod tests {
         wb
     }
 
-    fn add(wb: &mut Workbook, kind: ControlKind, at: (u32, u32), edit: impl FnOnce(&mut FormControl)) -> u32 {
+    fn add(
+        wb: &mut Workbook,
+        kind: ControlKind,
+        at: (u32, u32),
+        edit: impl FnOnce(&mut FormControl),
+    ) -> u32 {
         let mut control = FormControl::new(kind);
         control.anchor = at;
         edit(&mut control);
@@ -641,9 +751,15 @@ mod tests {
         let button = add(&mut wb, ControlKind::Button, (1, 1), |_| {});
         let check = add(&mut wb, ControlKind::CheckBox, (3, 1), |_| {});
         let (_, b) = wb.control(button).unwrap();
-        assert_eq!((b.name.as_str(), b.text.as_str(), b.print), ("Button 1", "Button 1", false));
+        assert_eq!(
+            (b.name.as_str(), b.text.as_str(), b.print),
+            ("Button 1", "Button 1", false)
+        );
         let (_, c) = wb.control(check).unwrap();
-        assert_eq!((c.name.as_str(), c.text.as_str(), c.print), ("Check Box 2", "Check Box 2", true));
+        assert_eq!(
+            (c.name.as_str(), c.text.as_str(), c.print),
+            ("Check Box 2", "Check Box 2", true)
+        );
         assert_ne!(button, check);
         assert!(wb.undo());
         assert_eq!(wb.sheets[0].controls.len(), 1);
@@ -657,7 +773,9 @@ mod tests {
     #[test]
     fn a_check_box_writes_its_cell_and_follows_it() {
         let mut wb = book();
-        let id = add(&mut wb, ControlKind::CheckBox, (1, 1), |c| c.link = Some(range("$A$1")));
+        let id = add(&mut wb, ControlKind::CheckBox, (1, 1), |c| {
+            c.link = Some(range("$A$1"))
+        });
         assert!(wb.set_control_checked(id, CheckState::Checked));
         wb.commit("Check Box");
         assert_eq!(wb.value_at(0, 0, 0), Value::Bool(true));
@@ -671,7 +789,11 @@ mod tests {
         assert_eq!(shown(&wb), CheckState::Mixed);
         wb.set_cell_text(0, 0, 0, "hello").unwrap();
         wb.commit("type");
-        assert_eq!(shown(&wb), CheckState::Checked, "text says nothing: the control keeps its own state");
+        assert_eq!(
+            shown(&wb),
+            CheckState::Checked,
+            "text says nothing: the control keeps its own state"
+        );
         // One undo step takes the tick and the cell back together.
         assert!(wb.set_control_checked(id, CheckState::Mixed));
         wb.commit("Check Box");
@@ -687,11 +809,17 @@ mod tests {
     #[test]
     fn option_buttons_work_by_group() {
         let mut wb = book();
-        let a = add(&mut wb, ControlKind::OptionButton, (1, 1), |c| c.link = Some(range("$A$1")));
+        let a = add(&mut wb, ControlKind::OptionButton, (1, 1), |c| {
+            c.link = Some(range("$A$1"))
+        });
         let b = add(&mut wb, ControlKind::OptionButton, (2, 1), |_| {});
         // A group box further down with two buttons of its own.
-        let frame = add(&mut wb, ControlKind::GroupBox, (10, 1), |c| c.size = (200.0, 100.0));
-        let c = add(&mut wb, ControlKind::OptionButton, (11, 1), |c| c.link = Some(range("$A$2")));
+        let frame = add(&mut wb, ControlKind::GroupBox, (10, 1), |c| {
+            c.size = (200.0, 100.0)
+        });
+        let c = add(&mut wb, ControlKind::OptionButton, (11, 1), |c| {
+            c.link = Some(range("$A$2"))
+        });
         let d = add(&mut wb, ControlKind::OptionButton, (12, 1), |_| {});
         assert!(wb.control(a).unwrap().1.first_button && !wb.control(b).unwrap().1.first_button);
         assert_eq!(wb.sheets[0].option_group(a), [a, b]);
@@ -700,8 +828,14 @@ mod tests {
         assert!(wb.choose_option(b));
         wb.commit("Option Button");
         assert_eq!(wb.value_at(0, 0, 0), Value::Number(2.0));
-        assert_eq!(wb.value_at(0, 1, 0), Value::Empty, "the other group is left alone");
-        let checked = |wb: &Workbook, id: u32| wb.control_state(0, wb.control(id).unwrap().1).checked == CheckState::Checked;
+        assert_eq!(
+            wb.value_at(0, 1, 0),
+            Value::Empty,
+            "the other group is left alone"
+        );
+        let checked = |wb: &Workbook, id: u32| {
+            wb.control_state(0, wb.control(id).unwrap().1).checked == CheckState::Checked
+        };
         assert!(checked(&wb, b) && !checked(&wb, a) && !checked(&wb, c));
         assert!(wb.choose_option(d));
         wb.commit("Option Button");
@@ -719,13 +853,19 @@ mod tests {
             c.link = Some(range("$A$1"));
             c.input = Some(range("$D$1:$D$3"));
         });
-        assert_eq!(wb.control_items(0, wb.control(combo).unwrap().1), ["Red", "Green", "Blue"]);
+        assert_eq!(
+            wb.control_items(0, wb.control(combo).unwrap().1),
+            ["Red", "Green", "Blue"]
+        );
         assert!(wb.set_control_selected(combo, 3));
         wb.commit("Drop Down");
         assert_eq!(wb.value_at(0, 0, 0), Value::Number(3.0));
         wb.set_cell_text(0, 0, 0, "2").unwrap();
         wb.commit("type");
-        assert_eq!(wb.control_state(0, wb.control(combo).unwrap().1).selected, 2);
+        assert_eq!(
+            wb.control_state(0, wb.control(combo).unwrap().1).selected,
+            2
+        );
         let spin = add(&mut wb, ControlKind::SpinButton, (4, 1), |c| {
             c.link = Some(range("$B$1"));
             c.min = 10;
@@ -739,11 +879,19 @@ mod tests {
             wb.commit("Spinner");
         };
         step(&mut wb, 5);
-        assert_eq!(wb.value_at(0, 0, 1), Value::Number(10.0), "0 is under the minimum");
+        assert_eq!(
+            wb.value_at(0, 0, 1),
+            Value::Number(10.0),
+            "0 is under the minimum"
+        );
         step(&mut wb, 5);
         step(&mut wb, 5);
         step(&mut wb, 5);
-        assert_eq!(wb.value_at(0, 0, 1), Value::Number(20.0), "the maximum holds it");
+        assert_eq!(
+            wb.value_at(0, 0, 1),
+            Value::Number(20.0),
+            "the maximum holds it"
+        );
         // The cell moves the control, within its ends.
         wb.set_cell_text(0, 0, 1, "12").unwrap();
         wb.commit("type");

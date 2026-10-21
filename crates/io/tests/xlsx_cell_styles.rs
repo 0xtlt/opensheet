@@ -11,7 +11,9 @@ use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -29,7 +31,14 @@ fn style_at<'a>(wb: &'a Workbook, name: &str) -> &'a str {
 
 fn sample() -> Workbook {
     let mut wb = Workbook::new(Locale::en());
-    for (cell, text) in [("A1", "fine"), ("A2", "0.25"), ("A3", "Report"), ("A4", "mine"), ("A5", "plain"), ("A6", "note")] {
+    for (cell, text) in [
+        ("A1", "fine"),
+        ("A2", "0.25"),
+        ("A3", "Report"),
+        ("A4", "mine"),
+        ("A5", "plain"),
+        ("A6", "note"),
+    ] {
         enter(&mut wb, 0, cell, text);
     }
     wb.apply_cell_style(0, &[rect("A1")], "Good").unwrap();
@@ -53,7 +62,8 @@ fn sample() -> Workbook {
     // A built-in style changed here.
     let mut note = wb.cell_style("Note").unwrap();
     note.style.fill = Some(Color(0xABCDEF));
-    wb.modify_cell_style("Note", note.style, note.includes).unwrap();
+    wb.modify_cell_style("Note", note.style, note.includes)
+        .unwrap();
     wb.apply_cell_style(0, &[rect("A6")], "Note").unwrap();
     wb.commit("styles");
     wb
@@ -67,7 +77,13 @@ fn styles_survive_a_round_trip() {
     let styles = part(&bytes, "xl/styles.xml");
     assert_well_formed("styles.xml", &styles);
     // Normal, then the styles defined or in use, each with its format.
-    let names = styles.split("<cellStyles").nth(1).unwrap().split("</cellStyles>").next().unwrap();
+    let names = styles
+        .split("<cellStyles")
+        .nth(1)
+        .unwrap()
+        .split("</cellStyles>")
+        .next()
+        .unwrap();
     assert_eq!(
         names,
         " count=\"6\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/>\
@@ -79,15 +95,37 @@ fn styles_survive_a_round_trip() {
     );
     assert!(styles.contains("<cellStyleXfs count=\"6\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\"/>"), "{styles}");
     // The style of the user leaves out what it does not include.
-    assert!(styles.contains("applyFont=\"0\" applyBorder=\"0\" applyAlignment=\"0\" applyProtection=\"0\"/>"), "{styles}");
+    assert!(
+        styles.contains(
+            "applyFont=\"0\" applyBorder=\"0\" applyAlignment=\"0\" applyProtection=\"0\"/>"
+        ),
+        "{styles}"
+    );
     // The cells name their style.
-    let cell_xfs = styles.split("<cellXfs").nth(1).unwrap().split("</cellXfs>").next().unwrap();
+    let cell_xfs = styles
+        .split("<cellXfs")
+        .nth(1)
+        .unwrap()
+        .split("</cellXfs>")
+        .next()
+        .unwrap();
     for id in 0..6 {
-        assert!(cell_xfs.contains(&format!("xfId=\"{id}\"")), "xfId {id} in {cell_xfs}");
+        assert!(
+            cell_xfs.contains(&format!("xfId=\"{id}\"")),
+            "xfId {id} in {cell_xfs}"
+        );
     }
 
     let back = load(&bytes);
-    for (cell, style) in [("A1", "Good"), ("A2", "Percent"), ("A3", "Heading 1"), ("A4", "My <style>"), ("A5", "Normal"), ("A6", "Note"), ("B1", "Good")] {
+    for (cell, style) in [
+        ("A1", "Good"),
+        ("A2", "Percent"),
+        ("A3", "Heading 1"),
+        ("A4", "My <style>"),
+        ("A5", "Normal"),
+        ("A6", "Note"),
+        ("B1", "Good"),
+    ] {
         assert_eq!(style_at(&back, cell), style, "{cell}");
     }
     assert!(back.style_at(0, 0, 1).font.italic);
@@ -96,8 +134,14 @@ fn styles_survive_a_round_trip() {
     // Only what Excel's catalogue lacks is kept by the workbook.
     assert_eq!(back.cell_styles, wb.cell_styles);
     let mine = back.cell_style("My <style>").unwrap();
-    assert_eq!((mine.group(), mine.includes.fill, mine.includes.font), (StyleGroup::Custom, true, false));
-    assert_eq!(back.cell_style("Note").unwrap().style.fill, Some(Color(0xABCDEF)));
+    assert_eq!(
+        (mine.group(), mine.includes.fill, mine.includes.font),
+        (StyleGroup::Custom, true, false)
+    );
+    assert_eq!(
+        back.cell_style("Note").unwrap().style.fill,
+        Some(Color(0xABCDEF))
+    );
     assert_eq!(back.cell_style("Good"), wb.cell_style("Good"));
     // And once more, unchanged.
     assert_eq!(part(&to_bytes(&back), "xl/styles.xml"), styles);
@@ -128,23 +172,49 @@ const FRENCH_STYLES: &str = r#"<?xml version="1.0" encoding="UTF-8" standalone="
 
 #[test]
 fn styles_from_a_french_excel_keep_their_names() {
-    let bytes = package(&[("xl/workbook.xml", WORKBOOK), ("xl/worksheets/sheet1.xml", SHEET), ("xl/styles.xml", FRENCH_STYLES)]);
+    let bytes = package(&[
+        ("xl/workbook.xml", WORKBOOK),
+        ("xl/worksheets/sheet1.xml", SHEET),
+        ("xl/styles.xml", FRENCH_STYLES),
+    ]);
     let wb = load(&bytes);
     // Built-in styles go by their English names, whatever the file calls
     // them; a format naming a style that is not there is Normal.
-    for (cell, style) in [("A1", "Good"), ("B1", "Bad"), ("C1", "Mon style"), ("D1", "Normal"), ("E1", "Normal")] {
+    for (cell, style) in [
+        ("A1", "Good"),
+        ("B1", "Bad"),
+        ("C1", "Mon style"),
+        ("D1", "Normal"),
+        ("E1", "Normal"),
+    ] {
         assert_eq!(style_at(&wb, cell), style, "{cell}");
     }
     // Good and Bad are Excel's own: only the style of the user is kept.
-    let kept: Vec<&str> = wb.cell_styles.iter().map(|style| style.name.as_str()).collect();
+    let kept: Vec<&str> = wb
+        .cell_styles
+        .iter()
+        .map(|style| style.name.as_str())
+        .collect();
     assert_eq!(kept, ["Mon style"]);
     let mine = wb.cell_style("Mon style").unwrap();
     assert_eq!(mine.style.fill, Some(Color(0x00B0F0)));
     assert!(mine.style.font.bold);
-    assert_eq!(mine.includes, StyleParts { font: true, fill: true, ..StyleParts::NONE });
+    assert_eq!(
+        mine.includes,
+        StyleParts {
+            font: true,
+            fill: true,
+            ..StyleParts::NONE
+        }
+    );
     // Written again and read again: the same names on the same cells.
     let again = load(&to_bytes(&wb));
-    for (cell, style) in [("A1", "Good"), ("B1", "Bad"), ("C1", "Mon style"), ("D1", "Normal")] {
+    for (cell, style) in [
+        ("A1", "Good"),
+        ("B1", "Bad"),
+        ("C1", "Mon style"),
+        ("D1", "Normal"),
+    ] {
         assert_eq!(style_at(&again, cell), style, "{cell}");
     }
     assert_eq!(again.cell_styles, wb.cell_styles);
@@ -162,7 +232,10 @@ fn damaged_style_lists_are_survived() {
             ("xl/styles.xml", &FRENCH_STYLES[..cut]),
         ]);
         let wb = load(&bytes);
-        assert_eq!(common::value(&wb, 0, "A1"), opensheet_engine::Value::Number(1.0));
+        assert_eq!(
+            common::value(&wb, 0, "A1"),
+            opensheet_engine::Value::Number(1.0)
+        );
         assert_well_formed("styles.xml", &part(&to_bytes(&wb), "xl/styles.xml"));
     }
 }

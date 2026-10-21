@@ -358,7 +358,12 @@ impl Comment {
 
 fn serial_of(moment: &chrono::NaiveDateTime) -> f64 {
     use chrono::{Datelike, Timelike};
-    let day = date_to_serial(moment.year() as i64, moment.month() as i64, moment.day() as i64).unwrap_or(0.0);
+    let day = date_to_serial(
+        moment.year() as i64,
+        moment.month() as i64,
+        moment.day() as i64,
+    )
+    .unwrap_or(0.0);
     let seconds = moment.second() as f64 + moment.nanosecond() as f64 / 1e9;
     day + time_to_serial(moment.hour() as f64, moment.minute() as f64, seconds)
 }
@@ -389,7 +394,9 @@ pub fn utc_to_local(serial: f64) -> f64 {
     let (year, month, day, hundredths) = parts(serial);
     let (seconds, milli) = ((hundredths / 100) as u32, (hundredths % 100) as u32 * 10);
     chrono::NaiveDate::from_ymd_opt(year as i32, month, day)
-        .and_then(|date| date.and_hms_milli_opt(seconds / 3600, seconds / 60 % 60, seconds % 60, milli))
+        .and_then(|date| {
+            date.and_hms_milli_opt(seconds / 3600, seconds / 60 % 60, seconds % 60, milli)
+        })
         .map_or(serial, |utc| {
             serial_of(&chrono::Local.from_utc_datetime(&utc).naive_local())
         })
@@ -414,8 +421,17 @@ pub fn time_from_iso(text: &str) -> Option<f64> {
     let mut date = date.split('-').map(|part| part.parse::<i64>().ok());
     let (year, month, day) = (date.next()??, date.next()??, date.next()??);
     let mut time = time.split(':').map(|part| part.parse::<f64>().ok());
-    let (hours, minutes, seconds) = (time.next()??, time.next()??, time.next().flatten().unwrap_or(0.0));
-    if !(1..=12).contains(&month) || !(1..=31).contains(&day) || hours >= 24.0 || minutes >= 60.0 || seconds >= 61.0 {
+    let (hours, minutes, seconds) = (
+        time.next()??,
+        time.next()??,
+        time.next().flatten().unwrap_or(0.0),
+    );
+    if !(1..=12).contains(&month)
+        || !(1..=31).contains(&day)
+        || hours >= 24.0
+        || minutes >= 60.0
+        || seconds >= 61.0
+    {
         return None;
     }
     Some(date_to_serial(year, month, day)? + time_to_serial(hours, minutes, seconds))
@@ -544,7 +560,9 @@ impl Sheet {
 
 /// A box moved along with its cell by (`d_row`, `d_col`).
 fn shifted_box(frame: NoteBox, d_row: i64, d_col: i64) -> NoteBox {
-    let moved = |position: u32, delta: i64, max: u32| (position as i64 + delta).clamp(0, max as i64 - 1) as u32;
+    let moved = |position: u32, delta: i64, max: u32| {
+        (position as i64 + delta).clamp(0, max as i64 - 1) as u32
+    };
     NoteBox {
         anchor: (
             moved(frame.anchor.0, d_row, MAX_ROWS),
@@ -561,7 +579,11 @@ impl Workbook {
     }
 
     fn change_note(&mut self, sheet: usize, row: u32, col: u32, f: impl FnOnce(&mut Note)) -> bool {
-        if self.comment_at(sheet, row, col).and_then(Comment::as_note).is_none() {
+        if self
+            .comment_at(sheet, row, col)
+            .and_then(Comment::as_note)
+            .is_none()
+        {
             return false;
         }
         self.snapshot();
@@ -601,7 +623,9 @@ impl Workbook {
     pub fn set_note(&mut self, sheet: usize, row: u32, col: u32, author: &str, text: &str) -> bool {
         match self.comment_at(sheet, row, col).map(Comment::kind) {
             Some(CommentKind::Thread) => false,
-            Some(CommentKind::Note) => self.change_note(sheet, row, col, |note| note.set_text(text)),
+            Some(CommentKind::Note) => {
+                self.change_note(sheet, row, col, |note| note.set_text(text))
+            }
             None if sheet < self.sheets.len() && row < MAX_ROWS && col < MAX_COLS => {
                 self.snapshot();
                 self.sheets[sheet]
@@ -631,7 +655,11 @@ impl Workbook {
     /// Show or hide every note of a sheet ("Show All Notes"). Returns
     /// whether any changed.
     pub fn set_all_notes_visible(&mut self, sheet: usize, visible: bool) -> bool {
-        let differs = |comment: &Comment| comment.as_note().is_some_and(|note| note.visible != visible);
+        let differs = |comment: &Comment| {
+            comment
+                .as_note()
+                .is_some_and(|note| note.visible != visible)
+        };
         if !self
             .sheets
             .get(sheet)
@@ -650,7 +678,13 @@ impl Workbook {
 
     /// Move or resize the box of a note; `None` puts it back next to its
     /// cell.
-    pub fn set_note_frame(&mut self, sheet: usize, row: u32, col: u32, frame: Option<Frame>) -> bool {
+    pub fn set_note_frame(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        frame: Option<Frame>,
+    ) -> bool {
         let Some(sh) = self.sheets.get(sheet) else {
             return false;
         };
@@ -679,7 +713,8 @@ impl Workbook {
             .iter()
             .flat_map(|r| {
                 let rows = sh.comments.range((r.r0, 0)..=(r.r1, u32::MAX));
-                rows.map(|(cell, _)| *cell).filter(|(_, col)| r.c0 <= *col && *col <= r.c1)
+                rows.map(|(cell, _)| *cell)
+                    .filter(|(_, col)| r.c0 <= *col && *col <= r.c1)
             })
             .collect();
         if !doomed.is_empty() {
@@ -693,7 +728,15 @@ impl Workbook {
 
     /// Start a comment thread on a cell (New Comment). `time` is
     /// `now_utc()`. Refused when the cell already has a note or a thread.
-    pub fn add_comment(&mut self, sheet: usize, row: u32, col: u32, author: &Person, time: f64, text: &str) -> bool {
+    pub fn add_comment(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        author: &Person,
+        time: f64,
+        text: &str,
+    ) -> bool {
         self.add_comment_post(sheet, row, col, Post::new(author, time, text))
     }
 
@@ -712,12 +755,22 @@ impl Workbook {
             replies: Vec::new(),
             resolved: false,
         };
-        self.sheets[sheet].comments.insert((row, col), Comment::Thread(thread));
+        self.sheets[sheet]
+            .comments
+            .insert((row, col), Comment::Thread(thread));
         true
     }
 
     /// Reply to the thread of a cell. Refused while it is resolved.
-    pub fn add_reply(&mut self, sheet: usize, row: u32, col: u32, author: &Person, time: f64, text: &str) -> bool {
+    pub fn add_reply(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        author: &Person,
+        time: f64,
+        text: &str,
+    ) -> bool {
         self.add_reply_post(sheet, row, col, Post::new(author, time, text))
     }
 
@@ -729,7 +782,14 @@ impl Workbook {
     /// Change the text of the first comment of a thread (`reply` `None`)
     /// or of one of its replies; it then names nobody. Refused while the
     /// thread is resolved.
-    pub fn edit_comment(&mut self, sheet: usize, row: u32, col: u32, reply: Option<usize>, text: &str) -> bool {
+    pub fn edit_comment(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        reply: Option<usize>,
+        text: &str,
+    ) -> bool {
         self.edit_comment_mentions(sheet, row, col, reply, text, Vec::new())
     }
 
@@ -796,7 +856,13 @@ impl Workbook {
     }
 
     /// Resolve a thread, or reopen it.
-    pub fn set_comment_resolved(&mut self, sheet: usize, row: u32, col: u32, resolved: bool) -> bool {
+    pub fn set_comment_resolved(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+        resolved: bool,
+    ) -> bool {
         let differs = |thread: &Thread| thread.resolved != resolved;
         if !self
             .comment_at(sheet, row, col)
@@ -826,7 +892,9 @@ impl Workbook {
         }
         let count = converted.len();
         for (cell, thread) in converted {
-            self.sheets[sheet].comments.insert(cell, Comment::Thread(thread));
+            self.sheets[sheet]
+                .comments
+                .insert(cell, Comment::Thread(thread));
         }
         count
     }
@@ -843,7 +911,9 @@ impl Workbook {
             return false;
         };
         self.snapshot();
-        self.sheets[sheet].comments.insert((row, col), Comment::Thread(thread));
+        self.sheets[sheet]
+            .comments
+            .insert((row, col), Comment::Thread(thread));
         true
     }
 
@@ -853,7 +923,11 @@ impl Workbook {
     /// order and then on the following sheets; `kind` looks for one kind
     /// only. `None` at the end of the workbook: Excel then offers to start
     /// again (`end_of_workbook_question`, `first_comment`).
-    pub fn next_comment(&self, from: (usize, u32, u32), kind: Option<CommentKind>) -> Option<(usize, u32, u32)> {
+    pub fn next_comment(
+        &self,
+        from: (usize, u32, u32),
+        kind: Option<CommentKind>,
+    ) -> Option<(usize, u32, u32)> {
         let wanted = |comment: &Comment| kind.is_none_or(|kind| comment.kind() == kind);
         let (sheet, row, col) = from;
         let rest = self
@@ -864,15 +938,23 @@ impl Workbook {
         if let Some((cell, _)) = rest.into_iter().find(|(_, comment)| wanted(comment)) {
             return Some((sheet, cell.0, cell.1));
         }
-        self.sheets.iter().enumerate().skip(sheet + 1).find_map(|(index, sh)| {
-            let (cell, _) = sh.comments.iter().find(|(_, comment)| wanted(comment))?;
-            Some((index, cell.0, cell.1))
-        })
+        self.sheets
+            .iter()
+            .enumerate()
+            .skip(sheet + 1)
+            .find_map(|(index, sh)| {
+                let (cell, _) = sh.comments.iter().find(|(_, comment)| wanted(comment))?;
+                Some((index, cell.0, cell.1))
+            })
     }
 
     /// The last note or comment before a cell, back to the beginning of
     /// the workbook.
-    pub fn previous_comment(&self, from: (usize, u32, u32), kind: Option<CommentKind>) -> Option<(usize, u32, u32)> {
+    pub fn previous_comment(
+        &self,
+        from: (usize, u32, u32),
+        kind: Option<CommentKind>,
+    ) -> Option<(usize, u32, u32)> {
         let wanted = |comment: &Comment| kind.is_none_or(|kind| comment.kind() == kind);
         let (sheet, row, col) = from;
         let before = self.sheets.get(sheet)?.comments.range(..(row, col));
@@ -885,7 +967,11 @@ impl Workbook {
             .take(sheet)
             .rev()
             .find_map(|(index, sh)| {
-                let (cell, _) = sh.comments.iter().rev().find(|(_, comment)| wanted(comment))?;
+                let (cell, _) = sh
+                    .comments
+                    .iter()
+                    .rev()
+                    .find(|(_, comment)| wanted(comment))?;
                 Some((index, cell.0, cell.1))
             })
     }
@@ -902,10 +988,18 @@ impl Workbook {
     /// The last note or comment of the workbook.
     pub fn last_comment(&self, kind: Option<CommentKind>) -> Option<(usize, u32, u32)> {
         let wanted = |comment: &Comment| kind.is_none_or(|kind| comment.kind() == kind);
-        self.sheets.iter().enumerate().rev().find_map(|(index, sh)| {
-            let (cell, _) = sh.comments.iter().rev().find(|(_, comment)| wanted(comment))?;
-            Some((index, cell.0, cell.1))
-        })
+        self.sheets
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(index, sh)| {
+                let (cell, _) = sh
+                    .comments
+                    .iter()
+                    .rev()
+                    .find(|(_, comment)| wanted(comment))?;
+                Some((index, cell.0, cell.1))
+            })
     }
 
     // ---- with their cells ------------------------------------------------
@@ -916,7 +1010,14 @@ impl Workbook {
     /// pasted over a selection, a row filled down), which each get them.
     /// With `take` they leave the source (cut and paste, dragging cells),
     /// else they are copied (copy and paste, filling).
-    fn carry_comments(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dests: &[Rect], take: bool) {
+    fn carry_comments(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dests: &[Rect],
+        take: bool,
+    ) {
         if src_sheet >= self.sheets.len() || dest_sheet >= self.sheets.len() {
             return;
         }
@@ -953,8 +1054,12 @@ impl Workbook {
             self.sheets[dest_sheet].comments.remove(&cell);
         }
         for ((row, col), comment) in comments {
-            let copies = dests.iter().flat_map(|dest| tiled(Rect::cell(row, col), &src, dest));
-            let cells = copies.flat_map(|copy| (copy.r0..=copy.r1).flat_map(move |r| (copy.c0..=copy.c1).map(move |c| (r, c))));
+            let copies = dests
+                .iter()
+                .flat_map(|dest| tiled(Rect::cell(row, col), &src, dest));
+            let cells = copies.flat_map(|copy| {
+                (copy.r0..=copy.r1).flat_map(move |r| (copy.c0..=copy.c1).map(move |c| (r, c)))
+            });
             for target in cells {
                 let (d_row, d_col) = (target.0 as i64 - row as i64, target.1 as i64 - col as i64);
                 let mut comment = comment.clone();
@@ -984,7 +1089,14 @@ impl Workbook {
     /// Notes and comments follow cells that are moved (cut and paste,
     /// dragging a selection): `move_range` calls this, with its own
     /// arguments. Those of the destination are replaced.
-    pub fn move_comments(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
+    pub fn move_comments(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest_row: u32,
+        dest_col: u32,
+    ) {
         if let Some(dest) = Self::block_at(src, dest_row, dest_col) {
             self.carry_comments(src_sheet, src, dest_sheet, &[dest], true);
         }
@@ -993,7 +1105,14 @@ impl Workbook {
     /// Notes and comments are copied with their cells (`paste` does it
     /// for Paste and for Paste Special ▸ Comments and Notes): the block at
     /// (`dest_row`, `dest_col`) gets those of `src`, and loses its own.
-    pub fn copy_comments(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dest_row: u32, dest_col: u32) {
+    pub fn copy_comments(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dest_row: u32,
+        dest_col: u32,
+    ) {
         if let Some(dest) = Self::block_at(src, dest_row, dest_col) {
             self.carry_comments(src_sheet, src, dest_sheet, &[dest], false);
         }
@@ -1004,7 +1123,13 @@ impl Workbook {
     /// pasted over a selection, a row filled down) or one copy cut short,
     /// and every copy gets the notes and comments of `src`. Several
     /// destinations are the blocks of rows a filter leaves shown.
-    pub(crate) fn tile_comments(&mut self, src_sheet: usize, src: Rect, dest_sheet: usize, dests: &[Rect]) {
+    pub(crate) fn tile_comments(
+        &mut self,
+        src_sheet: usize,
+        src: Rect,
+        dest_sheet: usize,
+        dests: &[Rect],
+    ) {
         self.carry_comments(src_sheet, src, dest_sheet, dests, false);
     }
 
@@ -1012,7 +1137,13 @@ impl Workbook {
     /// Remove Duplicates moves: `moves` lists (from, to) rows, or columns
     /// when `by_rows` is false. Those found on the lines written over
     /// are replaced.
-    pub(crate) fn reorder_comments(&mut self, sheet: usize, rect: Rect, by_rows: bool, moves: &[(u32, u32)]) {
+    pub(crate) fn reorder_comments(
+        &mut self,
+        sheet: usize,
+        rect: Rect,
+        by_rows: bool,
+        moves: &[(u32, u32)],
+    ) {
         let Some(sh) = self.sheets.get(sheet).filter(|sh| !sh.comments.is_empty()) else {
             return;
         };
@@ -1064,7 +1195,11 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
     for ((row, col), mut comment) in std::mem::take(&mut sheet.comments) {
         let position = if row_axis { row } else { col };
         let moved = if insert {
-            if position >= at { position + count } else { position }
+            if position >= at {
+                position + count
+            } else {
+                position
+            }
         } else if position < at {
             position
         } else if position >= at + count {
@@ -1075,13 +1210,30 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
         if moved >= max {
             continue;
         }
-        if let Comment::Note(Note { frame: Some(frame), .. }) = &mut comment {
+        if let Comment::Note(Note {
+            frame: Some(frame), ..
+        }) = &mut comment
+        {
             if row_axis {
-                (frame.anchor.0, frame.offset.1) =
-                    moved_corner(frame.anchor.0, frame.offset.1, false, insert, at, count, max);
+                (frame.anchor.0, frame.offset.1) = moved_corner(
+                    frame.anchor.0,
+                    frame.offset.1,
+                    false,
+                    insert,
+                    at,
+                    count,
+                    max,
+                );
             } else {
-                (frame.anchor.1, frame.offset.0) =
-                    moved_corner(frame.anchor.1, frame.offset.0, false, insert, at, count, max);
+                (frame.anchor.1, frame.offset.0) = moved_corner(
+                    frame.anchor.1,
+                    frame.offset.0,
+                    false,
+                    insert,
+                    at,
+                    count,
+                    max,
+                );
             }
         }
         sheet
@@ -1150,7 +1302,10 @@ mod tests {
         assert_eq!(note.text(), "Ada:\nCheck this figure.");
         // The author's name is in bold, the rest is not; all of it in Tahoma 9.
         assert_eq!(note.runs.len(), 2);
-        assert_eq!((note.runs[0].text.as_str(), note.runs[0].font.bold), ("Ada:", true));
+        assert_eq!(
+            (note.runs[0].text.as_str(), note.runs[0].font.bold),
+            ("Ada:", true)
+        );
         assert_eq!(
             (note.runs[1].text.as_str(), note.runs[1].font.bold),
             ("\nCheck this figure.", false)
@@ -1169,7 +1324,10 @@ mod tests {
             ("Ada", 1, "Plain words")
         );
         w.undo();
-        assert_eq!(note_text(&w, "B2").as_deref(), Some("Ada:\nCheck this figure."));
+        assert_eq!(
+            note_text(&w, "B2").as_deref(),
+            Some("Ada:\nCheck this figure.")
+        );
         w.undo();
         assert!(w.comment_at(0, 1, 1).is_none());
         w.redo();
@@ -1214,15 +1372,24 @@ mod tests {
         w.set_note(0, 4, 2, "Ada", "below");
         w.commit("notes");
         // Where Excel first puts them: 15 pixels right of the cell, a little above its top.
-        assert_eq!(w.sheets[0].note_frame(0, 0), Some(Frame::new(79.0, 2.0, 144.0, 79.0)));
-        assert_eq!(w.sheets[0].note_frame(4, 2), Some(Frame::new(207.0, 70.0, 144.0, 79.0)));
+        assert_eq!(
+            w.sheets[0].note_frame(0, 0),
+            Some(Frame::new(79.0, 2.0, 144.0, 79.0))
+        );
+        assert_eq!(
+            w.sheets[0].note_frame(4, 2),
+            Some(Frame::new(207.0, 70.0, 144.0, 79.0))
+        );
         assert_eq!(
             w.sheets[0].note_corners(0, 0),
             Some((((0, 1), (15.0, 2.0)), ((4, 3), (31.0, 1.0))))
         );
         assert_eq!(w.sheets[0].note_frame(1, 1), None);
         // The box of a note about to be written opens at the same place.
-        assert_eq!(w.sheets[0].default_note_frame(4, 2), Frame::new(207.0, 70.0, 144.0, 79.0));
+        assert_eq!(
+            w.sheets[0].default_note_frame(4, 2),
+            Frame::new(207.0, 70.0, 144.0, 79.0)
+        );
         // A box left alone follows its cell and the widths of the columns.
         w.set_col_width(0, 2, Some(100.0));
         w.insert_rows(0, 0, 3);
@@ -1234,7 +1401,13 @@ mod tests {
         // A box placed by hand stays where it was put, and moves with the rows above it.
         assert!(w.set_note_frame(0, 7, 2, Some(Frame::new(300.0, 210.0, 200.0, 50.0))));
         w.commit("move");
-        let placed = w.comment_at(0, 7, 2).unwrap().as_note().unwrap().frame.unwrap();
+        let placed = w
+            .comment_at(0, 7, 2)
+            .unwrap()
+            .as_note()
+            .unwrap()
+            .frame
+            .unwrap();
         assert_eq!(
             placed,
             NoteBox {
@@ -1270,7 +1443,10 @@ mod tests {
     fn threads() {
         let mut w = wb(&[]);
         let (ada, bob) = (Person::new("Ada"), Person::new("Bob"));
-        assert_eq!((ada.user_id.as_str(), ada.provider_id.as_str()), ("Ada", "None"));
+        assert_eq!(
+            (ada.user_id.as_str(), ada.provider_id.as_str()),
+            ("Ada", "None")
+        );
         assert!(w.add_comment(0, 2, 1, &ada, NOON, "Is this right?"));
         assert!(!w.add_comment(0, 2, 1, &bob, NOON, "second thread"));
         assert!(!w.set_note(0, 2, 1, "Bob", "a note on top"));
@@ -1283,12 +1459,11 @@ mod tests {
         assert!(!w.edit_comment(0, 2, 1, Some(2), "no such reply"));
         w.commit("edit");
         let t = thread(&w, "B3");
+        assert_eq!(t.first, Post::new(&ada, NOON, "Is this right? (B3)"));
         assert_eq!(
-            t.first,
-            Post::new(&ada, NOON, "Is this right? (B3)")
-        );
-        assert_eq!(
-            t.posts().map(|p| p.author.name.as_str()).collect::<Vec<_>>(),
+            t.posts()
+                .map(|p| p.author.name.as_str())
+                .collect::<Vec<_>>(),
             ["Ada", "Bob", "Ada"]
         );
         assert_eq!(t.replies[1].text, "Thanks");
@@ -1327,7 +1502,10 @@ mod tests {
             ("Bob", "Second", NOON)
         );
         // The others stay notes; a thread or an empty cell is not converted.
-        assert_eq!(w.comment_at(0, 8, 0).map(Comment::kind), Some(CommentKind::Note));
+        assert_eq!(
+            w.comment_at(0, 8, 0).map(Comment::kind),
+            Some(CommentKind::Note)
+        );
         assert!(!w.convert_note_to_comment(0, 9, 0, NOON));
         assert!(!w.convert_note_to_comment(0, 20, 0, NOON));
         w.undo();
@@ -1352,9 +1530,16 @@ mod tests {
         assert_eq!(thread(&w, "A2").first.text, "No header");
         assert_eq!(thread(&w, "A3").first.time, NOON);
         assert_eq!(w.convert_notes_to_comments(0, NOON), 0);
-        assert!(w.sheets[0].comment_cells(Some(CommentKind::Note)).is_empty());
+        assert!(
+            w.sheets[0]
+                .comment_cells(Some(CommentKind::Note))
+                .is_empty()
+        );
         w.undo();
-        assert_eq!(w.sheets[0].comment_cells(Some(CommentKind::Note)), [(0, 0), (1, 0)]);
+        assert_eq!(
+            w.sheets[0].comment_cells(Some(CommentKind::Note)),
+            [(0, 0), (1, 0)]
+        );
         assert!(
             convert_question(Locale::fr())
                 .0
@@ -1376,7 +1561,10 @@ mod tests {
         w.commit("setup");
         // Sheet order is row by row, then the following sheets.
         assert_eq!(w.sheets[0].comment_cells(None), [(0, 1), (0, 3), (5, 0)]);
-        assert_eq!(w.sheets[0].comment_cells(Some(CommentKind::Thread)), [(0, 3)]);
+        assert_eq!(
+            w.sheets[0].comment_cells(Some(CommentKind::Thread)),
+            [(0, 3)]
+        );
         assert_eq!(w.first_comment(None), Some((0, 0, 1)));
         assert_eq!(w.next_comment((0, 0, 0), None), Some((0, 0, 1)));
         assert_eq!(w.next_comment((0, 0, 1), None), Some((0, 0, 3)));
@@ -1397,7 +1585,10 @@ mod tests {
         assert_eq!(w.first_comment(threads), Some((0, 0, 3)));
         assert_eq!(w.last_comment(threads), Some((third, 2, 2)));
         assert_eq!(wb(&[]).first_comment(None), None);
-        assert!(end_of_workbook_question(Locale::en()).starts_with("Microsoft Excel reached the end of the workbook."));
+        assert!(
+            end_of_workbook_question(Locale::en())
+                .starts_with("Microsoft Excel reached the end of the workbook.")
+        );
     }
 
     #[test]
@@ -1410,7 +1601,10 @@ mod tests {
         w.insert_rows(0, 2, 2);
         w.insert_cols(0, 0, 1);
         w.commit("insert");
-        assert_eq!(w.sheets[0].comment_cells(None), [cell("C2"), cell("E7"), cell("B10")]);
+        assert_eq!(
+            w.sheets[0].comment_cells(None),
+            [cell("C2"), cell("E7"), cell("B10")]
+        );
         assert_eq!(note_text(&w, "E7").as_deref(), Some("D5"));
         // Comments of deleted cells go with them.
         w.delete_rows(0, 5, 3);
@@ -1420,7 +1614,10 @@ mod tests {
         assert_eq!(thread(&w, "B7").first.text, "A8");
         w.undo();
         w.undo();
-        assert_eq!(w.sheets[0].comment_cells(None), [cell("B2"), cell("D5"), cell("A8")]);
+        assert_eq!(
+            w.sheets[0].comment_cells(None),
+            [cell("B2"), cell("D5"), cell("A8")]
+        );
         // Edits on another sheet and copies of the sheet.
         let other = w.add_sheet(1);
         w.insert_rows(other, 0, 4);
@@ -1442,11 +1639,20 @@ mod tests {
         // Cut A1:A3 and paste on C5: the cells and what is attached to them move.
         w.move_range(0, rect("A1:A3"), 0, 4, 2);
         w.commit("move");
-        assert_eq!(w.sheets[0].comment_cells(None), [cell("C5"), cell("C6"), cell("J10")]);
+        assert_eq!(
+            w.sheets[0].comment_cells(None),
+            [cell("C5"), cell("C6"), cell("J10")]
+        );
         assert_eq!(note_text(&w, "C5").as_deref(), Some("on A1"));
         assert_eq!(thread(&w, "C6").first.text, "on A2");
         // The box placed by hand moved by as many cells as its note.
-        let moved = w.comment_at(0, 4, 2).unwrap().as_note().unwrap().frame.unwrap();
+        let moved = w
+            .comment_at(0, 4, 2)
+            .unwrap()
+            .as_note()
+            .unwrap()
+            .frame
+            .unwrap();
         assert_eq!((moved.anchor, moved.offset), ((4, 3), (36.0, 0.0)));
         w.undo();
         assert_eq!(
@@ -1504,7 +1710,9 @@ mod tests {
         }
         // Now is in this century, and local time is within a day of UTC.
         let now = now_utc();
-        assert!(now > date_to_serial(2025, 1, 1).unwrap() && now < date_to_serial(2100, 1, 1).unwrap());
+        assert!(
+            now > date_to_serial(2025, 1, 1).unwrap() && now < date_to_serial(2100, 1, 1).unwrap()
+        );
         assert!((utc_to_local(now) - now).abs() <= 1.0);
         let offset = utc_to_local(serial) - serial;
         assert!(
@@ -1545,7 +1753,12 @@ mod tests {
             ]
         );
         assert!(w.add_comment_post(0, 0, 0, post.clone()));
-        assert!(w.add_reply_post(0, 0, 0, Post::new(&bob, NOON, "@Ada ok").with_mentions(vec![at(&ada, 0, 4)])));
+        assert!(w.add_reply_post(
+            0,
+            0,
+            0,
+            Post::new(&bob, NOON, "@Ada ok").with_mentions(vec![at(&ada, 0, 4)])
+        ));
         w.commit("mentions");
         assert_eq!(thread(&w, "A1").first, post);
         // Authors and people named, each once, as they come.
@@ -1562,7 +1775,11 @@ mod tests {
         w.undo();
         assert_eq!(thread(&w, "A1").first, post);
         // The note standing in for the thread says the names as text.
-        assert!(thread(&w, "A1").legacy_text(Locale::en()).contains("@Bob vérifie"));
+        assert!(
+            thread(&w, "A1")
+                .legacy_text(Locale::en())
+                .contains("@Bob vérifie")
+        );
     }
 
     #[test]
@@ -1573,11 +1790,12 @@ mod tests {
             resolved: false,
         };
         let text = t.legacy_text(Locale::en());
-        assert!(
-            text.starts_with("[Threaded comment]\n\nYour version of Excel allows you to read this threaded comment;")
-        );
+        assert!(text.starts_with(
+            "[Threaded comment]\n\nYour version of Excel allows you to read this threaded comment;"
+        ));
         assert!(text.ends_with("linkid=870924\n\nComment:\n    Why?"));
-        t.replies.push(Post::new(&Person::new("Bob"), NOON, "Because."));
+        t.replies
+            .push(Post::new(&Person::new("Bob"), NOON, "Because."));
         assert!(
             t.legacy_text(Locale::en())
                 .ends_with("Comment:\n    Why?\nReply:\n    Because.")

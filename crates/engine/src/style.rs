@@ -120,7 +120,11 @@ impl Color {
     /// is `rgb`. `Theme::color` works the value out; this is for whoever
     /// already has it.
     pub const fn themed(slot: ThemeSlot, tint: f64, rgb: u32) -> Color {
-        let tint = if tint.is_finite() { tint.clamp(-1.0, 1.0) } else { 0.0 };
+        let tint = if tint.is_finite() {
+            tint.clamp(-1.0, 1.0)
+        } else {
+            0.0
+        };
         Color {
             rgb,
             slot: slot as u8 + 1,
@@ -182,7 +186,11 @@ impl Color {
 impl std::fmt::Debug for Color {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.theme() {
-            Some(theme) => write!(f, "Color({:#08X}, {:?}{:+})", self.rgb, theme.slot, theme.tint),
+            Some(theme) => write!(
+                f,
+                "Color({:#08X}, {:?}{:+})",
+                self.rgb, theme.slot, theme.tint
+            ),
             None => write!(f, "Color({})", self.rgb),
         }
     }
@@ -460,8 +468,19 @@ impl StylePatch {
             )*};
         }
         take!(
-            font_name, font_size, bold, italic, underline, strike, font_color, fill, border_left, border_right,
-            border_top, border_bottom, num_fmt
+            font_name,
+            font_size,
+            bold,
+            italic,
+            underline,
+            strike,
+            font_color,
+            fill,
+            border_left,
+            border_right,
+            border_top,
+            border_bottom,
+            num_fmt
         );
     }
 }

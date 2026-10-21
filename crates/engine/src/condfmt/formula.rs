@@ -160,7 +160,11 @@ fn at_position(e: &Expr, row: u32, col: u32) -> Expr {
         Expr::Paren(x) => Expr::Paren(Box::new(sub(x))),
         Expr::Binary(op, a, b) => Expr::Binary(*op, Box::new(sub(a)), Box::new(sub(b))),
         Expr::Func(name, args) => Expr::Func(name.clone(), args.iter().map(sub).collect()),
-        Expr::Array(rows) => Expr::Array(rows.iter().map(|row| row.iter().map(sub).collect()).collect()),
+        Expr::Array(rows) => Expr::Array(
+            rows.iter()
+                .map(|row| row.iter().map(sub).collect())
+                .collect(),
+        ),
         other => other.clone(),
     }
 }
@@ -178,7 +182,12 @@ pub(super) fn eval_at(wb: &Workbook, sheet: usize, at: (u32, u32), e: &Expr) -> 
 /// costs a walk over the whole workbook, far more than a formula, so the
 /// formulas travel together as the elements of one array constant. `None`
 /// when the evaluator did not hand back one value per formula.
-fn eval_together(wb: &Workbook, sheet: usize, at: (u32, u32), exprs: &mut Vec<Expr>) -> Option<Vec<Value>> {
+fn eval_together(
+    wb: &Workbook,
+    sheet: usize,
+    at: (u32, u32),
+    exprs: &mut Vec<Expr>,
+) -> Option<Vec<Value>> {
     let count = exprs.len();
     let array = Expr::Array(vec![std::mem::take(exprs)]);
     let result = Calc::eval_once(wb, sheet, at.0, at.1, &array);
@@ -204,12 +213,19 @@ pub(super) fn eval_cells(
     if cells.is_empty() || exprs.is_empty() {
         return Vec::new();
     }
-    let reads_position: Vec<bool> = exprs.iter().map(|e| !opaque && reads_own_position(e)).collect();
+    let reads_position: Vec<bool> = exprs
+        .iter()
+        .map(|e| !opaque && reads_own_position(e))
+        .collect();
     let mut together = !opaque;
     let mut placed = Vec::with_capacity(cells.len() * exprs.len());
     for &(row, col) in cells {
         for (e, &reads) in exprs.iter().zip(&reads_position) {
-            let mut x = shifted(e, row as i64 - anchor.0 as i64, col as i64 - anchor.1 as i64);
+            let mut x = shifted(
+                e,
+                row as i64 - anchor.0 as i64,
+                col as i64 - anchor.1 as i64,
+            );
             if reads {
                 x = at_position(&x, row, col);
                 // A call hidden where the rewrite does not reach: this
@@ -242,7 +258,12 @@ fn offset(from: (u32, u32), to: (u32, u32)) -> (i64, i64) {
 /// formulas are read in the workbook locale. A formula is typed for the
 /// active cell and stored for the rule's anchor (the top-left cell of its
 /// first range): pass both.
-pub fn parse_operand(text: &str, locale: &Locale, active: (u32, u32), anchor: (u32, u32)) -> Result<Expr, ParseError> {
+pub fn parse_operand(
+    text: &str,
+    locale: &Locale,
+    active: (u32, u32),
+    anchor: (u32, u32),
+) -> Result<Expr, ParseError> {
     let (d_row, d_col) = offset(active, anchor);
     match input::parse_input(text.trim(), locale)?.content {
         Content::Formula(e) => Ok(shifted(&e, d_row, d_col)),
@@ -278,7 +299,13 @@ pub fn parse_text_operand(
 /// `parse_operand` (and of `parse_text_operand` when `bare_text` is set,
 /// where a text constant is shown without quotes). Formulas are shown as
 /// they read from the active cell.
-pub fn operand_text(e: &Expr, locale: &Locale, anchor: (u32, u32), active: (u32, u32), bare_text: bool) -> String {
+pub fn operand_text(
+    e: &Expr,
+    locale: &Locale,
+    anchor: (u32, u32),
+    active: (u32, u32),
+    bare_text: bool,
+) -> String {
     match e {
         Expr::Number(n) => locale.number_to_text(*n),
         Expr::Text(s) if bare_text => s.to_string(),
@@ -341,7 +368,9 @@ pub fn ooxml_formulas(cf: &CondFormat) -> Vec<Expr> {
     let c = RefExpr::cell(anchor.0, anchor.1).to_text();
     let parsed = |text: String| -> Vec<Expr> { parse_formula(&text, en).into_iter().collect() };
     match &cf.rule {
-        Rule::CellIs { first, second, .. } => std::iter::once(first.clone()).chain(second.clone()).collect(),
+        Rule::CellIs { first, second, .. } => std::iter::once(first.clone())
+            .chain(second.clone())
+            .collect(),
         Rule::Formula(e) => vec![e.clone()],
         Rule::Text { op, text } => {
             let t = text.to_text(en);
@@ -370,12 +399,18 @@ pub fn ooxml_formulas(cf: &CondFormat) -> Vec<Expr> {
             TimePeriod::NextWeek => format!(
                 "AND(ROUNDDOWN({c},0)-TODAY()>(7-WEEKDAY(TODAY())),ROUNDDOWN({c},0)-TODAY()<(15-WEEKDAY(TODAY())))"
             ),
-            TimePeriod::ThisMonth => format!("AND(MONTH({c})=MONTH(TODAY()),YEAR({c})=YEAR(TODAY()))"),
+            TimePeriod::ThisMonth => {
+                format!("AND(MONTH({c})=MONTH(TODAY()),YEAR({c})=YEAR(TODAY()))")
+            }
             TimePeriod::LastMonth => {
-                format!("AND(MONTH({c})=MONTH(EDATE(TODAY(),0-1)),YEAR({c})=YEAR(EDATE(TODAY(),0-1)))")
+                format!(
+                    "AND(MONTH({c})=MONTH(EDATE(TODAY(),0-1)),YEAR({c})=YEAR(EDATE(TODAY(),0-1)))"
+                )
             }
             TimePeriod::NextMonth => {
-                format!("AND(MONTH({c})=MONTH(EDATE(TODAY(),0+1)),YEAR({c})=YEAR(EDATE(TODAY(),0+1)))")
+                format!(
+                    "AND(MONTH({c})=MONTH(EDATE(TODAY(),0+1)),YEAR({c})=YEAR(EDATE(TODAY(),0+1)))"
+                )
             }
         }),
         _ => Vec::new(),
@@ -396,13 +431,23 @@ fn call<'a>(e: &'a Expr, name: &str) -> Option<&'a [Expr]> {
 /// reference there), else the `text` attribute. `None` when there is a
 /// formula of another shape: Excel would apply that formula, so the rule
 /// is best loaded as `Rule::Formula`.
-pub fn text_operand_from_ooxml(op: TextOp, text: Option<&str>, formula: Option<&Expr>) -> Option<Expr> {
+pub fn text_operand_from_ooxml(
+    op: TextOp,
+    text: Option<&str>,
+    formula: Option<&Expr>,
+) -> Option<Expr> {
     let Some(formula) = formula else {
         return text.map(|t| Expr::Text(Arc::from(t)));
     };
-    let searched = |e: &Expr| call(call(e, "ISERROR")?.first()?, "SEARCH")?.first().cloned();
+    let searched = |e: &Expr| {
+        call(call(e, "ISERROR")?.first()?, "SEARCH")?
+            .first()
+            .cloned()
+    };
     let compared = |side: &str| match formula {
-        Expr::Binary(BinaryOp::Eq, cut, operand) if call(cut, side).is_some() => Some((**operand).clone()),
+        Expr::Binary(BinaryOp::Eq, cut, operand) if call(cut, side).is_some() => {
+            Some((**operand).clone())
+        }
         _ => None,
     };
     match op {

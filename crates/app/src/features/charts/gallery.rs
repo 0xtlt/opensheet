@@ -8,9 +8,9 @@ use crate::chart_view;
 use crate::theme::{self, c};
 use crate::view::tooltip;
 use gpui::{Context, FontWeight, Render, SharedString, WeakEntity, Window, div, prelude::*, px};
+use opensheet_engine::Locale;
 use opensheet_engine::chart::{Chart, ChartData};
 use opensheet_engine::style::Color;
-use opensheet_engine::Locale;
 use std::rc::Rc;
 
 /// What an item shows.
@@ -26,7 +26,11 @@ pub(crate) struct Item {
 }
 
 impl Item {
-    pub fn new(picture: Picture, tip: impl Into<SharedString>, action: impl Fn(&mut ExcelApp, &mut Window, &mut Context<ExcelApp>) + 'static) -> Item {
+    pub fn new(
+        picture: Picture,
+        tip: impl Into<SharedString>,
+        action: impl Fn(&mut ExcelApp, &mut Window, &mut Context<ExcelApp>) + 'static,
+    ) -> Item {
         Item {
             picture,
             tip: tip.into(),
@@ -78,7 +82,11 @@ impl Gallery {
         self
     }
 
-    pub fn footer(mut self, label: impl Into<SharedString>, action: impl Fn(&mut ExcelApp, &mut Window, &mut Context<ExcelApp>) + 'static) -> Gallery {
+    pub fn footer(
+        mut self,
+        label: impl Into<SharedString>,
+        action: impl Fn(&mut ExcelApp, &mut Window, &mut Context<ExcelApp>) + 'static,
+    ) -> Gallery {
         self.footer.push((label.into(), Rc::new(action)));
         self
     }
@@ -100,7 +108,12 @@ impl Render for Gallery {
         let (tw, th) = self.thumb;
         let cell_w = tw + 2.0 * PAD + 2.0;
         let width = cell_w * self.columns as f32 + 16.0;
-        let mut body = div().w(px(width)).py(px(4.)).flex().flex_col().text_size(px(12.));
+        let mut body = div()
+            .w(px(width))
+            .py(px(4.))
+            .flex()
+            .flex_col()
+            .text_size(px(12.));
         let mut id = 0usize;
         for section in &self.sections {
             if !section.title.is_empty() {
@@ -134,7 +147,11 @@ impl Render for Gallery {
                         .h(px(th))
                         .flex()
                         .items_center()
-                        .children(colors.iter().map(|color| div().flex_1().h_full().bg(c(color.value()))))
+                        .children(
+                            colors
+                                .iter()
+                                .map(|color| div().flex_1().h_full().bg(c(color.value()))),
+                        )
                         .into_any_element(),
                 };
                 grid = grid.child(
@@ -148,7 +165,9 @@ impl Render for Gallery {
                         .hover(|s| s.bg(c(theme::HOVER)).border_color(c(theme::BORDER_STRONG)))
                         .child(picture)
                         .tooltip(tooltip(item.tip.clone()))
-                        .on_click(cx.listener(move |this, _, window, cx| this.run(action.clone(), window, cx))),
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.run(action.clone(), window, cx)
+                        })),
                 );
             }
             body = body.child(grid);
@@ -158,17 +177,20 @@ impl Render for Gallery {
         }
         for (i, (label, action)) in self.footer.iter().enumerate() {
             let action = action.clone();
-            body = body.child(
-                div()
-                    .id(("gallery-footer", i))
-                    .h(px(26.))
-                    .px(px(12.))
-                    .flex()
-                    .items_center()
-                    .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(label.clone())
-                    .on_click(cx.listener(move |this, _, window, cx| this.run(action.clone(), window, cx))),
-            );
+            body =
+                body.child(
+                    div()
+                        .id(("gallery-footer", i))
+                        .h(px(26.))
+                        .px(px(12.))
+                        .flex()
+                        .items_center()
+                        .hover(|s| s.bg(c(theme::HOVER)))
+                        .child(label.clone())
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            this.run(action.clone(), window, cx)
+                        })),
+                );
         }
         body
     }

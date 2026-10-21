@@ -6,8 +6,8 @@
 use crate::i18n::{Lang, lang};
 use crate::widgets::number_text;
 use opensheet_engine::chart::{
-    AxisCrossing, Chart, ChartTitle, DataLabels, ErrorAmount, Family, Fill, Line, Marker, MarkerShape, TextFormat, TrendKind,
-    View3D,
+    AxisCrossing, Chart, ChartTitle, DataLabels, ErrorAmount, Family, Fill, Line, Marker,
+    MarkerShape, TextFormat, TrendKind, View3D,
 };
 use opensheet_engine::chart_layout::{ChartElement, Scale};
 use opensheet_engine::style::Color;
@@ -99,7 +99,12 @@ impl Field {
     fn unit(self) -> &'static str {
         match self {
             Field::LineWidth | Field::FontSize => " pt",
-            Field::Overlap | Field::GapWidth | Field::Explosion | Field::HoleSize | Field::ErrorPercent | Field::Depth => " %",
+            Field::Overlap
+            | Field::GapWidth
+            | Field::Explosion
+            | Field::HoleSize
+            | Field::ErrorPercent
+            | Field::Depth => " %",
             Field::FirstSlice | Field::RotationX | Field::RotationY | Field::Perspective => "°",
             Field::Height | Field::Width => length_unit().1,
             _ => "",
@@ -141,12 +146,25 @@ pub fn text_of(chart: &Chart, element: ChartElement) -> Option<TextFormat> {
     let first = all.first()?;
     let shared = |same: &dyn Fn(&TextFormat) -> bool| all.iter().all(|text| same(text));
     Some(TextFormat {
-        font: first.font.clone().filter(|_| shared(&|text| text.font == first.font)),
-        size: first.size.filter(|_| shared(&|text| text.size == first.size)),
-        bold: first.bold.filter(|_| shared(&|text| text.bold == first.bold)),
-        italic: first.italic.filter(|_| shared(&|text| text.italic == first.italic)),
-        underline: first.underline.filter(|_| shared(&|text| text.underline == first.underline)),
-        color: first.color.filter(|_| shared(&|text| text.color == first.color)),
+        font: first
+            .font
+            .clone()
+            .filter(|_| shared(&|text| text.font == first.font)),
+        size: first
+            .size
+            .filter(|_| shared(&|text| text.size == first.size)),
+        bold: first
+            .bold
+            .filter(|_| shared(&|text| text.bold == first.bold)),
+        italic: first
+            .italic
+            .filter(|_| shared(&|text| text.italic == first.italic)),
+        underline: first
+            .underline
+            .filter(|_| shared(&|text| text.underline == first.underline)),
+        color: first
+            .color
+            .filter(|_| shared(&|text| text.color == first.color)),
     })
 }
 
@@ -168,7 +186,12 @@ pub fn line_of(chart: &Chart, element: ChartElement) -> Option<&Line> {
         ChartElement::ChartArea => Some(&chart.chart_area.border),
         ChartElement::PlotArea => Some(&chart.plot_area.border),
         ChartElement::Series(s) => chart.series.get(s as usize).map(|x| &x.line),
-        ChartElement::Trendline(s, i) => chart.series.get(s as usize)?.trendlines.get(i as usize).map(|t| &t.line),
+        ChartElement::Trendline(s, i) => chart
+            .series
+            .get(s as usize)?
+            .trendlines
+            .get(i as usize)
+            .map(|t| &t.line),
         _ => None,
     }
 }
@@ -181,7 +204,12 @@ pub fn line_of_mut(chart: &mut Chart, element: ChartElement) -> Option<&mut Line
         ChartElement::ChartArea => Some(&mut chart.chart_area.border),
         ChartElement::PlotArea => Some(&mut chart.plot_area.border),
         ChartElement::Series(s) => chart.series.get_mut(s as usize).map(|x| &mut x.line),
-        ChartElement::Trendline(s, i) => chart.series.get_mut(s as usize)?.trendlines.get_mut(i as usize).map(|t| &mut t.line),
+        ChartElement::Trendline(s, i) => chart
+            .series
+            .get_mut(s as usize)?
+            .trendlines
+            .get_mut(i as usize)
+            .map(|t| &mut t.line),
         _ => None,
     }
 }
@@ -189,16 +217,20 @@ pub fn line_of_mut(chart: &mut Chart, element: ChartElement) -> Option<&mut Line
 /// Whether a series is drawn as a line (its `Line` is that line) rather
 /// than as a shape (its `Line` is the outline of the shape).
 pub fn is_lined(chart: &Chart, series: usize) -> bool {
-    chart
-        .series
-        .get(series)
-        .is_some_and(|s| matches!(chart.series_kind(s).family(), Family::Line | Family::Scatter | Family::Radar))
+    chart.series.get(series).is_some_and(|s| {
+        matches!(
+            chart.series_kind(s).family(),
+            Family::Line | Family::Scatter | Family::Radar
+        )
+    })
 }
 
 /// The automatic width of the line of an element, in points.
 pub fn auto_line_width(chart: &Chart, element: ChartElement) -> f32 {
     match element {
-        ChartElement::Series(s) if is_lined(chart, s as usize) => chart.series_kind(&chart.series[s as usize]).default_line_width(),
+        ChartElement::Series(s) if is_lined(chart, s as usize) => chart
+            .series_kind(&chart.series[s as usize])
+            .default_line_width(),
         ChartElement::Series(_) if chart.kind.is_round() => 1.5,
         ChartElement::Trendline(..) => 1.5,
         _ => 0.75,
@@ -213,7 +245,10 @@ pub fn fill_of(chart: &Chart, element: ChartElement) -> Option<Fill> {
         ChartElement::ChartArea => Some(chart.chart_area.fill),
         ChartElement::PlotArea => Some(chart.plot_area.fill),
         ChartElement::Series(s) => chart.series.get(s as usize).map(|x| solid(x.color)),
-        ChartElement::Point(s, k) => chart.series.get(s as usize).map(|x| solid(x.point(k as usize).and_then(|p| p.color))),
+        ChartElement::Point(s, k) => chart
+            .series
+            .get(s as usize)
+            .map(|x| solid(x.point(k as usize).and_then(|p| p.color))),
         _ => None,
     }
 }
@@ -236,7 +271,9 @@ pub fn set_fill(chart: &mut Chart, element: ChartElement, fill: Fill) {
         ChartElement::Point(s, k) => {
             if let Some(series) = chart.series.get_mut(s as usize) {
                 series.point_mut(k as usize).color = color;
-                series.points.retain(|p| p.color.is_some() || p.explosion.is_some());
+                series
+                    .points
+                    .retain(|p| p.color.is_some() || p.explosion.is_some());
             }
         }
         _ => {}
@@ -280,7 +317,13 @@ fn view(chart: &Chart) -> View3D {
 
 /// What a field shows for an element of a chart. `scale`: the scale the
 /// selected axis was drawn with, for the bounds left automatic.
-pub fn value(chart: &Chart, element: ChartElement, field: Field, scale: Option<&Scale>, locale: &Locale) -> String {
+pub fn value(
+    chart: &Chart,
+    element: ChartElement,
+    field: Field,
+    scale: Option<&Scale>,
+    locale: &Locale,
+) -> String {
     let sep = lang().locale().decimal_sep;
     let number = |v: f64| format!("{}{}", number_text(v, sep), field.unit());
     let series = element.series().and_then(|s| chart.series.get(s));
@@ -289,20 +332,32 @@ pub fn value(chart: &Chart, element: ChartElement, field: Field, scale: Option<&
         _ => None,
     };
     let trend = match element {
-        ChartElement::Trendline(s, i) => chart.series.get(s as usize).and_then(|x| x.trendlines.get(i as usize)),
+        ChartElement::Trendline(s, i) => chart
+            .series
+            .get(s as usize)
+            .and_then(|x| x.trendlines.get(i as usize)),
         _ => None,
     };
     let bars = match element {
-        ChartElement::ErrorBars(s, i) => chart.series.get(s as usize).and_then(|x| x.error_bars.get(i as usize)),
+        ChartElement::ErrorBars(s, i) => chart
+            .series
+            .get(s as usize)
+            .and_then(|x| x.error_bars.get(i as usize)),
         _ => None,
     };
     match field {
         Field::LineWidth => {
-            let width = line_of(chart, element).and_then(|l| l.width).unwrap_or(auto_line_width(chart, element));
+            let width = line_of(chart, element)
+                .and_then(|l| l.width)
+                .unwrap_or(auto_line_width(chart, element));
             number(width as f64)
         }
-        Field::MarkerSize => series.map(|s| number(s.marker_for(chart.series_kind(s)).size as f64)).unwrap_or_default(),
-        Field::Overlap => number(chart.overlap_for(series.map_or(chart.kind, |s| chart.series_kind(s))) as f64),
+        Field::MarkerSize => series
+            .map(|s| number(s.marker_for(chart.series_kind(s)).size as f64))
+            .unwrap_or_default(),
+        Field::Overlap => {
+            number(chart.overlap_for(series.map_or(chart.kind, |s| chart.series_kind(s))) as f64)
+        }
         Field::GapWidth => {
             let kind = series.map_or(chart.kind, |s| chart.series_kind(s));
             number(chart.gap_width.unwrap_or(kind.default_gap_width()) as f64)
@@ -311,17 +366,35 @@ pub fn value(chart: &Chart, element: ChartElement, field: Field, scale: Option<&
         Field::Explosion => {
             let whole = series.map_or(0, |s| s.explosion);
             let own = match element {
-                ChartElement::Point(_, k) => series.and_then(|s| s.point(k as usize)).and_then(|p| p.explosion),
+                ChartElement::Point(_, k) => series
+                    .and_then(|s| s.point(k as usize))
+                    .and_then(|p| p.explosion),
                 _ => None,
             };
             number(own.unwrap_or(whole) as f64)
         }
         Field::HoleSize => number(chart.hole_size as f64),
         Field::BubbleScale => number(chart.bubble_scale as f64),
-        Field::AxisMin => axis.and_then(|a| a.min).or(scale.map(|s| s.min)).map(number).unwrap_or_default(),
-        Field::AxisMax => axis.and_then(|a| a.max).or(scale.map(|s| s.max)).map(number).unwrap_or_default(),
-        Field::AxisMajor => axis.and_then(|a| a.major_unit).or(scale.map(|s| s.major)).map(number).unwrap_or_default(),
-        Field::AxisMinor => axis.and_then(|a| a.minor_unit).or(scale.map(|s| s.minor)).map(number).unwrap_or_default(),
+        Field::AxisMin => axis
+            .and_then(|a| a.min)
+            .or(scale.map(|s| s.min))
+            .map(number)
+            .unwrap_or_default(),
+        Field::AxisMax => axis
+            .and_then(|a| a.max)
+            .or(scale.map(|s| s.max))
+            .map(number)
+            .unwrap_or_default(),
+        Field::AxisMajor => axis
+            .and_then(|a| a.major_unit)
+            .or(scale.map(|s| s.major))
+            .map(number)
+            .unwrap_or_default(),
+        Field::AxisMinor => axis
+            .and_then(|a| a.minor_unit)
+            .or(scale.map(|s| s.minor))
+            .map(number)
+            .unwrap_or_default(),
         Field::AxisCross => match axis.map(|a| a.crossing) {
             Some(AxisCrossing::At(v)) => number(v),
             _ => String::new(),
@@ -330,7 +403,9 @@ pub fn value(chart: &Chart, element: ChartElement, field: Field, scale: Option<&
         Field::NumberFormat => {
             let code = match element {
                 ChartElement::Axis(_) => axis.and_then(|a| a.number_format.clone()),
-                ChartElement::DataLabels(_) => series.and_then(|s| chart.labels_for(s)).and_then(|l| l.number_format.clone()),
+                ChartElement::DataLabels(_) => series
+                    .and_then(|s| chart.labels_for(s))
+                    .and_then(|l| l.number_format.clone()),
                 _ => None,
             };
             format::code_to_locale(code.as_deref().unwrap_or("General"), locale)
@@ -375,14 +450,25 @@ pub fn value(chart: &Chart, element: ChartElement, field: Field, scale: Option<&
             _ => String::new(),
         },
         // Empty: the font of the chart.
-        Field::FontName => text_of(chart, element).and_then(|text| text.font).map(|font| font.to_string()).unwrap_or_default(),
-        Field::FontSize => text_size(chart, element).map(|size| number(size as f64)).unwrap_or_default(),
+        Field::FontName => text_of(chart, element)
+            .and_then(|text| text.font)
+            .map(|font| font.to_string())
+            .unwrap_or_default(),
+        Field::FontSize => text_size(chart, element)
+            .map(|size| number(size as f64))
+            .unwrap_or_default(),
     }
 }
 
 /// Store what was typed in a field. Returns false when it cannot be read
 /// or does not apply to the element; the chart is then left as it was.
-pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, locale: &Locale) -> bool {
+pub fn set(
+    chart: &mut Chart,
+    element: ChartElement,
+    field: Field,
+    text: &str,
+    locale: &Locale,
+) -> bool {
     let typed = parse_number(text, lang().locale().decimal_sep);
     // A number in the range of the field's spinner.
     let ranged = typed.map(|v| match field.spin() {
@@ -392,7 +478,9 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
     let series = element.series().filter(|s| *s < chart.series.len());
     match field {
         Field::LineWidth => {
-            let (Some(width), Some(line)) = (ranged, line_of_mut(chart, element)) else { return false };
+            let (Some(width), Some(line)) = (ranged, line_of_mut(chart, element)) else {
+                return false;
+            };
             line.width = Some(width as f32);
             // A width makes sense on a line that is drawn.
             if line.shown == Some(false) {
@@ -400,7 +488,10 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
             }
         }
         Field::MarkerSize => {
-            let (Some(size), Some(marker)) = (ranged, series.and_then(|s| marker_mut(chart, s))) else { return false };
+            let (Some(size), Some(marker)) = (ranged, series.and_then(|s| marker_mut(chart, s)))
+            else {
+                return false;
+            };
             marker.size = size.round() as u8;
         }
         Field::Overlap => match ranged {
@@ -416,9 +507,13 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
             None => return false,
         },
         Field::Explosion => {
-            let (Some(v), Some(s)) = (ranged, series) else { return false };
+            let (Some(v), Some(s)) = (ranged, series) else {
+                return false;
+            };
             match element {
-                ChartElement::Point(_, k) => chart.series[s].point_mut(k as usize).explosion = Some(v.round() as u32),
+                ChartElement::Point(_, k) => {
+                    chart.series[s].point_mut(k as usize).explosion = Some(v.round() as u32)
+                }
                 _ => {
                     chart.series[s].explosion = v.round() as u32;
                     // "Pie Explosion" moves every slice.
@@ -437,8 +532,15 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
             Some(v) => chart.bubble_scale = v.round() as u32,
             None => return false,
         },
-        Field::AxisMin | Field::AxisMax | Field::AxisMajor | Field::AxisMinor | Field::AxisCross | Field::LogBase => {
-            let ChartElement::Axis(id) = element else { return false };
+        Field::AxisMin
+        | Field::AxisMax
+        | Field::AxisMajor
+        | Field::AxisMinor
+        | Field::AxisCross
+        | Field::LogBase => {
+            let ChartElement::Axis(id) = element else {
+                return false;
+            };
             // An emptied field goes back to automatic.
             if typed.is_none() && !text.trim().is_empty() {
                 return false;
@@ -449,7 +551,9 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
                 Field::AxisMax => axis.max = typed,
                 Field::AxisMajor => axis.major_unit = typed.filter(|v| *v > 0.0),
                 Field::AxisMinor => axis.minor_unit = typed.filter(|v| *v > 0.0),
-                Field::AxisCross => axis.crossing = typed.map_or(AxisCrossing::Auto, AxisCrossing::At),
+                Field::AxisCross => {
+                    axis.crossing = typed.map_or(AxisCrossing::Auto, AxisCrossing::At)
+                }
                 _ => match ranged {
                     Some(base) => axis.log_base = Some(base),
                     None => return false,
@@ -468,15 +572,30 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
                 _ => return false,
             }
         }
-        Field::TrendOrder | Field::TrendPeriod | Field::TrendName | Field::Forward | Field::Backward | Field::Intercept => {
-            let ChartElement::Trendline(s, i) = element else { return false };
-            let Some(trend) = chart.series.get_mut(s as usize).and_then(|x| x.trendlines.get_mut(i as usize)) else {
+        Field::TrendOrder
+        | Field::TrendPeriod
+        | Field::TrendName
+        | Field::Forward
+        | Field::Backward
+        | Field::Intercept => {
+            let ChartElement::Trendline(s, i) = element else {
+                return false;
+            };
+            let Some(trend) = chart
+                .series
+                .get_mut(s as usize)
+                .and_then(|x| x.trendlines.get_mut(i as usize))
+            else {
                 return false;
             };
             match (field, ranged) {
-                (Field::TrendName, _) => trend.name = (!text.trim().is_empty()).then(|| text.trim().to_string()),
+                (Field::TrendName, _) => {
+                    trend.name = (!text.trim().is_empty()).then(|| text.trim().to_string())
+                }
                 (Field::TrendOrder, Some(v)) => trend.kind = TrendKind::Polynomial(v.round() as u8),
-                (Field::TrendPeriod, Some(v)) => trend.kind = TrendKind::MovingAverage(v.round() as u32),
+                (Field::TrendPeriod, Some(v)) => {
+                    trend.kind = TrendKind::MovingAverage(v.round() as u32)
+                }
                 (Field::Forward, Some(v)) => trend.forward = v,
                 (Field::Backward, Some(v)) => trend.backward = v,
                 (Field::Intercept, Some(v)) => trend.intercept = Some(v),
@@ -484,8 +603,16 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
             }
         }
         Field::ErrorFixed | Field::ErrorPercent | Field::ErrorStdDev => {
-            let ChartElement::ErrorBars(s, i) = element else { return false };
-            let (Some(v), Some(bars)) = (ranged, chart.series.get_mut(s as usize).and_then(|x| x.error_bars.get_mut(i as usize))) else {
+            let ChartElement::ErrorBars(s, i) = element else {
+                return false;
+            };
+            let (Some(v), Some(bars)) = (
+                ranged,
+                chart
+                    .series
+                    .get_mut(s as usize)
+                    .and_then(|x| x.error_bars.get_mut(i as usize)),
+            ) else {
                 return false;
             };
             bars.amount = match field {
@@ -506,7 +633,9 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
             chart.view3d = Some(view);
         }
         Field::Height | Field::Width => {
-            let Some(v) = typed.filter(|v| *v > 0.0) else { return false };
+            let Some(v) = typed.filter(|v| *v > 0.0) else {
+                return false;
+            };
             let pixels = (v * length_unit().0) as f32;
             if field == Field::Height {
                 chart.size.1 = pixels.clamp(80.0, 4000.0);
@@ -519,7 +648,9 @@ pub fn set(chart: &mut Chart, element: ChartElement, field: Field, text: &str, l
             match element {
                 ChartElement::Title if text.is_empty() => return false,
                 ChartElement::Title => chart.title = ChartTitle::Text(text.to_string()),
-                ChartElement::AxisTitle(id) if !text.is_empty() => id.of_mut(&mut chart.axes).title = Some(text.to_string()),
+                ChartElement::AxisTitle(id) if !text.is_empty() => {
+                    id.of_mut(&mut chart.axes).title = Some(text.to_string())
+                }
                 _ => return false,
             }
         }
@@ -591,7 +722,13 @@ mod tests {
         assert!(set(&mut c, axis, Field::AxisCross, "3", locale));
         assert_eq!(c.axes.value.crossing, AxisCrossing::At(3.0));
         // A field of the axis says nothing of another element.
-        assert!(!set(&mut c, ChartElement::Title, Field::AxisMin, "1", locale));
+        assert!(!set(
+            &mut c,
+            ChartElement::Title,
+            Field::AxisMin,
+            "1",
+            locale
+        ));
     }
 
     #[test]
@@ -607,18 +744,54 @@ mod tests {
         assert_eq!(c.overlap, Some(-100));
 
         let mut line = chart(ChartKind::LineMarkers);
-        assert_eq!(value(&line, series, Field::LineWidth, None, locale), "2.25 pt");
+        assert_eq!(
+            value(&line, series, Field::LineWidth, None, locale),
+            "2.25 pt"
+        );
         assert_eq!(value(&line, series, Field::MarkerSize, None, locale), "5");
         assert!(set(&mut line, series, Field::MarkerSize, "9", locale));
-        assert_eq!(line.series[1].marker.as_ref().map(|m| (m.shape, m.size)), Some((MarkerShape::Circle, 9)));
+        assert_eq!(
+            line.series[1].marker.as_ref().map(|m| (m.shape, m.size)),
+            Some((MarkerShape::Circle, 9))
+        );
         assert!(set(&mut line, series, Field::LineWidth, "3 pt", locale));
         assert_eq!(line.series[1].line.width, Some(3.0));
 
         let mut pie = chart(ChartKind::Pie);
-        assert!(set(&mut pie, ChartElement::Point(0, 2), Field::Explosion, "20", locale));
-        assert_eq!(value(&pie, ChartElement::Point(0, 2), Field::Explosion, None, locale), "20 %");
-        assert_eq!(value(&pie, ChartElement::Series(0), Field::Explosion, None, locale), "0 %");
-        assert!(set(&mut pie, ChartElement::Series(0), Field::Explosion, "10", locale));
+        assert!(set(
+            &mut pie,
+            ChartElement::Point(0, 2),
+            Field::Explosion,
+            "20",
+            locale
+        ));
+        assert_eq!(
+            value(
+                &pie,
+                ChartElement::Point(0, 2),
+                Field::Explosion,
+                None,
+                locale
+            ),
+            "20 %"
+        );
+        assert_eq!(
+            value(
+                &pie,
+                ChartElement::Series(0),
+                Field::Explosion,
+                None,
+                locale
+            ),
+            "0 %"
+        );
+        assert!(set(
+            &mut pie,
+            ChartElement::Series(0),
+            Field::Explosion,
+            "10",
+            locale
+        ));
         assert!(pie.series[0].points.is_empty() && pie.series[0].explosion == 10);
     }
 
@@ -631,7 +804,10 @@ mod tests {
         set_fill(&mut c, ChartElement::Series(0), Fill::Solid(red));
         assert_eq!(c.series[0].color, Some(red));
         set_fill(&mut c, ChartElement::Point(1, 3), Fill::Solid(red));
-        assert_eq!(fill_of(&c, ChartElement::Point(1, 3)), Some(Fill::Solid(red)));
+        assert_eq!(
+            fill_of(&c, ChartElement::Point(1, 3)),
+            Some(Fill::Solid(red))
+        );
         assert_eq!(fill_of(&c, ChartElement::Point(1, 0)), Some(Fill::Auto));
         set_fill(&mut c, ChartElement::Point(1, 3), Fill::Auto);
         assert!(c.series[1].points.is_empty());
@@ -644,7 +820,9 @@ mod tests {
     fn trendline_error_bar_and_view_fields() {
         let locale = en();
         let mut c = chart(ChartKind::Column3D);
-        c.series[0].trendlines.push(Trendline::new(TrendKind::Linear));
+        c.series[0]
+            .trendlines
+            .push(Trendline::new(TrendKind::Linear));
         c.series[0].error_bars.push(ErrorBars {
             horizontal: false,
             direction: ErrorDirection::Both,
@@ -658,16 +836,46 @@ mod tests {
         assert!(set(&mut c, trend, Field::TrendName, " Trend ", locale));
         assert_eq!(c.series[0].trendlines[0].name.as_deref(), Some("Trend"));
         assert_eq!(value(&c, trend, Field::Forward, None, locale), "2.5");
-        assert!(set(&mut c, ChartElement::ErrorBars(0, 0), Field::ErrorPercent, "12 %", locale));
+        assert!(set(
+            &mut c,
+            ChartElement::ErrorBars(0, 0),
+            Field::ErrorPercent,
+            "12 %",
+            locale
+        ));
         assert_eq!(c.series[0].error_bars[0].amount, ErrorAmount::Percent(12.0));
         // Excel's X rotation turns the chart around its vertical axis.
-        assert_eq!(value(&c, ChartElement::ChartArea, Field::RotationX, None, locale), "20°");
-        assert!(set(&mut c, ChartElement::ChartArea, Field::RotationX, "40", locale));
-        assert!(set(&mut c, ChartElement::ChartArea, Field::Perspective, "15", locale));
+        assert_eq!(
+            value(&c, ChartElement::ChartArea, Field::RotationX, None, locale),
+            "20°"
+        );
+        assert!(set(
+            &mut c,
+            ChartElement::ChartArea,
+            Field::RotationX,
+            "40",
+            locale
+        ));
+        assert!(set(
+            &mut c,
+            ChartElement::ChartArea,
+            Field::Perspective,
+            "15",
+            locale
+        ));
         let view = c.view3d.unwrap();
         assert_eq!((view.rot_y, view.rot_x, view.perspective), (40, 15, 30));
-        assert_eq!(value(&c, ChartElement::ChartArea, Field::Width, None, locale), "5\"");
-        assert!(set(&mut c, ChartElement::ChartArea, Field::Height, "4", locale));
+        assert_eq!(
+            value(&c, ChartElement::ChartArea, Field::Width, None, locale),
+            "5\""
+        );
+        assert!(set(
+            &mut c,
+            ChartElement::ChartArea,
+            Field::Height,
+            "4",
+            locale
+        ));
         assert_eq!(c.size, (480.0, 384.0));
     }
 
@@ -676,16 +884,37 @@ mod tests {
         let locale = en();
         let mut c = chart(ChartKind::Column);
         let axis = ChartElement::Axis(AxisId::Value);
-        assert_eq!(value(&c, axis, Field::NumberFormat, None, locale), "General");
+        assert_eq!(
+            value(&c, axis, Field::NumberFormat, None, locale),
+            "General"
+        );
         assert!(set(&mut c, axis, Field::NumberFormat, "0.0%", locale));
         assert_eq!(c.axes.value.number_format.as_deref(), Some("0.0%"));
         assert!(set(&mut c, axis, Field::NumberFormat, "General", locale));
         assert_eq!(c.axes.value.number_format, None);
         c.data_labels = true;
-        assert!(set(&mut c, ChartElement::DataLabels(1), Field::NumberFormat, "0.00", locale));
-        assert_eq!(c.series[1].labels.as_ref().and_then(|l| l.number_format.as_deref()), Some("0.00"));
+        assert!(set(
+            &mut c,
+            ChartElement::DataLabels(1),
+            Field::NumberFormat,
+            "0.00",
+            locale
+        ));
+        assert_eq!(
+            c.series[1]
+                .labels
+                .as_ref()
+                .and_then(|l| l.number_format.as_deref()),
+            Some("0.00")
+        );
         assert!(c.series[0].labels.is_none());
-        assert!(set(&mut c, ChartElement::Title, Field::Text, "Sales", locale));
+        assert!(set(
+            &mut c,
+            ChartElement::Title,
+            Field::Text,
+            "Sales",
+            locale
+        ));
         assert_eq!(c.title, ChartTitle::Text("Sales".into()));
         assert!(!set(&mut c, ChartElement::Title, Field::Text, "  ", locale));
     }

@@ -24,7 +24,9 @@ fn u32_at(data: &[u8], offset: usize) -> Option<u32> {
 pub fn font_offsets(header: &[u8]) -> Vec<u32> {
     if header.get(..4) == Some(b"ttcf") {
         let count = u32_at(header, 8).unwrap_or(0).min(1024);
-        (0..count).filter_map(|i| u32_at(header, 12 + 4 * i as usize)).collect()
+        (0..count)
+            .filter_map(|i| u32_at(header, 12 + 4 * i as usize))
+            .collect()
     } else {
         vec![0]
     }
@@ -125,7 +127,9 @@ pub fn parse_names(table: &[u8]) -> Names {
         if quality <= rank[slot] {
             continue;
         }
-        let Some(bytes) = table.get(strings + offset as usize..strings + offset as usize + length as usize) else {
+        let Some(bytes) =
+            table.get(strings + offset as usize..strings + offset as usize + length as usize)
+        else {
             continue;
         };
         let text: String = if platform == 1 {
@@ -328,7 +332,8 @@ impl TtfFont {
 
     fn table(&self, tag: &[u8; 4]) -> Option<&[u8]> {
         let t = self.tables.iter().find(|t| &t.tag == tag)?;
-        self.data.get(t.offset as usize..t.offset as usize + t.length as usize)
+        self.data
+            .get(t.offset as usize..t.offset as usize + t.length as usize)
     }
 
     /// The glyph of a character; `None` when the font has none.
@@ -415,12 +420,16 @@ impl TtfFont {
             }
             let mut at = 10;
             loop {
-                let (Some(flags), Some(component)) = (u16_at(data, at), u16_at(data, at + 2)) else {
+                let (Some(flags), Some(component)) = (u16_at(data, at), u16_at(data, at + 2))
+                else {
                     break;
                 };
                 at += 4;
                 let (dx, dy) = if flags & 0x0001 != 0 {
-                    let pair = (i16_at(data, at).unwrap_or(0) as f32, i16_at(data, at + 2).unwrap_or(0) as f32);
+                    let pair = (
+                        i16_at(data, at).unwrap_or(0) as f32,
+                        i16_at(data, at + 2).unwrap_or(0) as f32,
+                    );
                     at += 4;
                     pair
                 } else {
@@ -432,7 +441,11 @@ impl TtfFont {
                     pair
                 };
                 // Offsets given as point numbers to match are not followed.
-                let (dx, dy) = if flags & 0x0002 != 0 { (dx, dy) } else { (0.0, 0.0) };
+                let (dx, dy) = if flags & 0x0002 != 0 {
+                    (dx, dy)
+                } else {
+                    (0.0, 0.0)
+                };
                 let fixed = |at: usize| i16_at(data, at).unwrap_or(0) as f32 / 16384.0;
                 let (a, b, c, d) = if flags & 0x0008 != 0 {
                     let scale = fixed(at);
@@ -519,7 +532,12 @@ impl TtfFont {
         let (Some(xs), Some(ys)) = (read(0x02, 0x10), read(0x04, 0x20)) else {
             return;
         };
-        let point = |i: usize| (m[0] * xs[i] + m[2] * ys[i] + m[4], m[1] * xs[i] + m[3] * ys[i] + m[5]);
+        let point = |i: usize| {
+            (
+                m[0] * xs[i] + m[2] * ys[i] + m[4],
+                m[1] * xs[i] + m[3] * ys[i] + m[5],
+            )
+        };
         let middle = |a: (f32, f32), b: (f32, f32)| ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
         let mut first = 0;
         for end in ends {
@@ -594,7 +612,8 @@ impl TtfFont {
             head[8..12].fill(0);
             head[50..52].copy_from_slice(&1i16.to_be_bytes());
         }
-        let mut tables: Vec<([u8; 4], Vec<u8>)> = vec![(*b"glyf", glyf), (*b"head", head), (*b"loca", loca)];
+        let mut tables: Vec<([u8; 4], Vec<u8>)> =
+            vec![(*b"glyf", glyf), (*b"head", head), (*b"loca", loca)];
         // Metrics, and the hinting programs the outlines may call.
         for tag in [b"hhea", b"hmtx", b"maxp", b"cvt ", b"fpgm", b"prep"] {
             if let Some(t) = self.table(tag) {
@@ -659,9 +678,11 @@ fn parse_cmap(table: &[u8]) -> HashMap<u32, u16> {
     let mut best: Option<(u8, usize)> = None;
     for i in 0..count {
         let at = 4 + 8 * i;
-        let (Some(platform), Some(encoding), Some(offset)) =
-            (u16_at(table, at), u16_at(table, at + 2), u32_at(table, at + 4))
-        else {
+        let (Some(platform), Some(encoding), Some(offset)) = (
+            u16_at(table, at),
+            u16_at(table, at + 2),
+            u32_at(table, at + 4),
+        ) else {
             break;
         };
         let offset = offset as usize;
@@ -688,7 +709,8 @@ fn parse_cmap(table: &[u8]) -> HashMap<u32, u16> {
         let groups = u32_at(sub, 12).unwrap_or(0) as usize;
         for g in 0..groups {
             let at = 16 + 12 * g;
-            let (Some(start), Some(end), Some(glyph)) = (u32_at(sub, at), u32_at(sub, at + 4), u32_at(sub, at + 8))
+            let (Some(start), Some(end), Some(glyph)) =
+                (u32_at(sub, at), u32_at(sub, at + 4), u32_at(sub, at + 8))
             else {
                 break;
             };
@@ -831,11 +853,24 @@ mod tests {
         for v in [4u16, 32, 0, 4, 4, 1, 0] {
             cmap.extend(v.to_be_bytes());
         }
-        for v in [0x42u16, 0xFFFF, 0, 0x41, 0xFFFF, (1u16).wrapping_sub(0x41), 1, 0, 0] {
+        for v in [
+            0x42u16,
+            0xFFFF,
+            0,
+            0x41,
+            0xFFFF,
+            (1u16).wrapping_sub(0x41),
+            1,
+            0,
+            0,
+        ] {
             cmap.extend(v.to_be_bytes());
         }
         let mut name: Vec<u8> = Vec::new();
-        let family: Vec<u8> = "Tiny".encode_utf16().flat_map(|u| u.to_be_bytes()).collect();
+        let family: Vec<u8> = "Tiny"
+            .encode_utf16()
+            .flat_map(|u| u.to_be_bytes())
+            .collect();
         for v in [0u16, 1, 18, 3, 1, 0x409, 1, family.len() as u16, 0] {
             name.extend(v.to_be_bytes());
         }
@@ -864,7 +899,10 @@ mod tests {
         assert_eq!(font.glyph('A'), Some(1));
         assert_eq!(font.glyph('B'), Some(2));
         assert_eq!(font.glyph('C'), None);
-        assert_eq!((font.advance(0), font.advance(1), font.advance(2)), (600, 550, 550));
+        assert_eq!(
+            (font.advance(0), font.advance(1), font.advance(2)),
+            (600, 550, 550)
+        );
         assert_eq!(font.components(2), vec![1, 0]);
         assert!(!font.style.bold && font.style.weight == 400);
         // Not fonts.
@@ -881,7 +919,16 @@ mod tests {
         // The composite: the triangle, then the box.
         let both = font.outline(2);
         assert_eq!(both[..4], triangle);
-        assert_eq!(both[4..], [Move(0.0, 0.0), Line(500.0, 0.0), Line(500.0, 700.0), Line(0.0, 700.0), Close]);
+        assert_eq!(
+            both[4..],
+            [
+                Move(0.0, 0.0),
+                Line(500.0, 0.0),
+                Line(500.0, 700.0),
+                Line(0.0, 700.0),
+                Close
+            ]
+        );
         assert!(font.outline(99).is_empty());
     }
 
@@ -914,7 +961,17 @@ mod tests {
         for v in [4u16, 32, 0, 4, 4, 1, 0] {
             cmap.extend(v.to_be_bytes());
         }
-        for v in [0xF042u16, 0xFFFF, 0, 0xF041, 0xFFFF, 1u16.wrapping_sub(0xF041), 1, 0, 0] {
+        for v in [
+            0xF042u16,
+            0xFFFF,
+            0,
+            0xF041,
+            0xFFFF,
+            1u16.wrapping_sub(0xF041),
+            1,
+            0,
+            0,
+        ] {
             cmap.extend(v.to_be_bytes());
         }
         let map = parse_cmap(&cmap);

@@ -17,13 +17,20 @@ pub fn rotate(p: Pt, centre: Pt, degrees: f32) -> Pt {
     }
     let (sin, cos) = degrees.to_radians().sin_cos();
     let (dx, dy) = (p.0 - centre.0, p.1 - centre.1);
-    (centre.0 + dx * cos - dy * sin, centre.1 + dx * sin + dy * cos)
+    (
+        centre.0 + dx * cos - dy * sin,
+        centre.1 + dx * sin + dy * cos,
+    )
 }
 
 /// An angle brought back between 0 (included) and 360 degrees.
 pub fn normalise_angle(degrees: f32) -> f32 {
     let turned = degrees.rem_euclid(360.0);
-    if turned >= 360.0 || !turned.is_finite() { 0.0 } else { turned }
+    if turned >= 360.0 || !turned.is_finite() {
+        0.0
+    } else {
+        turned
+    }
 }
 
 /// A frame as it is drawn: its box before rotation, the rotation in
@@ -92,8 +99,13 @@ impl Placed {
     /// the top left.
     pub fn corners(&self) -> [Pt; 4] {
         let c = self.centre();
-        [(self.x0, self.y0), (self.x1, self.y0), (self.x1, self.y1), (self.x0, self.y1)]
-            .map(|p| rotate(p, c, self.rotation))
+        [
+            (self.x0, self.y0),
+            (self.x1, self.y0),
+            (self.x1, self.y1),
+            (self.x0, self.y1),
+        ]
+        .map(|p| rotate(p, c, self.rotation))
     }
 
     /// The eight handles: corners and edge midpoints, clockwise from the
@@ -146,7 +158,8 @@ pub struct Polyline {
 /// frame: curves become short straight runs, fine enough for the size of
 /// the frame.
 pub fn flatten(commands: &[PathCommand], placed: &Placed) -> Vec<Polyline> {
-    let steps = (((placed.width().abs() + placed.height().abs()) / 10.0).ceil() as usize).clamp(8, 40);
+    let steps =
+        (((placed.width().abs() + placed.height().abs()) / 10.0).ceil() as usize).clamp(8, 40);
     let mut lines: Vec<Polyline> = Vec::new();
     // In fractions of the frame, like the commands.
     let mut current = (0.0f32, 0.0f32);
@@ -227,7 +240,8 @@ pub fn distance_to(p: Pt, line: &Polyline) -> f32 {
     for pair in line.points.windows(2) {
         best = best.min(distance_to_segment(p, pair[0], pair[1]));
     }
-    if let (true, Some(first), Some(last)) = (line.closed, line.points.first(), line.points.last()) {
+    if let (true, Some(first), Some(last)) = (line.closed, line.points.first(), line.points.last())
+    {
         best = best.min(distance_to_segment(p, *last, *first));
     }
     best
@@ -262,7 +276,12 @@ pub fn arrow_head(kind: LineEnd, tip: Pt, from: Pt, size: f32) -> Option<ArrowHe
     // Along the line and across it.
     let (ux, uy) = (dx / length, dy / length);
     let (nx, ny) = (-uy, ux);
-    let at = |along: f32, across: f32| (tip.0 + ux * along + nx * across, tip.1 + uy * along + ny * across);
+    let at = |along: f32, across: f32| {
+        (
+            tip.0 + ux * along + nx * across,
+            tip.1 + uy * along + ny * across,
+        )
+    };
     let half = size / 2.0;
     let head = match kind {
         LineEnd::None => return None,
@@ -272,7 +291,12 @@ pub fn arrow_head(kind: LineEnd, tip: Pt, from: Pt, size: f32) -> Option<ArrowHe
             cut: size * 0.8,
         },
         LineEnd::Stealth => ArrowHead {
-            points: vec![at(0.0, 0.0), at(-size, half), at(-size * 0.6, 0.0), at(-size, -half)],
+            points: vec![
+                at(0.0, 0.0),
+                at(-size, half),
+                at(-size * 0.6, 0.0),
+                at(-size, -half),
+            ],
             filled: true,
             cut: size * 0.5,
         },
@@ -317,7 +341,10 @@ pub fn trim(points: &mut Vec<Pt>, cut: f32, at_end: bool) {
         if length > left || points.len() == 2 {
             let keep = ((length - left) / length.max(f32::EPSILON)).clamp(0.05, 1.0);
             let last = points.len() - 1;
-            points[last] = (before.0 + (tip.0 - before.0) * keep, before.1 + (tip.1 - before.1) * keep);
+            points[last] = (
+                before.0 + (tip.0 - before.0) * keep,
+                before.1 + (tip.1 - before.1) * keep,
+            );
             break;
         }
         left -= length;
@@ -350,10 +377,20 @@ pub fn handle_axis(handle: u8, rotation: f32) -> u8 {
 /// stays where it is, also when the frame is turned; `from_centre` grows
 /// both sides instead, and `keep_aspect` keeps the proportions when a
 /// corner is dragged.
-pub fn resize(frame: Frame, rotation: f32, handle: u8, delta: (f64, f64), keep_aspect: bool, from_centre: bool) -> Frame {
+pub fn resize(
+    frame: Frame,
+    rotation: f32,
+    handle: u8,
+    delta: (f64, f64),
+    keep_aspect: bool,
+    from_centre: bool,
+) -> Frame {
     let (sin, cos) = (rotation as f64).to_radians().sin_cos();
     // The movement as the frame sees it before it is turned.
-    let (dx, dy) = (delta.0 * cos + delta.1 * sin, -delta.0 * sin + delta.1 * cos);
+    let (dx, dy) = (
+        delta.0 * cos + delta.1 * sin,
+        -delta.0 * sin + delta.1 * cos,
+    );
     // The sides the handle moves: -1 the left / top one, 1 the right /
     // bottom one.
     let (hx, hy): (f64, f64) = match handle % 8 {
@@ -367,8 +404,16 @@ pub fn resize(frame: Frame, rotation: f32, handle: u8, delta: (f64, f64), keep_a
         _ => (-1.0, 0.0),
     };
     let both = if from_centre { 2.0 } else { 1.0 };
-    let mut width = (frame.width + hx * dx * both).max(if hx != 0.0 { MIN_SIDE.min(frame.width) } else { 0.0 });
-    let mut height = (frame.height + hy * dy * both).max(if hy != 0.0 { MIN_SIDE.min(frame.height) } else { 0.0 });
+    let mut width = (frame.width + hx * dx * both).max(if hx != 0.0 {
+        MIN_SIDE.min(frame.width)
+    } else {
+        0.0
+    });
+    let mut height = (frame.height + hy * dy * both).max(if hy != 0.0 {
+        MIN_SIDE.min(frame.height)
+    } else {
+        0.0
+    });
     if keep_aspect && hx != 0.0 && hy != 0.0 && frame.width > 0.0 && frame.height > 0.0 {
         // Follow the side that was pulled furthest.
         let scale = (width / frame.width).max(height / frame.height);
@@ -378,7 +423,10 @@ pub fn resize(frame: Frame, rotation: f32, handle: u8, delta: (f64, f64), keep_a
     let (shift_x, shift_y) = if from_centre {
         (0.0, 0.0)
     } else {
-        (hx * (width - frame.width) / 2.0, hy * (height - frame.height) / 2.0)
+        (
+            hx * (width - frame.width) / 2.0,
+            hy * (height - frame.height) / 2.0,
+        )
     };
     let cx = frame.x + frame.width / 2.0 + shift_x * cos - shift_y * sin;
     let cy = frame.y + frame.height / 2.0 + shift_x * sin + shift_y * cos;
@@ -387,12 +435,30 @@ pub fn resize(frame: Frame, rotation: f32, handle: u8, delta: (f64, f64), keep_a
 
 /// The two ends of a line on the sheet: where its outline starts (the
 /// top-left corner of its frame before flips) and where it ends.
-pub fn line_ends(frame: Frame, flip_h: bool, flip_v: bool, rotation: f32) -> ((f64, f64), (f64, f64)) {
-    let (x0, x1) = if flip_h { (frame.x + frame.width, frame.x) } else { (frame.x, frame.x + frame.width) };
-    let (y0, y1) = if flip_v { (frame.y + frame.height, frame.y) } else { (frame.y, frame.y + frame.height) };
+pub fn line_ends(
+    frame: Frame,
+    flip_h: bool,
+    flip_v: bool,
+    rotation: f32,
+) -> ((f64, f64), (f64, f64)) {
+    let (x0, x1) = if flip_h {
+        (frame.x + frame.width, frame.x)
+    } else {
+        (frame.x, frame.x + frame.width)
+    };
+    let (y0, y1) = if flip_v {
+        (frame.y + frame.height, frame.y)
+    } else {
+        (frame.y, frame.y + frame.height)
+    };
     let (cx, cy) = (frame.x + frame.width / 2.0, frame.y + frame.height / 2.0);
     let (sin, cos) = (rotation as f64).to_radians().sin_cos();
-    let turn = |x: f64, y: f64| (cx + (x - cx) * cos - (y - cy) * sin, cy + (x - cx) * sin + (y - cy) * cos);
+    let turn = |x: f64, y: f64| {
+        (
+            cx + (x - cx) * cos - (y - cy) * sin,
+            cy + (x - cx) * sin + (y - cy) * cos,
+        )
+    };
     (turn(x0, y0), turn(x1, y1))
 }
 
@@ -400,7 +466,12 @@ pub fn line_ends(frame: Frame, flip_h: bool, flip_v: bool, rotation: f32) -> ((f
 /// `start` to `end`, without rotation.
 pub fn line_frame(start: (f64, f64), end: (f64, f64)) -> (Frame, bool, bool) {
     (
-        Frame::new(start.0.min(end.0), start.1.min(end.1), (end.0 - start.0).abs(), (end.1 - start.1).abs()),
+        Frame::new(
+            start.0.min(end.0),
+            start.1.min(end.1),
+            (end.0 - start.0).abs(),
+            (end.1 - start.1).abs(),
+        ),
         end.0 < start.0,
         end.1 < start.1,
     )
@@ -429,7 +500,12 @@ pub fn drawn_frame(start: (f64, f64), end: (f64, f64), square: bool) -> Frame {
         dx = if dx < 0.0 { -side } else { side };
         dy = if dy < 0.0 { -side } else { side };
     }
-    Frame::new(start.0.min(start.0 + dx), start.1.min(start.1 + dy), dx.abs(), dy.abs())
+    Frame::new(
+        start.0.min(start.0 + dx),
+        start.1.min(start.1 + dy),
+        dx.abs(),
+        dy.abs(),
+    )
 }
 
 /// The rotation of a frame whose rotation handle was dragged to `at`:
@@ -460,7 +536,10 @@ mod tests {
         assert!(close(placed.point(0.0, 0.0), (250.0, 0.0)));
         assert!(close(placed.point(1.0, 1.0), (150.0, 200.0)));
         let extent = placed.extent();
-        assert!(close((extent.0, extent.1), (150.0, 0.0)) && close((extent.2, extent.3), (250.0, 200.0)));
+        assert!(
+            close((extent.0, extent.1), (150.0, 0.0))
+                && close((extent.2, extent.3), (250.0, 200.0))
+        );
         assert!(placed.contains((200.0, 10.0)) && !placed.contains((110.0, 60.0)));
         assert!(close(placed.unturned((250.0, 0.0)), (100.0, 50.0)));
         // Flips come first: the mirrored point is then turned.
@@ -480,11 +559,20 @@ mod tests {
         let rect = flatten(&ShapePreset::Rect.path(200.0, 100.0), &placed);
         assert_eq!(rect.len(), 1);
         assert!(rect[0].closed);
-        assert_eq!(rect[0].points, vec![(0.0, 0.0), (200.0, 0.0), (200.0, 100.0), (0.0, 100.0)]);
+        assert_eq!(
+            rect[0].points,
+            vec![(0.0, 0.0), (200.0, 0.0), (200.0, 100.0), (0.0, 100.0)]
+        );
         // A line is one open stroke, and flipping gives the other diagonal.
         let line = flatten(&ShapePreset::Line.path(200.0, 100.0), &placed);
-        assert_eq!((line[0].closed, line[0].points.clone()), (false, vec![(0.0, 0.0), (200.0, 100.0)]));
-        let flipped = Placed { flip_v: true, ..placed };
+        assert_eq!(
+            (line[0].closed, line[0].points.clone()),
+            (false, vec![(0.0, 0.0), (200.0, 100.0)])
+        );
+        let flipped = Placed {
+            flip_v: true,
+            ..placed
+        };
         assert_eq!(
             flatten(&ShapePreset::Line.path(200.0, 100.0), &flipped)[0].points,
             vec![(0.0, 100.0), (200.0, 0.0)]
@@ -494,13 +582,19 @@ mod tests {
         assert!(ellipse.closed && ellipse.points.len() > 30);
         let xs: Vec<f32> = ellipse.points.iter().map(|p| p.0).collect();
         let ys: Vec<f32> = ellipse.points.iter().map(|p| p.1).collect();
-        assert!(xs.iter().all(|x| (-0.01..=200.01).contains(x)) && ys.iter().all(|y| (-0.01..=100.01).contains(y)));
+        assert!(
+            xs.iter().all(|x| (-0.01..=200.01).contains(x))
+                && ys.iter().all(|y| (-0.01..=100.01).contains(y))
+        );
         assert!(xs.iter().any(|x| *x > 199.9) && xs.iter().any(|x| *x < 0.1));
         assert!(in_polygon((100.0, 50.0), &ellipse.points));
         assert!(!in_polygon((5.0, 5.0), &ellipse.points));
         // Every preset gives something to draw.
         for preset in ShapePreset::ALL {
-            let lines = flatten(&preset.path(96.0, 96.0), &Placed::plain(0.0, 0.0, 96.0, 96.0));
+            let lines = flatten(
+                &preset.path(96.0, 96.0),
+                &Placed::plain(0.0, 0.0, 96.0, 96.0),
+            );
             assert!(!lines.is_empty(), "{preset:?}");
             assert_eq!(lines[0].closed, !preset.is_line(), "{preset:?}");
         }
@@ -508,7 +602,10 @@ mod tests {
 
     #[test]
     fn hits_follow_the_outline() {
-        let star = &flatten(&ShapePreset::Star5.path(100.0, 100.0), &Placed::plain(0.0, 0.0, 100.0, 100.0))[0];
+        let star = &flatten(
+            &ShapePreset::Star5.path(100.0, 100.0),
+            &Placed::plain(0.0, 0.0, 100.0, 100.0),
+        )[0];
         assert!(in_polygon((50.0, 50.0), &star.points));
         // Between two points of the star there is nothing.
         assert!(!in_polygon((15.0, 15.0), &star.points));
@@ -538,9 +635,22 @@ mod tests {
         assert!(close(open.points[1], (0.0, 50.0)) && close(open.points[0], (-5.0, 40.0)));
         assert!(arrow_head(LineEnd::None, (1.0, 1.0), (0.0, 0.0), 10.0).is_none());
         assert!(arrow_head(LineEnd::Oval, (1.0, 1.0), (1.0, 1.0), 10.0).is_none());
-        assert_eq!(arrow_head(LineEnd::Diamond, (0.0, 0.0), (-9.0, 0.0), 8.0).unwrap().points.len(), 4);
+        assert_eq!(
+            arrow_head(LineEnd::Diamond, (0.0, 0.0), (-9.0, 0.0), 8.0)
+                .unwrap()
+                .points
+                .len(),
+            4
+        );
         // Thin lines keep a head that can be seen; it grows with the zoom.
-        assert_eq!((head_size(1.0, 1.0), head_size(4.0, 1.0), head_size(1.0, 2.0)), (6.0, 12.0, 12.0));
+        assert_eq!(
+            (
+                head_size(1.0, 1.0),
+                head_size(4.0, 1.0),
+                head_size(1.0, 2.0)
+            ),
+            (6.0, 12.0, 12.0)
+        );
         // The line is shortened under a head, at either end.
         let mut points = vec![(0.0, 0.0), (100.0, 0.0)];
         trim(&mut points, 8.0, true);
@@ -557,20 +667,44 @@ mod tests {
     fn handles_resize_from_the_opposite_side() {
         let frame = Frame::new(100.0, 100.0, 200.0, 100.0);
         // Bottom-right corner, 20 right and 10 down.
-        assert_eq!(resize(frame, 0.0, 4, (20.0, 10.0), false, false), Frame::new(100.0, 100.0, 220.0, 110.0));
+        assert_eq!(
+            resize(frame, 0.0, 4, (20.0, 10.0), false, false),
+            Frame::new(100.0, 100.0, 220.0, 110.0)
+        );
         // Top-left corner: the bottom-right one does not move.
-        assert_eq!(resize(frame, 0.0, 0, (20.0, 10.0), false, false), Frame::new(120.0, 110.0, 180.0, 90.0));
+        assert_eq!(
+            resize(frame, 0.0, 0, (20.0, 10.0), false, false),
+            Frame::new(120.0, 110.0, 180.0, 90.0)
+        );
         // A side handle ignores the movement across it.
-        assert_eq!(resize(frame, 0.0, 3, (-50.0, 30.0), false, false), Frame::new(100.0, 100.0, 150.0, 100.0));
-        assert_eq!(resize(frame, 0.0, 1, (7.0, -30.0), false, false), Frame::new(100.0, 70.0, 200.0, 130.0));
+        assert_eq!(
+            resize(frame, 0.0, 3, (-50.0, 30.0), false, false),
+            Frame::new(100.0, 100.0, 150.0, 100.0)
+        );
+        assert_eq!(
+            resize(frame, 0.0, 1, (7.0, -30.0), false, false),
+            Frame::new(100.0, 70.0, 200.0, 130.0)
+        );
         // Proportions kept from a corner: the larger pull wins.
-        assert_eq!(resize(frame, 0.0, 4, (100.0, 10.0), true, false), Frame::new(100.0, 100.0, 300.0, 150.0));
+        assert_eq!(
+            resize(frame, 0.0, 4, (100.0, 10.0), true, false),
+            Frame::new(100.0, 100.0, 300.0, 150.0)
+        );
         // Not from a side.
-        assert_eq!(resize(frame, 0.0, 3, (100.0, 0.0), true, false), Frame::new(100.0, 100.0, 300.0, 100.0));
+        assert_eq!(
+            resize(frame, 0.0, 3, (100.0, 0.0), true, false),
+            Frame::new(100.0, 100.0, 300.0, 100.0)
+        );
         // From the centre both sides move.
-        assert_eq!(resize(frame, 0.0, 3, (10.0, 0.0), false, true), Frame::new(90.0, 100.0, 220.0, 100.0));
+        assert_eq!(
+            resize(frame, 0.0, 3, (10.0, 0.0), false, true),
+            Frame::new(90.0, 100.0, 220.0, 100.0)
+        );
         // A side cannot be pulled through the opposite one.
-        assert_eq!(resize(frame, 0.0, 3, (-500.0, 0.0), false, false).width, MIN_SIDE);
+        assert_eq!(
+            resize(frame, 0.0, 3, (-500.0, 0.0), false, false).width,
+            MIN_SIDE
+        );
         // Turned a quarter, the handle on the "right" side points down:
         // pulling it down widens the frame, and its left side (now on
         // top) stays where it was.
@@ -579,7 +713,12 @@ mod tests {
         let fixed = |f: Frame| {
             let placed = Placed {
                 rotation: 90.0,
-                ..Placed::plain(f.x as f32, f.y as f32, (f.x + f.width) as f32, (f.y + f.height) as f32)
+                ..Placed::plain(
+                    f.x as f32,
+                    f.y as f32,
+                    (f.x + f.width) as f32,
+                    (f.y + f.height) as f32,
+                )
             };
             placed.handles()[7]
         };
@@ -595,8 +734,14 @@ mod tests {
     #[test]
     fn lines_are_drawn_between_two_points() {
         let (frame, flip_h, flip_v) = line_frame((100.0, 80.0), (40.0, 120.0));
-        assert_eq!((frame, flip_h, flip_v), (Frame::new(40.0, 80.0, 60.0, 40.0), true, false));
-        assert_eq!(line_ends(frame, flip_h, flip_v, 0.0), ((100.0, 80.0), (40.0, 120.0)));
+        assert_eq!(
+            (frame, flip_h, flip_v),
+            (Frame::new(40.0, 80.0, 60.0, 40.0), true, false)
+        );
+        assert_eq!(
+            line_ends(frame, flip_h, flip_v, 0.0),
+            ((100.0, 80.0), (40.0, 120.0))
+        );
         // A turned line (from a file) has its ends turned with it.
         let (start, end) = line_ends(Frame::new(0.0, 0.0, 100.0, 0.0), false, false, 90.0);
         assert!((start.0 - 50.0).abs() < 1e-6 && (start.1 + 50.0).abs() < 1e-6);
@@ -606,10 +751,19 @@ mod tests {
         assert!((to.0 - 100.0).abs() < 1e-6 && to.1.abs() < 1e-6);
         let to = constrain_direction((0.0, 0.0), (60.0, 50.0), 45.0);
         assert!((to.0 - to.1).abs() < 1e-6 && (to.0 - 55.0).abs() < 1e-6);
-        assert_eq!(constrain_direction((5.0, 5.0), (5.0, 5.0), 45.0), (5.0, 5.0));
+        assert_eq!(
+            constrain_direction((5.0, 5.0), (5.0, 5.0), 45.0),
+            (5.0, 5.0)
+        );
         // Shapes: any corner can be the start, Shift makes a square.
-        assert_eq!(drawn_frame((100.0, 100.0), (40.0, 130.0), false), Frame::new(40.0, 100.0, 60.0, 30.0));
-        assert_eq!(drawn_frame((100.0, 100.0), (40.0, 130.0), true), Frame::new(40.0, 100.0, 60.0, 60.0));
+        assert_eq!(
+            drawn_frame((100.0, 100.0), (40.0, 130.0), false),
+            Frame::new(40.0, 100.0, 60.0, 30.0)
+        );
+        assert_eq!(
+            drawn_frame((100.0, 100.0), (40.0, 130.0), true),
+            Frame::new(40.0, 100.0, 60.0, 60.0)
+        );
         // The rotation handle: above is 0, to the right 90.
         assert_eq!(drag_angle((0.0, 0.0), (0.0, -50.0), false), 0.0);
         assert_eq!(drag_angle((0.0, 0.0), (50.0, 0.0), false), 90.0);

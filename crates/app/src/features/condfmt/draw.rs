@@ -10,8 +10,8 @@
 use crate::grid::{Draw, Layer};
 use crate::theme::c;
 use gpui::{
-    BorderStyle, Bounds, Hsla, IntoElement, PathBuilder, Pixels, Point, Styled, canvas, fill, linear_color_stop,
-    linear_gradient, point, px, quad, size, transparent_black,
+    BorderStyle, Bounds, Hsla, IntoElement, PathBuilder, Pixels, Point, Styled, canvas, fill,
+    linear_color_stop, linear_gradient, point, px, quad, size, transparent_black,
 };
 use opensheet_engine::condfmt::{Bar, Icon, IconSet};
 use opensheet_engine::style::Color;
@@ -131,7 +131,10 @@ impl Art<'_> {
     }
 
     fn bounds(&self, u0: f32, v0: f32, u1: f32, v1: f32) -> Bounds<Pixels> {
-        Bounds::new(self.at((u0, v0)), size(px((u1 - u0) * self.scale), px((v1 - v0) * self.scale)))
+        Bounds::new(
+            self.at((u0, v0)),
+            size(px((u1 - u0) * self.scale), px((v1 - v0) * self.scale)),
+        )
     }
 
     /// Width of the outlines: one design unit, never thinner than what
@@ -172,7 +175,13 @@ impl Art<'_> {
         let segs: Vec<Seg> = points
             .iter()
             .enumerate()
-            .map(|(i, (u, v))| if i == 0 { Seg::Move(*u, *v) } else { Seg::Line(*u, *v) })
+            .map(|(i, (u, v))| {
+                if i == 0 {
+                    Seg::Move(*u, *v)
+                } else {
+                    Seg::Line(*u, *v)
+                }
+            })
             .collect();
         self.path(&segs, fill_color, Some(line));
     }
@@ -191,7 +200,16 @@ impl Art<'_> {
 
     /// A rectangle given by its outer edges, with rounded corners and an
     /// outline drawn inside it.
-    fn rect(&mut self, u0: f32, v0: f32, u1: f32, v1: f32, radius: f32, fill_color: Hsla, line: Option<u32>) {
+    fn rect(
+        &mut self,
+        u0: f32,
+        v0: f32,
+        u1: f32,
+        v1: f32,
+        radius: f32,
+        fill_color: Hsla,
+        line: Option<u32>,
+    ) {
         self.out.push(Draw::Quad(quad(
             self.bounds(u0, v0, u1, v1),
             px(radius * self.scale),
@@ -203,7 +221,15 @@ impl Art<'_> {
     }
 
     fn disc(&mut self, u: f32, v: f32, radius: f32, fill_color: u32, line: Option<u32>) {
-        self.rect(u - radius, v - radius, u + radius, v + radius, radius, c(fill_color), line);
+        self.rect(
+            u - radius,
+            v - radius,
+            u + radius,
+            v + radius,
+            radius,
+            c(fill_color),
+            line,
+        );
     }
 
     /// The part of a disc swept clockwise from twelve o'clock over
@@ -223,14 +249,22 @@ impl Art<'_> {
     fn star(&mut self, fill_color: u32, line: Option<u32>, left_half: bool) {
         let points = star_points();
         let points: Vec<(f32, f32)> = if left_half {
-            std::iter::once(points[0]).chain(points[5..].iter().copied()).collect()
+            std::iter::once(points[0])
+                .chain(points[5..].iter().copied())
+                .collect()
         } else {
             points.to_vec()
         };
         let segs: Vec<Seg> = points
             .iter()
             .enumerate()
-            .map(|(i, (u, v))| if i == 0 { Seg::Move(*u, *v) } else { Seg::Line(*u, *v) })
+            .map(|(i, (u, v))| {
+                if i == 0 {
+                    Seg::Move(*u, *v)
+                } else {
+                    Seg::Line(*u, *v)
+                }
+            })
             .collect();
         self.path(&segs, fill_color, line);
     }
@@ -239,7 +273,11 @@ impl Art<'_> {
     /// other.
     fn star_outline(&mut self) {
         let points = star_points();
-        let left: Vec<(f32, f32)> = points[5..].iter().copied().chain(std::iter::once(points[0])).collect();
+        let left: Vec<(f32, f32)> = points[5..]
+            .iter()
+            .copied()
+            .chain(std::iter::once(points[0]))
+            .collect();
         self.stroke(&points[..=5], 1.0, SILVER.1);
         self.stroke(&left, 1.0, GOLD.1);
     }
@@ -265,7 +303,15 @@ impl Art<'_> {
         self.rect(0.5, 0.5, 15.5, 15.5, 3.0, c(0x161616), None);
         self.disc(8.0, 8.0, 5.3, lamp, None);
         // The reflection that makes it a lamp rather than a dot.
-        self.rect(4.7, 4.4, 8.3, 7.4, 1.6, crate::theme::ca(0xFFFFFF, 0.55), None);
+        self.rect(
+            4.7,
+            4.4,
+            8.3,
+            7.4,
+            1.6,
+            crate::theme::ca(0xFFFFFF, 0.55),
+            None,
+        );
     }
 
     /// A disc with a white sign on it.
@@ -285,9 +331,20 @@ impl Art<'_> {
     /// Four boxes in a square, `on` of them filled: bottom left, bottom
     /// right, top left, top right.
     fn boxes(&mut self, on: usize) {
-        for (i, (left, top)) in [(0.5, 8.5), (8.5, 8.5), (0.5, 0.5), (8.5, 0.5)].into_iter().enumerate() {
+        for (i, (left, top)) in [(0.5, 8.5), (8.5, 8.5), (0.5, 0.5), (8.5, 0.5)]
+            .into_iter()
+            .enumerate()
+        {
             let (fill_color, line) = if i < on { BOX_ON } else { BOX_OFF };
-            self.rect(left, top, left + 7.0, top + 7.0, 0.0, c(fill_color), Some(line));
+            self.rect(
+                left,
+                top,
+                left + 7.0,
+                top + 7.0,
+                0.0,
+                c(fill_color),
+                Some(line),
+            );
         }
     }
 
@@ -347,8 +404,14 @@ pub fn icon(icon: Icon, x: f32, y: f32, size: f32, out: &mut Vec<Draw>) {
         Icon::GreenTrafficLight => art.traffic_light(LAMP_GREEN),
         Icon::YellowTrafficLight => art.traffic_light(LAMP_YELLOW),
         Icon::RedTrafficLight => art.traffic_light(LAMP_RED),
-        Icon::YellowTriangle => art.polygon(&[(8.0, 1.2), (15.3, 14.2), (0.7, 14.2)], (0xFAD25C, YELLOW.1)),
-        Icon::RedDiamond => art.polygon(&[(8.0, 0.8), (15.2, 8.0), (8.0, 15.2), (0.8, 8.0)], (0xE77777, RED.1)),
+        Icon::YellowTriangle => art.polygon(
+            &[(8.0, 1.2), (15.3, 14.2), (0.7, 14.2)],
+            (0xFAD25C, YELLOW.1),
+        ),
+        Icon::RedDiamond => art.polygon(
+            &[(8.0, 0.8), (15.2, 8.0), (8.0, 15.2), (0.8, 8.0)],
+            (0xE77777, RED.1),
+        ),
         Icon::GreenCheckSymbol => {
             art.symbol_disc((0x71BB82, GREEN.1));
             art.stroke(&[(4.0, 8.4), (6.9, 11.2), (12.0, 5.0)], 2.2, 0xFFFFFF);
@@ -365,7 +428,10 @@ pub fn icon(icon: Icon, x: f32, y: f32, size: f32, out: &mut Vec<Draw>) {
         }
         Icon::GreenCheck => art.polygon(&CHECK, (0x55AC68, 0x286320)),
         Icon::YellowExclamation => {
-            art.polygon(&[(6.2, 0.5), (9.8, 0.5), (9.0, 10.6), (7.0, 10.6)], (0xF6CE77, YELLOW.1));
+            art.polygon(
+                &[(6.2, 0.5), (9.8, 0.5), (9.0, 10.6), (7.0, 10.6)],
+                (0xF6CE77, YELLOW.1),
+            );
             art.disc(8.0, 13.6, 1.9, 0xF6CE77, Some(YELLOW.1));
         }
         Icon::RedCross => art.polygon(&CROSS, (0xE17271, 0x91281C)),
@@ -389,9 +455,13 @@ pub fn icon(icon: Icon, x: f32, y: f32, size: f32, out: &mut Vec<Draw>) {
             art.star_outline();
         }
         Icon::SilverStar => art.star(SILVER.0, Some(SILVER.1), false),
-        Icon::GreenUpTriangle => art.polygon(&[(8.0, 3.2), (15.2, 9.8), (0.8, 9.8)], (0x60B071, 0x255D1A)),
+        Icon::GreenUpTriangle => {
+            art.polygon(&[(8.0, 3.2), (15.2, 9.8), (0.8, 9.8)], (0x60B071, 0x255D1A))
+        }
         Icon::YellowDash => art.rect(0.5, 6.0, 15.5, 9.5, 0.0, c(0xFCD348), Some(YELLOW.1)),
-        Icon::RedDownTriangle => art.polygon(&[(0.8, 5.6), (15.2, 5.6), (8.0, 12.2)], (0xE26767, RED.1)),
+        Icon::RedDownTriangle => {
+            art.polygon(&[(0.8, 5.6), (15.2, 5.6), (8.0, 12.2)], (0xE26767, RED.1))
+        }
         Icon::FourFilledBoxes => art.boxes(4),
         Icon::ThreeFilledBoxes => art.boxes(3),
         Icon::TwoFilledBoxes => art.boxes(2),
@@ -417,7 +487,12 @@ fn towards_white(color: Color, amount: f32) -> Hsla {
 /// at the bottom; its axis runs over the whole height of the cell.
 pub fn bar(bar: &Bar, cell: (f32, f32, f32, f32), zoom: f32, out: &mut Vec<Draw>) {
     let gap = zoom.round().max(1.0);
-    let (x0, y0, x1, y1) = (cell.0 + gap, cell.1 + gap, cell.2 - 1.0 - gap, cell.3 - 1.0 - 2.0 * gap);
+    let (x0, y0, x1, y1) = (
+        cell.0 + gap,
+        cell.1 + gap,
+        cell.2 - 1.0 - gap,
+        cell.3 - 1.0 - 2.0 * gap,
+    );
     if x1 <= x0 || y1 <= y0 {
         return;
     }
@@ -444,8 +519,14 @@ pub fn bar(bar: &Bar, cell: (f32, f32, f32, f32), zoom: f32, out: &mut Vec<Draw>
             bounds,
             px(0.),
             background,
-            px(if bar.border.is_some() { gap.min(right - left) } else { 0.0 }),
-            bar.border.map(|color| c(color.value())).unwrap_or(transparent_black()),
+            px(if bar.border.is_some() {
+                gap.min(right - left)
+            } else {
+                0.0
+            }),
+            bar.border
+                .map(|color| c(color.value()))
+                .unwrap_or(transparent_black()),
             BorderStyle::Solid,
         )));
     }
@@ -476,10 +557,21 @@ pub fn scale_strip(colors: &[Color], bounds: Bounds<Pixels>, out: &mut Vec<Draw>
             let width = f32::from(bounds.size.width) / parts as f32;
             for (i, pair) in colors.windows(2).enumerate() {
                 let left = bounds.origin.x + px((i as f32 * width).floor());
-                let right = if i + 1 == parts { bounds.right() } else { bounds.origin.x + px(((i + 1) as f32 * width).floor()) };
+                let right = if i + 1 == parts {
+                    bounds.right()
+                } else {
+                    bounds.origin.x + px(((i + 1) as f32 * width).floor())
+                };
                 out.push(Draw::Quad(fill(
-                    Bounds::new(point(left, bounds.origin.y), size(right - left, bounds.size.height)),
-                    linear_gradient(90.0, linear_color_stop(c(pair[0].value()), 0.0), linear_color_stop(c(pair[1].value()), 1.0)),
+                    Bounds::new(
+                        point(left, bounds.origin.y),
+                        size(right - left, bounds.size.height),
+                    ),
+                    linear_gradient(
+                        90.0,
+                        linear_color_stop(c(pair[0].value()), 0.0),
+                        linear_color_stop(c(pair[1].value()), 1.0),
+                    ),
                 )));
             }
         }
@@ -491,13 +583,24 @@ pub fn scale_strip(colors: &[Color], bounds: Bounds<Pixels>, out: &mut Vec<Draw>
 /// An element of the given size painted by `draw`, which receives the
 /// bounds it got: how icons, bars and thumbnails are put in menus and
 /// dialogs.
-pub fn picture(width: f32, height: f32, draw: impl Fn(Bounds<Pixels>, &mut Vec<Draw>) + 'static) -> impl IntoElement {
+pub fn picture(
+    width: f32,
+    height: f32,
+    draw: impl Fn(Bounds<Pixels>, &mut Vec<Draw>) + 'static,
+) -> impl IntoElement {
     canvas(
         |_, _, _| {},
         move |bounds: Bounds<Pixels>, _, window, cx| {
             let mut items = Vec::new();
             draw(bounds, &mut items);
-            crate::grid::paint_layers(vec![Layer { clip: bounds, items }], window, cx);
+            crate::grid::paint_layers(
+                vec![Layer {
+                    clip: bounds,
+                    items,
+                }],
+                window,
+                cx,
+            );
         },
     )
     .w(px(width))
@@ -508,7 +611,13 @@ pub fn picture(width: f32, height: f32, draw: impl Fn(Bounds<Pixels>, &mut Vec<D
 /// One icon as an element.
 pub fn icon_picture(which: Icon, side: f32) -> impl IntoElement {
     picture(side, side, move |bounds, out| {
-        icon(which, f32::from(bounds.origin.x), f32::from(bounds.origin.y), side, out)
+        icon(
+            which,
+            f32::from(bounds.origin.x),
+            f32::from(bounds.origin.y),
+            side,
+            out,
+        )
     })
 }
 
@@ -535,7 +644,10 @@ mod tests {
     use super::*;
 
     fn every_icon() -> Vec<Icon> {
-        let mut icons: Vec<Icon> = IconSet::ALL.iter().flat_map(|set| set.icons().iter().copied()).collect();
+        let mut icons: Vec<Icon> = IconSet::ALL
+            .iter()
+            .flat_map(|set| set.icons().iter().copied())
+            .collect();
         icons.sort_by_key(|icon| *icon as u32);
         icons.dedup();
         icons
@@ -594,10 +706,20 @@ mod tests {
     #[test]
     fn a_bar_keeps_clear_of_the_edges_of_the_cell() {
         let mut out = Vec::new();
-        bar(&sample_bar(0.0, 1.0), (10.0, 20.0, 110.0, 40.0), 1.0, &mut out);
+        bar(
+            &sample_bar(0.0, 1.0),
+            (10.0, 20.0, 110.0, 40.0),
+            1.0,
+            &mut out,
+        );
         let b = quads(&out)[0];
         assert_eq!(
-            (f32::from(b.left()), f32::from(b.top()), f32::from(b.right()), f32::from(b.bottom())),
+            (
+                f32::from(b.left()),
+                f32::from(b.top()),
+                f32::from(b.right()),
+                f32::from(b.bottom())
+            ),
             (11.0, 21.0, 108.0, 37.0)
         );
     }
@@ -610,9 +732,16 @@ mod tests {
         bar(&negative, (0.0, 0.0, 103.0, 20.0), 1.0, &mut out);
         let all = quads(&out);
         // The bar, then the dashes of the axis over the whole height.
-        assert_eq!((f32::from(all[0].left()), f32::from(all[0].right())), (26.0, 51.0));
+        assert_eq!(
+            (f32::from(all[0].left()), f32::from(all[0].right())),
+            (26.0, 51.0)
+        );
         assert!(all.len() > 3);
-        assert!(all[1..].iter().all(|dash| f32::from(dash.left()) == 51.0 && f32::from(dash.size.width) == 1.0));
+        assert!(
+            all[1..]
+                .iter()
+                .all(|dash| f32::from(dash.left()) == 51.0 && f32::from(dash.size.width) == 1.0)
+        );
         assert_eq!(f32::from(all[1].top()), 0.0);
         assert_eq!(f32::from(all.last().unwrap().bottom()), 19.0);
     }
@@ -644,7 +773,12 @@ mod tests {
     #[test]
     fn a_bar_of_no_length_draws_nothing() {
         let mut out = Vec::new();
-        bar(&sample_bar(0.0, 0.0), (0.0, 0.0, 100.0, 20.0), 1.0, &mut out);
+        bar(
+            &sample_bar(0.0, 0.0),
+            (0.0, 0.0, 100.0, 20.0),
+            1.0,
+            &mut out,
+        );
         assert!(out.is_empty());
     }
 
@@ -652,7 +786,11 @@ mod tests {
     fn a_scale_strip_covers_its_box() {
         let mut out = Vec::new();
         let bounds = Bounds::new(point(px(5.), px(5.)), size(px(91.), px(10.)));
-        scale_strip(&[Color(0xF8696B), Color(0xFFEB84), Color(0x63BE7B)], bounds, &mut out);
+        scale_strip(
+            &[Color(0xF8696B), Color(0xFFEB84), Color(0x63BE7B)],
+            bounds,
+            &mut out,
+        );
         let all = quads(&out);
         assert_eq!(all.len(), 2);
         assert_eq!(all[0].left(), bounds.left());

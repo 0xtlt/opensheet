@@ -10,7 +10,9 @@ use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -59,7 +61,16 @@ fn outlined() -> Workbook {
 #[test]
 fn levels_and_folded_groups_round_trip() {
     let mut wb = outlined();
-    wb.outline_set_collapsed(0, Axis::Rows, &Group { level: 2, first: 1, last: 2 }, true);
+    wb.outline_set_collapsed(
+        0,
+        Axis::Rows,
+        &Group {
+            level: 2,
+            first: 1,
+            last: 2,
+        },
+        true,
+    );
     wb.outline_detail(0, Rect::cell(20, 3), false).unwrap();
     wb.commit("fold");
     let bytes = to_bytes(&wb);
@@ -67,14 +78,26 @@ fn levels_and_folded_groups_round_trip() {
     let xml = part(&bytes, "xl/worksheets/sheet1.xml");
     assert_well_formed("sheet1.xml", &xml);
     assert_worksheet_order("sheet1.xml", &xml);
-    assert!(xml.contains("outlineLevelRow=\"2\" outlineLevelCol=\"1\""), "{xml}");
-    assert!(xml.contains("<row r=\"2\" hidden=\"1\" outlineLevel=\"2\">"), "{xml}");
-    assert!(xml.contains("<row r=\"4\" outlineLevel=\"1\" collapsed=\"1\">"), "{xml}");
+    assert!(
+        xml.contains("outlineLevelRow=\"2\" outlineLevelCol=\"1\""),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("<row r=\"2\" hidden=\"1\" outlineLevel=\"2\">"),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("<row r=\"4\" outlineLevel=\"1\" collapsed=\"1\">"),
+        "{xml}"
+    );
     assert!(xml.contains("<row r=\"5\" outlineLevel=\"2\">"), "{xml}");
     assert!(xml.contains(" hidden=\"1\" outlineLevel=\"1\"/>"), "{xml}");
     assert!(xml.contains("<col min=\"4\" max=\"4\""), "{xml}");
     // Excel's defaults are not spelled out.
-    assert!(!xml.contains("outlinePr") && !xml.contains("showOutlineSymbols"), "{xml}");
+    assert!(
+        !xml.contains("outlinePr") && !xml.contains("showOutlineSymbols"),
+        "{xml}"
+    );
 
     let back = load(&bytes);
     assert_eq!(back.sheets[0].outline, wb.sheets[0].outline);
@@ -95,11 +118,21 @@ fn settings_round_trip() {
     let bytes = to_bytes(&wb);
     let xml = part(&bytes, "xl/worksheets/sheet1.xml");
     assert_worksheet_order("sheet1.xml", &xml);
-    assert!(xml.contains("<outlinePr summaryBelow=\"0\" summaryRight=\"0\"/></sheetPr>"), "{xml}");
+    assert!(
+        xml.contains("<outlinePr summaryBelow=\"0\" summaryRight=\"0\"/></sheetPr>"),
+        "{xml}"
+    );
     assert!(xml.contains("showOutlineSymbols=\"0\""), "{xml}");
     let back = load(&bytes);
     let outline = &back.sheets[0].outline;
-    assert_eq!((outline.summary_below, outline.summary_right, outline.show_symbols), (false, false, false));
+    assert_eq!(
+        (
+            outline.summary_below,
+            outline.summary_right,
+            outline.show_symbols
+        ),
+        (false, false, false)
+    );
     assert_eq!(outline.rows.levels, wb.sheets[0].outline.rows.levels);
 }
 
@@ -119,37 +152,60 @@ fn an_outline_written_by_excel_is_read() {
         "</worksheet>"
     );
     let bytes = package(&[
-        ("[Content_Types].xml", concat!(
-            "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">",
-            "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>",
-            "<Default Extension=\"xml\" ContentType=\"application/xml\"/>",
-            "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>",
-            "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>",
-            "</Types>"
-        )),
-        ("_rels/.rels", concat!(
-            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
-            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>",
-            "</Relationships>"
-        )),
-        ("xl/workbook.xml", concat!(
-            "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" ",
-            "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
-            "<sheets><sheet name=\"Sheet1\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>"
-        )),
-        ("xl/_rels/workbook.xml.rels", concat!(
-            "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
-            "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>",
-            "</Relationships>"
-        )),
+        (
+            "[Content_Types].xml",
+            concat!(
+                "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">",
+                "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>",
+                "<Default Extension=\"xml\" ContentType=\"application/xml\"/>",
+                "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>",
+                "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>",
+                "</Types>"
+            ),
+        ),
+        (
+            "_rels/.rels",
+            concat!(
+                "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+                "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>",
+                "</Relationships>"
+            ),
+        ),
+        (
+            "xl/workbook.xml",
+            concat!(
+                "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" ",
+                "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">",
+                "<sheets><sheet name=\"Sheet1\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>"
+            ),
+        ),
+        (
+            "xl/_rels/workbook.xml.rels",
+            concat!(
+                "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">",
+                "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>",
+                "</Relationships>"
+            ),
+        ),
         ("xl/worksheets/sheet1.xml", sheet),
     ]);
     let wb = load(&bytes);
     let sh = &wb.sheets[0];
     assert!(!sh.outline.summary_below && sh.outline.summary_right && !sh.outline.show_symbols);
-    assert_eq!(sh.outline.rows.levels.iter().map(|(r, l)| (*r, *l)).collect::<Vec<_>>(), [(1, 1), (2, 2), (3, 7)]);
+    assert_eq!(
+        sh.outline
+            .rows
+            .levels
+            .iter()
+            .map(|(r, l)| (*r, *l))
+            .collect::<Vec<_>>(),
+        [(1, 1), (2, 2), (3, 7)]
+    );
     assert!(sh.outline.rows.collapsed.contains(&0));
-    assert_eq!(sh.outline.cols.levels.keys().copied().collect::<Vec<_>>(), [1, 2]);
+    assert_eq!(
+        sh.outline.cols.levels.keys().copied().collect::<Vec<_>>(),
+        [1, 2]
+    );
     assert!(sh.outline.cols.collapsed.contains(&3));
     assert_eq!(sh.hidden_rows.iter().copied().collect::<Vec<_>>(), [1, 2]);
     // The group folded under row 1 opens from it.

@@ -15,7 +15,11 @@ use std::fmt::Write as _;
 /// and the built-in ones the formats in use (`used`, by style id) name.
 pub(crate) fn written(wb: &Workbook, used: &[bool]) -> Vec<CellStyle> {
     let all = wb.all_cell_styles();
-    let mut out: Vec<CellStyle> = all.iter().filter(|style| style.builtin == Some(0)).cloned().collect();
+    let mut out: Vec<CellStyle> = all
+        .iter()
+        .filter(|style| style.builtin == Some(0))
+        .cloned()
+        .collect();
     let named = |name: &str| {
         used.iter()
             .enumerate()
@@ -24,7 +28,10 @@ pub(crate) fn written(wb: &Workbook, used: &[bool]) -> Vec<CellStyle> {
             .any(|own| same_name(own, name))
     };
     for style in all {
-        let defined = wb.cell_styles.iter().any(|own| same_name(&own.name, &style.name));
+        let defined = wb
+            .cell_styles
+            .iter()
+            .any(|own| same_name(&own.name, &style.name));
         if style.builtin != Some(0) && (defined || named(&style.name)) {
             out.push(style);
         }
@@ -38,14 +45,22 @@ pub(crate) fn xf_id(written: &[CellStyle], style: &Style) -> u32 {
     let Some(name) = style.cell_style.as_deref() else {
         return 0;
     };
-    written.iter().position(|known| same_name(&known.name, name)).unwrap_or(0) as u32
+    written
+        .iter()
+        .position(|known| same_name(&known.name, name))
+        .unwrap_or(0) as u32
 }
 
 /// Append `<cellStyles>`.
 pub(crate) fn write(x: &mut String, written: &[CellStyle]) {
     // What Excel's own version of each built-in style is: a changed one
     // is marked, or Excel would put its own back.
-    let stock = builtin_styles(&written.first().map(|normal| normal.style.clone()).unwrap_or_default());
+    let stock = builtin_styles(
+        &written
+            .first()
+            .map(|normal| normal.style.clone())
+            .unwrap_or_default(),
+    );
     w!(x, "<cellStyles count=\"{}\">", written.len());
     for (index, style) in written.iter().enumerate() {
         x.push_str("<cellStyle name=\"");
@@ -53,7 +68,11 @@ pub(crate) fn write(x: &mut String, written: &[CellStyle]) {
         w!(x, "\" xfId=\"{index}\"");
         if let Some(id) = style.builtin {
             w!(x, " builtinId=\"{id}\"");
-            if id != 0 && stock.iter().any(|known| known.builtin == Some(id) && known != style) {
+            if id != 0
+                && stock
+                    .iter()
+                    .any(|known| known.builtin == Some(id) && known != style)
+            {
                 x.push_str(" customBuiltin=\"1\"");
             }
         }
@@ -80,7 +99,11 @@ pub(crate) struct LoadedStyles {
 
 /// `formats[i]` is the format and the included parts of `cellStyleXfs[i]`;
 /// `normal` the format of the workbook's Normal style.
-pub(crate) fn load(raw: Vec<RawCellStyle>, formats: &[(Style, StyleParts)], normal: &Style) -> LoadedStyles {
+pub(crate) fn load(
+    raw: Vec<RawCellStyle>,
+    formats: &[(Style, StyleParts)],
+    normal: &Style,
+) -> LoadedStyles {
     let stock = builtin_styles(normal);
     let mut names: Vec<Option<String>> = vec![None; formats.len()];
     let mut kept: Vec<CellStyle> = Vec::new();
@@ -89,7 +112,9 @@ pub(crate) fn load(raw: Vec<RawCellStyle>, formats: &[(Style, StyleParts)], norm
             continue;
         };
         // A built-in style goes by its English name here.
-        let known = style.builtin.and_then(|id| stock.iter().find(|known| known.builtin == Some(id)));
+        let known = style
+            .builtin
+            .and_then(|id| stock.iter().find(|known| known.builtin == Some(id)));
         let name = match known {
             Some(known) => known.name.clone(),
             None => style.name.trim().to_string(),
@@ -98,7 +123,9 @@ pub(crate) fn load(raw: Vec<RawCellStyle>, formats: &[(Style, StyleParts)], norm
             continue;
         }
         // The first style of a name wins, as the first of an `xfId` does.
-        if kept.iter().any(|own| same_name(&own.name, &name)) || names.iter().flatten().any(|taken| same_name(taken, &name)) {
+        if kept.iter().any(|own| same_name(&own.name, &name))
+            || names.iter().flatten().any(|taken| same_name(taken, &name))
+        {
             continue;
         }
         let loaded = CellStyle {

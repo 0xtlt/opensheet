@@ -9,8 +9,8 @@ use crate::i18n::{t, t_ctx};
 use crate::theme::{self, c};
 use crate::widgets::{Sketch, icon, preview, tooltip};
 use gpui::{
-    AnyElement, App, Bounds, ClickEvent, Context, Div, MouseDownEvent, Pixels, Stateful, WeakEntity, Window, div,
-    point, prelude::*, px,
+    AnyElement, App, Bounds, ClickEvent, Context, Div, MouseDownEvent, Pixels, Stateful,
+    WeakEntity, Window, div, point, prelude::*, px,
 };
 use opensheet_engine::style::Border;
 use opensheet_engine::table::{TableLook, TableStyle, builtin_table_styles};
@@ -88,11 +88,16 @@ fn swatches(style: Option<&TableStyle>, look: &TableLook) -> Vec<Swatch> {
         let band = row.saturating_sub(look.header_row as u32);
         for col in 0..COLS {
             // The style in the colours of the theme of the workbook.
-            let mut patch = style.map(|style| style.patch(look, row, col, band)).unwrap_or_default();
+            let mut patch = style
+                .map(|style| style.patch(look, row, col, band))
+                .unwrap_or_default();
             document.resolve_patch(&mut patch);
             cells.push(Swatch {
                 fill: patch.fill.flatten().map(|color| color.value()),
-                ink: patch.font_color.flatten().map_or(0x000000, |color| color.value()),
+                ink: patch
+                    .font_color
+                    .flatten()
+                    .map_or(0x000000, |color| color.value()),
                 bold: patch.bold == Some(true),
                 top: edge(patch.border_top),
                 bottom: edge(patch.border_bottom),
@@ -264,7 +269,9 @@ fn thumb(
         .border_color(ring)
         .rounded(px(3.))
         .hover(|s| s.bg(c(theme::HOVER)).border_color(c(theme::TEXT_MUTED)))
-        .child(preview(THUMB_W, THUMB_H, move |s: &mut Sketch| draw(s, style, &look)))
+        .child(preview(THUMB_W, THUMB_H, move |s: &mut Sketch| {
+            draw(s, style, &look)
+        }))
         .tooltip(tooltip(style_title(style.map(|style| style.name.as_str()))))
         .on_click(on_click)
 }
@@ -353,7 +360,10 @@ impl Render for Gallery {
                 .into_iter()
                 .map(|style| {
                     let name = style.map(|style| style.name.as_str());
-                    let current = self.current.as_ref().is_some_and(|current| current.as_deref() == name);
+                    let current = self
+                        .current
+                        .as_ref()
+                        .is_some_and(|current| current.as_deref() == name);
                     let app = self.app.clone();
                     index += 1;
                     thumb(index, style, self.look, current, move |_, window, cx| {
@@ -404,7 +414,10 @@ pub(super) fn open_gallery(app: &mut ExcelApp, design: bool, window: &mut Window
     // The press of this very click closed the gallery: its button was
     // pressed to put it away, not to open it again. (A press that old was
     // not followed by its click.)
-    if put_away.take().is_some_and(|at| at.elapsed() < Duration::from_secs(2)) {
+    if put_away
+        .take()
+        .is_some_and(|at| at.elapsed() < Duration::from_secs(2))
+    {
         return;
     }
     let table = active_table(app);
@@ -420,7 +433,10 @@ pub(super) fn open_gallery(app: &mut ExcelApp, design: bool, window: &mut Window
         anchor
     };
     let position = match anchor {
-        Some(bounds) => point(bounds.origin.x, bounds.origin.y + bounds.size.height + px(2.)),
+        Some(bounds) => point(
+            bounds.origin.x,
+            bounds.origin.y + bounds.size.height + px(2.),
+        ),
         None => window.mouse_position(),
     };
     let weak = cx.weak_entity();
@@ -542,7 +558,10 @@ mod tests {
         assert_eq!(family_styles(Family::Medium).len(), 28);
         assert_eq!(family_styles(Family::Dark).len(), 11);
         // Every built-in style is in one family.
-        let total: usize = Family::ALL.into_iter().map(|family| family_styles(family).len()).sum();
+        let total: usize = Family::ALL
+            .into_iter()
+            .map(|family| family_styles(family).len())
+            .sum();
         assert_eq!(total, builtin_table_styles().len() + 1);
         // Rows of seven, each family starting its own.
         let rows = gallery_rows();
@@ -556,8 +575,14 @@ mod tests {
 
     #[test]
     fn titles() {
-        assert_eq!(style_title(Some("TableStyleMedium2")), "Table Style Medium 2");
-        assert_eq!(style_title(Some("TableStyleLight21")), "Table Style Light 21");
+        assert_eq!(
+            style_title(Some("TableStyleMedium2")),
+            "Table Style Medium 2"
+        );
+        assert_eq!(
+            style_title(Some("TableStyleLight21")),
+            "Table Style Light 21"
+        );
         assert_eq!(style_title(Some("TableStyleDark11")), "Table Style Dark 11");
         assert_eq!(style_title(None), "None");
         // A style of a file that is not built in keeps its name.
@@ -573,20 +598,36 @@ mod tests {
         // With less room the row starts the same...
         assert_eq!(
             names(&strip_styles(Some(DEFAULT_TABLE_STYLE), 3)),
-            ["TableStyleMedium1", "TableStyleMedium2", "TableStyleMedium3"]
+            [
+                "TableStyleMedium1",
+                "TableStyleMedium2",
+                "TableStyleMedium3"
+            ]
         );
         // ...unless the current style would be cut off.
         assert_eq!(
             names(&strip_styles(Some("TableStyleMedium7"), 3)),
-            ["TableStyleMedium5", "TableStyleMedium6", "TableStyleMedium7"]
+            [
+                "TableStyleMedium5",
+                "TableStyleMedium6",
+                "TableStyleMedium7"
+            ]
         );
         // No style: the first row, which starts with it.
         assert_eq!(
             names(&strip_styles(None, 4)),
-            ["", "TableStyleLight1", "TableStyleLight2", "TableStyleLight3"]
+            [
+                "",
+                "TableStyleLight1",
+                "TableStyleLight2",
+                "TableStyleLight3"
+            ]
         );
         // A style that is not in the gallery: the first row too.
-        assert_eq!(names(&strip_styles(Some("Custom"), 2)), ["", "TableStyleLight1"]);
+        assert_eq!(
+            names(&strip_styles(Some("Custom"), 2)),
+            ["", "TableStyleLight1"]
+        );
         // The short last row of a family.
         assert_eq!(
             names(&strip_styles(Some("TableStyleLight21"), 7)),
@@ -621,7 +662,11 @@ mod tests {
         assert_eq!(cells[COLS as usize].fill, cells[2 * COLS as usize].fill);
         assert!(cells[4 * COLS as usize].bold);
         // No style draws nothing but black dashes.
-        assert!(swatches(None, &look).iter().all(|cell| *cell == Swatch::default()));
+        assert!(
+            swatches(None, &look)
+                .iter()
+                .all(|cell| *cell == Swatch::default())
+        );
     }
 
     #[test]
@@ -637,6 +682,12 @@ mod tests {
             last_col: true,
         });
         assert_eq!((look.rows, look.cols), (ROWS, COLS));
-        assert!(look.totals_row && look.banded_cols && look.first_col && look.last_col && !look.header_row);
+        assert!(
+            look.totals_row
+                && look.banded_cols
+                && look.first_col
+                && look.last_col
+                && !look.header_row
+        );
     }
 }

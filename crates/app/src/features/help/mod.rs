@@ -28,8 +28,8 @@ use crate::text_input::TextInput;
 use crate::theme::{self, c};
 use crate::widgets::{self, TextField, icon};
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, Menu, MenuItem, SharedString, Stateful, Window, actions, div,
-    prelude::*, px,
+    AnyElement, App, Context, Entity, FontWeight, Menu, MenuItem, SharedString, Stateful, Window,
+    actions, div, prelude::*, px,
 };
 
 /// Id of the Help pane.
@@ -87,7 +87,9 @@ pub(crate) struct HelpPane {
 impl HelpPane {
     fn new(cx: &mut Context<Self>) -> HelpPane {
         let search = widgets::input(cx, "");
-        search.update(cx, |search, _| search.placeholder = t("Search", "Rechercher").into());
+        search.update(cx, |search, _| {
+            search.placeholder = t("Search", "Rechercher").into()
+        });
         let mut topics = docs::readme_topics();
         topics.push(Topic {
             section: t("Keyboard shortcuts", "Raccourcis clavier").to_string(),
@@ -108,12 +110,18 @@ impl HelpPane {
     /// The titles of the topics, in the order of the list.
     #[cfg(test)]
     pub fn titles(&self) -> Vec<&str> {
-        self.topics.iter().map(|topic| topic.title.as_str()).collect()
+        self.topics
+            .iter()
+            .map(|topic| topic.title.as_str())
+            .collect()
     }
 
     #[cfg(test)]
     pub fn topic(&self, title: &str) -> &Topic {
-        self.topics.iter().find(|topic| topic.title == title).unwrap_or_else(|| panic!("no topic {title}"))
+        self.topics
+            .iter()
+            .find(|topic| topic.title == title)
+            .unwrap_or_else(|| panic!("no topic {title}"))
     }
 
     /// What the pane shows right now: the lines a search found, per topic
@@ -126,7 +134,13 @@ impl HelpPane {
                 .into_iter()
                 .map(|(topic, lines)| {
                     let topic = &self.topics[topic];
-                    (topic.title.clone(), lines.into_iter().map(|line| topic.lines[line].text.clone()).collect())
+                    (
+                        topic.title.clone(),
+                        lines
+                            .into_iter()
+                            .map(|line| topic.lines[line].text.clone())
+                            .collect(),
+                    )
                 })
                 .collect()
         })
@@ -141,16 +155,37 @@ impl HelpPane {
         div()
             .flex()
             .gap(px(6.))
-            .when(line.bullet, |d| d.child(div().flex_none().text_color(c(theme::TEXT_MUTED)).child("•")))
-            .when_some(line.keys.clone(), |d, keys| {
-                d.child(div().flex_none().w(px(104.)).font_weight(FontWeight::SEMIBOLD).child(SharedString::from(keys)))
+            .when(line.bullet, |d| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .text_color(c(theme::TEXT_MUTED))
+                        .child("•"),
+                )
             })
-            .child(div().flex_1().min_w(px(0.)).child(SharedString::from(line.text.clone())))
+            .when_some(line.keys.clone(), |d, keys| {
+                d.child(
+                    div()
+                        .flex_none()
+                        .w(px(104.))
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(SharedString::from(keys)),
+                )
+            })
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .child(SharedString::from(line.text.clone())),
+            )
             .into_any_element()
     }
 
     fn heading(text: &str) -> gpui::Div {
-        div().pt(px(6.)).font_weight(FontWeight::SEMIBOLD).child(SharedString::from(text.to_string()))
+        div()
+            .pt(px(6.))
+            .font_weight(FontWeight::SEMIBOLD)
+            .child(SharedString::from(text.to_string()))
     }
 
     /// The list of topics, under the headings of their sections.
@@ -189,7 +224,13 @@ impl HelpPane {
                     .h(px(24.))
                     .rounded(px(4.))
                     .hover(|s| s.bg(c(theme::HOVER)))
-                    .child(div().flex_1().truncate().text_color(c(theme::ACCENT_DARK)).child(SharedString::from(topic.title.clone())))
+                    .child(
+                        div()
+                            .flex_1()
+                            .truncate()
+                            .text_color(c(theme::ACCENT_DARK))
+                            .child(SharedString::from(topic.title.clone())),
+                    )
                     .child(icon("chevron-right", 10.0, theme::TEXT_MUTED))
                     .on_click(cx.listener(move |pane, _, _, cx| {
                         pane.open = Some(index);
@@ -220,7 +261,9 @@ impl HelpPane {
                     cx.notify();
                 }))
                 .into_any_element(),
-            Self::heading(&topic.title).text_size(px(14.)).into_any_element(),
+            Self::heading(&topic.title)
+                .text_size(px(14.))
+                .into_any_element(),
         ];
         out.extend(topic.lines.iter().map(Self::line));
         out
@@ -269,7 +312,11 @@ impl Render for HelpPane {
                     .px(px(12.))
                     .pb(px(8.))
                     .debug_selector(|| "help-search".into())
-                    .child(TextField::new(&self.search).trailing(icon("search", 13.0, theme::TEXT_MUTED))),
+                    .child(TextField::new(&self.search).trailing(icon(
+                        "search",
+                        13.0,
+                        theme::TEXT_MUTED,
+                    ))),
             )
             .child(
                 div()
@@ -312,5 +359,7 @@ pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Statefu
             app.run_command(Cmd::Help, window, cx);
         }
     }))
-    .on_action(cx.listener(|app, _: &SendFeedback, window, cx| app.run_command(Cmd::Feedback, window, cx)))
+    .on_action(
+        cx.listener(|app, _: &SendFeedback, window, cx| app.run_command(Cmd::Feedback, window, cx)),
+    )
 }

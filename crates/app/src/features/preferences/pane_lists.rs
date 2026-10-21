@@ -48,10 +48,18 @@ pub(super) fn lists_in(wb: &Workbook, sheet: usize, range: Rect) -> (Vec<Vec<Str
     };
     let mut lists = Vec::new();
     if range.r0 == range.r1 {
-        lists.push((range.c0..=range.c1).filter_map(|col| text_at(range.r0, col)).collect::<Vec<_>>());
+        lists.push(
+            (range.c0..=range.c1)
+                .filter_map(|col| text_at(range.r0, col))
+                .collect::<Vec<_>>(),
+        );
     } else {
         for col in range.c0..=range.c1 {
-            lists.push((range.r0..=range.r1).filter_map(|row| text_at(row, col)).collect());
+            lists.push(
+                (range.r0..=range.r1)
+                    .filter_map(|row| text_at(row, col))
+                    .collect(),
+            );
         }
     }
     let lists = lists
@@ -87,7 +95,9 @@ impl PreferencesWindow {
     /// The list chosen on the left, when it is one of the user's: its
     /// place among them.
     pub(super) fn own_list_at(&self) -> Option<usize> {
-        self.list_at.checked_sub(1 + self.builtin_count()).filter(|at| *at < self.shown.settings.custom_lists.len())
+        self.list_at
+            .checked_sub(1 + self.builtin_count())
+            .filter(|at| *at < self.shown.settings.custom_lists.len())
     }
 
     /// A line of "Custom lists:" was clicked: its entries show on the right.
@@ -97,9 +107,16 @@ impl PreferencesWindow {
         let entries = match at.checked_sub(1) {
             None => Vec::new(),
             Some(index) if index < builtin => self.shown.builtin_lists[index].clone(),
-            Some(index) => self.shown.settings.custom_lists.get(index - builtin).cloned().unwrap_or_default(),
+            Some(index) => self
+                .shown
+                .settings
+                .custom_lists
+                .get(index - builtin)
+                .cloned()
+                .unwrap_or_default(),
         };
-        self.list_entries.update(cx, |area, cx| area.set_text(entries.join("\n"), cx));
+        self.list_entries
+            .update(cx, |area, cx| area.set_text(entries.join("\n"), cx));
         cx.notify();
     }
 
@@ -114,7 +131,10 @@ impl PreferencesWindow {
         if entries.is_empty() {
             return false;
         }
-        if entries.iter().any(|entry| entry.starts_with(|ch: char| ch.is_ascii_digit())) {
+        if entries
+            .iter()
+            .any(|entry| entry.starts_with(|ch: char| ch.is_ascii_digit()))
+        {
             self.modal.update_app(cx, |app, cx| {
                 let message = t(
                     "The first character of a list entry cannot be a number.",
@@ -126,7 +146,13 @@ impl PreferencesWindow {
         }
         let mut lists = self.shown.settings.custom_lists.clone();
         let builtin = self.builtin_count();
-        let known = |lists: &[Vec<String>]| self.shown.builtin_lists.iter().chain(lists).position(|list| *list == entries);
+        let known = |lists: &[Vec<String>]| {
+            self.shown
+                .builtin_lists
+                .iter()
+                .chain(lists)
+                .position(|list| *list == entries)
+        };
         let at = match (self.own_list_at(), known(&lists)) {
             // The same list twice is one list.
             (_, Some(known)) => known,
@@ -162,7 +188,10 @@ impl PreferencesWindow {
         }
         let this = cx.entity().downgrade();
         self.modal.update_app(cx, |app, cx| {
-            let message = t("List will be permanently deleted.", "La liste sera supprimée définitivement.");
+            let message = t(
+                "List will be permanently deleted.",
+                "La liste sera supprimée définitivement.",
+            );
             app.alert(
                 Alert::new("OpenSheet", message)
                     .warning()
@@ -186,13 +215,21 @@ impl PreferencesWindow {
             });
             return;
         };
-        let Some((found, skipped)) = self.modal.read_app(cx, |app| lists_in(&app.wb, sheet, range)) else {
+        let Some((found, skipped)) = self
+            .modal
+            .read_app(cx, |app| lists_in(&app.wb, sheet, range))
+        else {
             return;
         };
         let mut lists = self.shown.settings.custom_lists.clone();
         let mut last = None;
         for list in found {
-            let known = self.shown.builtin_lists.iter().chain(&lists).position(|known| *known == list);
+            let known = self
+                .shown
+                .builtin_lists
+                .iter()
+                .chain(&lists)
+                .position(|known| *known == list);
             last = Some(known.unwrap_or_else(|| {
                 lists.push(list);
                 self.builtin_count() + lists.len() - 1
@@ -236,7 +273,11 @@ impl PreferencesWindow {
                             ListBox::new("prefs-lists", names, Some(self.list_at))
                                 .width(230.0)
                                 .height(ROW_H * 10.0)
-                                .on_change(cx.listener(|this, at: &usize, _, cx| this.choose_list(*at, cx))),
+                                .on_change(
+                                    cx.listener(|this, at: &usize, _, cx| {
+                                        this.choose_list(*at, cx)
+                                    }),
+                                ),
                         ),
                     )
                     .child(
@@ -269,7 +310,9 @@ impl PreferencesWindow {
                                 Button::new("prefs-lists-delete", t("Delete", "Supprimer"))
                                     .width(96.0)
                                     .disabled(!own)
-                                    .on_click(cx.listener(|this, _, _, cx| this.ask_delete_list(cx))),
+                                    .on_click(
+                                        cx.listener(|this, _, _, cx| this.ask_delete_list(cx)),
+                                    ),
                             ),
                     ),
             )
@@ -282,9 +325,15 @@ impl PreferencesWindow {
                     .flex()
                     .items_center()
                     .gap(px(8.))
-                    .child(label(t("Import list from cells:", "Importer la liste à partir des cellules :")))
+                    .child(label(t(
+                        "Import list from cells:",
+                        "Importer la liste à partir des cellules :",
+                    )))
                     .child(RefEdit::new(&self.import_range, &self.modal).width(170.0))
-                    .child(Button::new("prefs-lists-import", t("Import", "Importer")).on_click(cx.listener(|this, _, _, cx| this.import_lists(cx)))),
+                    .child(
+                        Button::new("prefs-lists-import", t("Import", "Importer"))
+                            .on_click(cx.listener(|this, _, _, cx| this.import_lists(cx))),
+                    ),
             )
             .into_any_element()
     }

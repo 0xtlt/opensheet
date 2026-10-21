@@ -319,7 +319,11 @@ fn f_sumxmy2(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
 
 fn f_product(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
     let nums = ctx.numbers(args)?;
-    number(if nums.is_empty() { 0.0 } else { nums.iter().product() })
+    number(if nums.is_empty() {
+        0.0
+    } else {
+        nums.iter().product()
+    })
 }
 
 fn f_seriessum(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
@@ -449,7 +453,11 @@ fn f_mod(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
     if q.abs() >= 4_503_599_627_370_496.0 {
         // The quotient has no fractional bits left: use the exact remainder.
         let r = n % d;
-        return number(if r != 0.0 && (r < 0.0) != (d < 0.0) { r + d } else { r });
+        return number(if r != 0.0 && (r < 0.0) != (d < 0.0) {
+            r + d
+        } else {
+            r
+        });
     }
     number(n - d * q.floor())
 }
@@ -483,7 +491,11 @@ fn f_log(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
         let r = x.ln() / base.ln();
         // Exact powers give exact integers (LOG(125,5) = 3).
         let k = r.round();
-        if (r - k).abs() < 1e-9 && base.powf(k) == x { k } else { r }
+        if (r - k).abs() < 1e-9 && base.powf(k) == x {
+            k
+        } else {
+            r
+        }
     };
     number(r)
 }
@@ -717,7 +729,11 @@ fn f_multinomial(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
             return Err(ErrorKind::Num);
         }
     }
-    number(if result < MAX_EXACT { result.round() } else { result })
+    number(if result < MAX_EXACT {
+        result.round()
+    } else {
+        result
+    })
 }
 
 // ---- SUBTOTAL / AGGREGATE ------------------------------------------------------
@@ -756,11 +772,17 @@ fn gather(ctx: &EvalCtx, args: &[Expr], ignore: Ignore) -> Vec<Value> {
             Ok(r) => {
                 let values = ctx.range_values(&r);
                 let sheet = ctx.workbook().sheets.get(r.sheet);
-                let hidden = sheet.map(|s| &s.hidden_rows).filter(|h| ignore.hidden_rows && !h.is_empty());
-                let filtered = sheet.map(|s| &s.filtered_rows).filter(|f| ignore.filtered_rows && !f.is_empty());
+                let hidden = sheet
+                    .map(|s| &s.hidden_rows)
+                    .filter(|h| ignore.hidden_rows && !h.is_empty());
+                let filtered = sheet
+                    .map(|s| &s.filtered_rows)
+                    .filter(|f| ignore.filtered_rows && !f.is_empty());
                 for i in 0..values.rows {
                     let row = r.rect.r0 + i as u32;
-                    if hidden.is_some_and(|h| h.contains(&row)) || filtered.is_some_and(|f| f.contains(&row)) {
+                    if hidden.is_some_and(|h| h.contains(&row))
+                        || filtered.is_some_and(|f| f.contains(&row))
+                    {
                         continue;
                     }
                     for j in 0..values.cols {
@@ -768,7 +790,9 @@ fn gather(ctx: &EvalCtx, args: &[Expr], ignore: Ignore) -> Vec<Value> {
                         if v.is_empty() {
                             continue;
                         }
-                        if ignore.nested && is_subtotal_cell(ctx, r.sheet, row, r.rect.c0 + j as u32) {
+                        if ignore.nested
+                            && is_subtotal_cell(ctx, r.sheet, row, r.rect.c0 + j as u32)
+                        {
                             continue;
                         }
                         out.push(v.clone());
@@ -792,7 +816,11 @@ fn gather(ctx: &EvalCtx, args: &[Expr], ignore: Ignore) -> Vec<Value> {
 /// `AGGREGATE` 1-19) to gathered values.
 fn aggregate(func: u32, values: &[Value], k: Option<f64>) -> R<Value> {
     match func {
-        2 => return Ok(Value::Number(values.iter().filter(|v| v.is_number()).count() as f64)),
+        2 => {
+            return Ok(Value::Number(
+                values.iter().filter(|v| v.is_number()).count() as f64,
+            ));
+        }
         3 => return Ok(Value::Number(values.len() as f64)),
         _ => {}
     }
@@ -991,7 +1019,11 @@ fn f_base(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
     let mut n = n as u64;
     let mut digits = Vec::new();
     loop {
-        digits.push(char::from_digit((n % radix) as u32, radix as u32).unwrap_or('0').to_ascii_uppercase());
+        digits.push(
+            char::from_digit((n % radix) as u32, radix as u32)
+                .unwrap_or('0')
+                .to_ascii_uppercase(),
+        );
         n /= radix;
         if n == 0 {
             break;
@@ -1106,7 +1138,11 @@ fn f_mdeterm(ctx: &EvalCtx, args: &[Expr]) -> R<Value> {
     let integral = m.iter().all(|x| x.fract() == 0.0);
     let det = determinant(n, &mut m);
     // The determinant of an integer matrix is an integer.
-    number(if integral && det.abs() < MAX_EXACT { det.round() } else { det })
+    number(if integral && det.abs() < MAX_EXACT {
+        det.round()
+    } else {
+        det
+    })
 }
 
 /// Inverse by Gauss-Jordan elimination with partial pivoting; `None` when
@@ -1165,7 +1201,14 @@ pub const FUNCTIONS: &[FunctionDef] = &[
     FunctionDef::new("SUM", 1, VAR, Kind::Raw, Category::Math, f_sum),
     FunctionDef::new("SUMIF", 2, 3, Kind::Raw, Category::Math, f_sumif),
     FunctionDef::new("SUMIFS", 3, VAR, Kind::Raw, Category::Math, f_sumifs),
-    FunctionDef::new("SUMPRODUCT", 1, VAR, Kind::Raw, Category::Math, f_sumproduct),
+    FunctionDef::new(
+        "SUMPRODUCT",
+        1,
+        VAR,
+        Kind::Raw,
+        Category::Math,
+        f_sumproduct,
+    ),
     FunctionDef::new("SUMSQ", 1, VAR, Kind::Raw, Category::Math, f_sumsq),
     FunctionDef::new("SUMX2MY2", 2, 2, Kind::Raw, Category::Math, f_sumx2my2),
     FunctionDef::new("SUMX2PY2", 2, 2, Kind::Raw, Category::Math, f_sumx2py2),
@@ -1191,15 +1234,57 @@ pub const FUNCTIONS: &[FunctionDef] = &[
     FunctionDef::new("TRUNC", 1, 2, Kind::Scalar, Category::Math, f_rounddown),
     FunctionDef::new("CEILING", 2, 2, Kind::Scalar, Category::Math, f_ceiling),
     FunctionDef::new("FLOOR", 2, 2, Kind::Scalar, Category::Math, f_floor),
-    FunctionDef::new("CEILING.MATH", 1, 3, Kind::Scalar, Category::Math, f_ceiling_math),
-    FunctionDef::new("FLOOR.MATH", 1, 3, Kind::Scalar, Category::Math, f_floor_math),
-    FunctionDef::new("CEILING.PRECISE", 1, 2, Kind::Scalar, Category::Math, f_ceiling_precise),
-    FunctionDef::new("FLOOR.PRECISE", 1, 2, Kind::Scalar, Category::Math, f_floor_precise),
-    FunctionDef::new("ISO.CEILING", 1, 2, Kind::Scalar, Category::Math, f_ceiling_precise),
+    FunctionDef::new(
+        "CEILING.MATH",
+        1,
+        3,
+        Kind::Scalar,
+        Category::Math,
+        f_ceiling_math,
+    ),
+    FunctionDef::new(
+        "FLOOR.MATH",
+        1,
+        3,
+        Kind::Scalar,
+        Category::Math,
+        f_floor_math,
+    ),
+    FunctionDef::new(
+        "CEILING.PRECISE",
+        1,
+        2,
+        Kind::Scalar,
+        Category::Math,
+        f_ceiling_precise,
+    ),
+    FunctionDef::new(
+        "FLOOR.PRECISE",
+        1,
+        2,
+        Kind::Scalar,
+        Category::Math,
+        f_floor_precise,
+    ),
+    FunctionDef::new(
+        "ISO.CEILING",
+        1,
+        2,
+        Kind::Scalar,
+        Category::Math,
+        f_ceiling_precise,
+    ),
     FunctionDef::new("EVEN", 1, 1, Kind::Scalar, Category::Math, f_even),
     FunctionDef::new("ODD", 1, 1, Kind::Scalar, Category::Math, f_odd),
     FunctionDef::new("RAND", 0, 0, Kind::Scalar, Category::Math, f_rand),
-    FunctionDef::new("RANDBETWEEN", 2, 2, Kind::Scalar, Category::Math, f_randbetween),
+    FunctionDef::new(
+        "RANDBETWEEN",
+        2,
+        2,
+        Kind::Scalar,
+        Category::Math,
+        f_randbetween,
+    ),
     FunctionDef::new("RANDARRAY", 0, 5, Kind::Raw, Category::Math, f_randarray),
     FunctionDef::new("PI", 0, 0, Kind::Scalar, Category::Math, f_pi),
     FunctionDef::new("SIN", 1, 1, Kind::Scalar, Category::Math, f_sin),
@@ -1222,13 +1307,27 @@ pub const FUNCTIONS: &[FunctionDef] = &[
     FunctionDef::new("DEGREES", 1, 1, Kind::Scalar, Category::Math, f_degrees),
     FunctionDef::new("RADIANS", 1, 1, Kind::Scalar, Category::Math, f_radians),
     FunctionDef::new("FACT", 1, 1, Kind::Scalar, Category::Math, f_fact),
-    FunctionDef::new("FACTDOUBLE", 1, 1, Kind::Scalar, Category::Math, f_factdouble),
+    FunctionDef::new(
+        "FACTDOUBLE",
+        1,
+        1,
+        Kind::Scalar,
+        Category::Math,
+        f_factdouble,
+    ),
     FunctionDef::new("COMBIN", 2, 2, Kind::Scalar, Category::Math, f_combin),
     FunctionDef::new("COMBINA", 2, 2, Kind::Scalar, Category::Math, f_combina),
     FunctionDef::new("PERMUT", 2, 2, Kind::Scalar, Category::Math, f_permut),
     FunctionDef::new("GCD", 1, VAR, Kind::Raw, Category::Math, f_gcd),
     FunctionDef::new("LCM", 1, VAR, Kind::Raw, Category::Math, f_lcm),
-    FunctionDef::new("MULTINOMIAL", 1, VAR, Kind::Raw, Category::Math, f_multinomial),
+    FunctionDef::new(
+        "MULTINOMIAL",
+        1,
+        VAR,
+        Kind::Raw,
+        Category::Math,
+        f_multinomial,
+    ),
     FunctionDef::new("SUBTOTAL", 2, VAR, Kind::Raw, Category::Math, f_subtotal),
     FunctionDef::new("AGGREGATE", 3, VAR, Kind::Raw, Category::Math, f_aggregate),
     FunctionDef::new("ROMAN", 1, 2, Kind::Scalar, Category::Math, f_roman),
@@ -1335,12 +1434,24 @@ mod tests {
         assert_eq!(round_to(0.30001, 1, Rounding::Up), 0.4);
         assert_eq!(round_to(4.35 * 100.0, 0, Rounding::Down), 435.0);
         assert_eq!(round_to(1e20, 2, Rounding::HalfAway), 1e20);
-        assert_eq!(round_to(9007199254740992.0, 0, Rounding::HalfAway), 9007199254740992.0);
-        assert_eq!(round_to(1234567890123456.0, -1, Rounding::HalfAway), 1234567890123460.0);
-        assert_eq!(round_to(1234567890123456.0, -1, Rounding::Down), 1234567890123450.0);
+        assert_eq!(
+            round_to(9007199254740992.0, 0, Rounding::HalfAway),
+            9007199254740992.0
+        );
+        assert_eq!(
+            round_to(1234567890123456.0, -1, Rounding::HalfAway),
+            1234567890123460.0
+        );
+        assert_eq!(
+            round_to(1234567890123456.0, -1, Rounding::Down),
+            1234567890123450.0
+        );
         assert_eq!(round_to(-1250.0, -2, Rounding::HalfAway), -1300.0);
         assert_eq!(round_to(0.1 + 0.2, 15, Rounding::HalfAway), 0.3);
-        assert_eq!(round_to(123456789.123456, 4, Rounding::HalfAway), 123456789.1235);
+        assert_eq!(
+            round_to(123456789.123456, 4, Rounding::HalfAway),
+            123456789.1235
+        );
         assert_eq!(mul_exact(7.0, 0.1), 0.7);
         assert_eq!(mul_exact(-3.0, 0.1), -0.3);
         assert_eq!(mul_exact(2.0, 1.0 / 3.0), 2.0 / 3.0);
@@ -1429,14 +1540,35 @@ mod tests {
     #[test]
     fn sumifs() {
         let mut w = sales();
-        assert_eq!(calc(&mut w, "SUMIFS(B1:B5,A1:A5,\"fruit\",C1:C5,\"north\")"), Value::Number(50.0));
-        assert_eq!(calc(&mut w, "SUMIFS(B1:B5,A1:A5,\"fruit\",B1:B5,\">10\")"), Value::Number(70.0));
-        assert_eq!(calc(&mut w, "SUMIFS(B:B,A:A,\"fruit\",C:C,\"s*\")"), Value::Number(30.0));
-        assert_eq!(calc(&mut w, "SUMIFS(B1:B5,C1:C5,\"north\")"), Value::Number(50.0));
-        assert_eq!(calc(&mut w, "SUMIFS(B1:B5,A1:A5,\"fish\")"), Value::Number(0.0));
+        assert_eq!(
+            calc(&mut w, "SUMIFS(B1:B5,A1:A5,\"fruit\",C1:C5,\"north\")"),
+            Value::Number(50.0)
+        );
+        assert_eq!(
+            calc(&mut w, "SUMIFS(B1:B5,A1:A5,\"fruit\",B1:B5,\">10\")"),
+            Value::Number(70.0)
+        );
+        assert_eq!(
+            calc(&mut w, "SUMIFS(B:B,A:A,\"fruit\",C:C,\"s*\")"),
+            Value::Number(30.0)
+        );
+        assert_eq!(
+            calc(&mut w, "SUMIFS(B1:B5,C1:C5,\"north\")"),
+            Value::Number(50.0)
+        );
+        assert_eq!(
+            calc(&mut w, "SUMIFS(B1:B5,A1:A5,\"fish\")"),
+            Value::Number(0.0)
+        );
         // Ranges of different shapes.
-        assert_eq!(calc(&mut w, "SUMIFS(B1:B5,A1:A4,\"fruit\")"), Value::Error(ErrorKind::Value));
-        assert_eq!(calc(&mut w, "SUMIFS(B1:B5,A1:A5,\"fruit\",C1:C5)"), Value::Error(ErrorKind::Value));
+        assert_eq!(
+            calc(&mut w, "SUMIFS(B1:B5,A1:A4,\"fruit\")"),
+            Value::Error(ErrorKind::Value)
+        );
+        assert_eq!(
+            calc(&mut w, "SUMIFS(B1:B5,A1:A5,\"fruit\",C1:C5)"),
+            Value::Error(ErrorKind::Value)
+        );
     }
 
     #[test]
@@ -1451,15 +1583,36 @@ mod tests {
         assert_eq!(err("SUMPRODUCT({1,2,3},{4;5;6})"), ErrorKind::Value);
         assert_eq!(err("SUMPRODUCT({1,2,#N/A},{4,5,6})"), ErrorKind::NA);
         let mut w = sales();
-        assert_eq!(calc(&mut w, "SUMPRODUCT((A1:A4=\"fruit\")*(B1:B4))"), Value::Number(80.0));
-        assert_eq!(calc(&mut w, "SUMPRODUCT(--(A1:A4=\"fruit\"),B1:B4)"), Value::Number(80.0));
-        assert_eq!(calc(&mut w, "SUMPRODUCT((A1:A4=\"fruit\")*(C1:C4=\"north\")*B1:B4)"), Value::Number(50.0));
+        assert_eq!(
+            calc(&mut w, "SUMPRODUCT((A1:A4=\"fruit\")*(B1:B4))"),
+            Value::Number(80.0)
+        );
+        assert_eq!(
+            calc(&mut w, "SUMPRODUCT(--(A1:A4=\"fruit\"),B1:B4)"),
+            Value::Number(80.0)
+        );
+        assert_eq!(
+            calc(
+                &mut w,
+                "SUMPRODUCT((A1:A4=\"fruit\")*(C1:C4=\"north\")*B1:B4)"
+            ),
+            Value::Number(50.0)
+        );
         // Booleans are not numbers here.
-        assert_eq!(calc(&mut w, "SUMPRODUCT(A1:A4=\"fruit\")"), Value::Number(0.0));
+        assert_eq!(
+            calc(&mut w, "SUMPRODUCT(A1:A4=\"fruit\")"),
+            Value::Number(0.0)
+        );
         // Text in a range counts as 0.
-        assert_eq!(calc(&mut w, "SUMPRODUCT(B1:B5,B1:B5)"), Value::Number(3000.0));
+        assert_eq!(
+            calc(&mut w, "SUMPRODUCT(B1:B5,B1:B5)"),
+            Value::Number(3000.0)
+        );
         assert_eq!(calc(&mut w, "SUMPRODUCT(B:B,B:B)"), Value::Number(3000.0));
-        assert_eq!(calc(&mut w, "SUMPRODUCT(B1:B5,B1:B4)"), Value::Error(ErrorKind::Value));
+        assert_eq!(
+            calc(&mut w, "SUMPRODUCT(B1:B5,B1:B4)"),
+            Value::Error(ErrorKind::Value)
+        );
     }
 
     #[test]
@@ -1478,7 +1631,13 @@ mod tests {
     fn product_quotient_mod() {
         assert_eq!(num("PRODUCT(5,15,30)"), 2250.0);
         assert_eq!(num("PRODUCT({2,3},\"4\")"), 24.0);
-        let w = wb(&[("A1", "2"), ("A2", "x"), ("A3", "5"), ("B1", "=PRODUCT(A1:A4)"), ("B2", "=PRODUCT(A2)")]);
+        let w = wb(&[
+            ("A1", "2"),
+            ("A2", "x"),
+            ("A3", "5"),
+            ("B1", "=PRODUCT(A1:A4)"),
+            ("B2", "=PRODUCT(A2)"),
+        ]);
         assert_eq!(cell(&w, "B1"), 10.0);
         assert_eq!(cell(&w, "B2"), 0.0);
         assert_eq!(num("QUOTIENT(5,2)"), 2.0);
@@ -1697,7 +1856,11 @@ mod tests {
         let a = spill("RANDARRAY(3,2)", 3, 2);
         assert!(a.iter().flatten().all(|x| (0.0..1.0).contains(x)));
         let a = spill("RANDARRAY(4,4,10,20,TRUE)", 4, 4);
-        assert!(a.iter().flatten().all(|x| (10.0..=20.0).contains(x) && x.fract() == 0.0));
+        assert!(
+            a.iter()
+                .flatten()
+                .all(|x| (10.0..=20.0).contains(x) && x.fract() == 0.0)
+        );
         let a = spill("RANDARRAY(2,2,5,6)", 2, 2);
         assert!(a.iter().flatten().all(|x| (5.0..6.0).contains(x)));
         let r = num("RANDARRAY()");
@@ -1809,7 +1972,14 @@ mod tests {
         assert_eq!(num("MULTINOMIAL(3)"), 1.0);
         assert_eq!(num("MULTINOMIAL({1,2},3)"), 60.0);
         assert_eq!(err("MULTINOMIAL(2,-1)"), ErrorKind::Num);
-        let w = wb(&[("A1", "12"), ("A2", "18"), ("A4", "x"), ("B1", "=GCD(A1:A3)"), ("B2", "=LCM(A1:A3)"), ("B3", "=GCD(A1:A4)")]);
+        let w = wb(&[
+            ("A1", "12"),
+            ("A2", "18"),
+            ("A4", "x"),
+            ("B1", "=GCD(A1:A3)"),
+            ("B2", "=LCM(A1:A3)"),
+            ("B3", "=GCD(A1:A4)"),
+        ]);
         assert_eq!(cell(&w, "B1"), 6.0);
         assert_eq!(cell(&w, "B2"), 36.0);
         assert_eq!(val(&w, "B3"), Value::Error(ErrorKind::Value));
@@ -2014,9 +2184,18 @@ mod tests {
         let a = spill("SEQUENCE(4,5)", 4, 5);
         assert_eq!(a[0], vec![1.0, 2.0, 3.0, 4.0, 5.0]);
         assert_eq!(a[3], vec![16.0, 17.0, 18.0, 19.0, 20.0]);
-        assert_eq!(spill("SEQUENCE(2,2,10,5)", 2, 2), vec![vec![10.0, 15.0], vec![20.0, 25.0]]);
-        assert_eq!(spill("SEQUENCE(3)", 3, 1), vec![vec![1.0], vec![2.0], vec![3.0]]);
-        assert_eq!(spill("SEQUENCE(1,3,0,-0.5)", 1, 3), vec![vec![0.0, -0.5, -1.0]]);
+        assert_eq!(
+            spill("SEQUENCE(2,2,10,5)", 2, 2),
+            vec![vec![10.0, 15.0], vec![20.0, 25.0]]
+        );
+        assert_eq!(
+            spill("SEQUENCE(3)", 3, 1),
+            vec![vec![1.0], vec![2.0], vec![3.0]]
+        );
+        assert_eq!(
+            spill("SEQUENCE(1,3,0,-0.5)", 1, 3),
+            vec![vec![0.0, -0.5, -1.0]]
+        );
         assert_eq!(num("SUM(SEQUENCE(10))"), 55.0);
         assert_eq!(num("SEQUENCE(1)"), 1.0);
         assert_eq!(err("SEQUENCE(0)"), ErrorKind::Calc);
@@ -2026,12 +2205,21 @@ mod tests {
 
     #[test]
     fn matrices() {
-        assert_eq!(spill("MMULT({1,3;7,2},{2,0;0,2})", 2, 2), vec![vec![2.0, 6.0], vec![14.0, 4.0]]);
+        assert_eq!(
+            spill("MMULT({1,3;7,2},{2,0;0,2})", 2, 2),
+            vec![vec![2.0, 6.0], vec![14.0, 4.0]]
+        );
         assert_eq!(spill("MMULT({1,2,3},{4;5;6})", 1, 1), vec![vec![32.0]]);
-        assert_eq!(spill("MMULT({1;2},{3,4})", 2, 2), vec![vec![3.0, 4.0], vec![6.0, 8.0]]);
+        assert_eq!(
+            spill("MMULT({1;2},{3,4})", 2, 2),
+            vec![vec![3.0, 4.0], vec![6.0, 8.0]]
+        );
         assert_eq!(err("MMULT({1,2},{1,2})"), ErrorKind::Value);
         assert_eq!(err("MMULT({1,\"a\"},{1;2})"), ErrorKind::Value);
-        assert_eq!(spill("MINVERSE({4,-1;2,0})", 2, 2), vec![vec![0.0, 0.5], vec![-1.0, 2.0]]);
+        assert_eq!(
+            spill("MINVERSE({4,-1;2,0})", 2, 2),
+            vec![vec![0.0, 0.5], vec![-1.0, 2.0]]
+        );
         let inv = spill("MINVERSE({1,2,1;3,4,-1;0,2,0})", 3, 3);
         let expected = [[0.25, 0.25, -0.75], [0.0, 0.0, 0.5], [0.75, -0.25, -0.25]];
         for r in 0..3 {
@@ -2053,7 +2241,11 @@ mod tests {
         assert_eq!(err("MDETERM({1,2,3;4,5,6})"), ErrorKind::Value);
         assert_eq!(
             spill("MUNIT(3)", 3, 3),
-            vec![vec![1.0, 0.0, 0.0], vec![0.0, 1.0, 0.0], vec![0.0, 0.0, 1.0]]
+            vec![
+                vec![1.0, 0.0, 0.0],
+                vec![0.0, 1.0, 0.0],
+                vec![0.0, 0.0, 1.0]
+            ]
         );
         assert_eq!(num("MUNIT(1)"), 1.0);
         assert_eq!(err("MUNIT(0)"), ErrorKind::Value);

@@ -42,7 +42,10 @@ fn quick() -> Context {
 fn the_language_of_real_scripts() {
     let mut wb = stock();
     let out = ok(&mut wb, include_str!("model/language.ts"));
-    assert_eq!(out.returned.as_deref(), Some(r#"{"total":54.5,"names":["Ink","Pad","Pen"]}"#));
+    assert_eq!(
+        out.returned.as_deref(),
+        Some(r#"{"total":54.5,"names":["Ink","Pad","Pen"]}"#)
+    );
     assert_eq!(text(&wb, "E1"), "3 items, 65.4 gross");
 }
 
@@ -68,7 +71,13 @@ fn a_failed_script_changes_nothing() {
 }"#,
     );
     assert_eq!(error.kind, ErrorKind::Runtime);
-    assert!(error.message.starts_with("Range setValues: The number of rows or columns"), "{}", error.message);
+    assert!(
+        error
+            .message
+            .starts_with("Range setValues: The number of rows or columns"),
+        "{}",
+        error.message
+    );
     // The column is that of the member called.
     assert_eq!((error.line, error.column), (Some(13), Some(24)));
     // The results of formulas are those of the workbook as it was.
@@ -96,24 +105,52 @@ fn a_script_runs_without_the_callers_snapshot_too() {
 fn syntax_errors_are_placed_without_running() {
     let errors = check("function main(workbook: ExcelScript.Workbook) {\n  let total = ;\n}\n");
     assert_eq!(errors.len(), 1);
-    assert_eq!((errors[0].kind, errors[0].line, errors[0].column), (ErrorKind::Syntax, Some(2), Some(15)));
-    let errors = check("function main(workbook: ExcelScript.Workbook) {\n  const a = 1;\n  const a = 2;\n  return (;\n");
-    assert!(!errors.is_empty() && errors.iter().all(|e| e.kind == ErrorKind::Syntax && e.line.is_some()));
+    assert_eq!(
+        (errors[0].kind, errors[0].line, errors[0].column),
+        (ErrorKind::Syntax, Some(2), Some(15))
+    );
+    let errors = check(
+        "function main(workbook: ExcelScript.Workbook) {\n  const a = 1;\n  const a = 2;\n  return (;\n",
+    );
+    assert!(
+        !errors.is_empty()
+            && errors
+                .iter()
+                .all(|e| e.kind == ErrorKind::Syntax && e.line.is_some())
+    );
     let errors = check("function helper() { return 1; }\nconst main = 3;\n");
     assert_eq!(errors.len(), 1);
-    assert!(errors[0].message.contains("function named main"), "{}", errors[0].message);
+    assert!(
+        errors[0].message.contains("function named main"),
+        "{}",
+        errors[0].message
+    );
     assert!(check("function main(workbook: ExcelScript.Workbook) {}").is_empty());
     assert!(check(&Script::new("New").body).is_empty());
     // Types are not checked as TypeScript checks them; a member the
     // workbook does not have is told, as something that does not prevent
     // a run (see `tests/check.rs`).
-    assert!(check("function main(workbook: ExcelScript.Workbook) { const n: number = 'text'; }").is_empty());
-    let found = check("function main(workbook: ExcelScript.Workbook) { const n: number = 'text'; workbook.nope(); }");
-    assert_eq!(found.iter().map(|e| (e.kind, e.line, e.column)).collect::<Vec<_>>(), [(ErrorKind::Check, Some(1), Some(84))]);
+    assert!(
+        check("function main(workbook: ExcelScript.Workbook) { const n: number = 'text'; }")
+            .is_empty()
+    );
+    let found = check(
+        "function main(workbook: ExcelScript.Workbook) { const n: number = 'text'; workbook.nope(); }",
+    );
+    assert_eq!(
+        found
+            .iter()
+            .map(|e| (e.kind, e.line, e.column))
+            .collect::<Vec<_>>(),
+        [(ErrorKind::Check, Some(1), Some(84))]
+    );
 
     // Running such a text gives the same error and touches nothing.
     let mut wb = stock();
-    let error = fails(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().getRange('A1').setValue(1;\n}");
+    let error = fails(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().getRange('A1').setValue(1;\n}",
+    );
     assert_eq!((error.kind, error.line), (ErrorKind::Syntax, Some(2)));
     let error = fails(&mut wb, "function notMain() {}");
     assert_eq!(error.kind, ErrorKind::Syntax);
@@ -127,17 +164,33 @@ fn runtime_errors_are_placed_in_the_typescript_text() {
         &mut wb,
         "interface Row { name: string }\n\nfunction main(workbook: ExcelScript.Workbook) {\n  const rows: Row[] = [];\n  const sheet = workbook.getWorksheet('Nope');\n  sheet.getRange('A1').setValue(rows.length as number);\n}",
     );
-    assert_eq!((error.kind, error.line, error.column), (ErrorKind::Runtime, Some(6), Some(3)));
-    assert!(error.message.starts_with("TypeError:") && error.message.contains("getRange"), "{}", error.message);
+    assert_eq!(
+        (error.kind, error.line, error.column),
+        (ErrorKind::Runtime, Some(6), Some(3))
+    );
+    assert!(
+        error.message.starts_with("TypeError:") && error.message.contains("getRange"),
+        "{}",
+        error.message
+    );
 
     // Thrown in a helper: the place is where it was thrown.
     let error = fails(
         &mut wb,
         "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().getRange('A1').setValue('x');\n  check(3);\n}\n\nfunction check(n: number): void {\n  if (n > 2) {\n    throw new Error(`too many: ${n}`);\n  }\n}",
     );
-    assert_eq!((error.message.as_str(), error.line), ("too many: 3", Some(8)));
+    assert_eq!(
+        (error.message.as_str(), error.line),
+        ("too many: 3", Some(8))
+    );
     // The column is a place of the statement at fault, not always its start.
-    assert!(error.column.is_some_and(|column| (5..=38).contains(&column)), "{:?}", error.column);
+    assert!(
+        error
+            .column
+            .is_some_and(|column| (5..=38).contains(&column)),
+        "{:?}",
+        error.column
+    );
 
     // Rejected after an await.
     let error = fails(
@@ -145,19 +198,38 @@ fn runtime_errors_are_placed_in_the_typescript_text() {
         "async function main(workbook: ExcelScript.Workbook) {\n  await Promise.resolve();\n  const n: number = undefinedName + 1;\n}",
     );
     assert_eq!((error.kind, error.line), (ErrorKind::Runtime, Some(3)));
-    assert!(error.message.starts_with("ReferenceError:"), "{}", error.message);
+    assert!(
+        error.message.starts_with("ReferenceError:"),
+        "{}",
+        error.message
+    );
 
     // Something that is not an Error.
-    let error = fails(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  throw { code: 7 };\n}");
-    assert_eq!((error.kind, error.message.as_str()), (ErrorKind::Runtime, "{code: 7}"));
+    let error = fails(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  throw { code: 7 };\n}",
+    );
+    assert_eq!(
+        (error.kind, error.message.as_str()),
+        (ErrorKind::Runtime, "{code: 7}")
+    );
 
     // A wrong argument, worded as Excel words it, at the call.
-    let error = fails(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  const sheet = workbook.getActiveWorksheet();\n  sheet.getRange('A1:B2').getFormat().getFont().setSize('big' as unknown as number);\n}");
+    let error = fails(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  const sheet = workbook.getActiveWorksheet();\n  sheet.getRange('A1:B2').getFormat().getFont().setSize('big' as unknown as number);\n}",
+    );
     assert_eq!((error.kind, error.line), (ErrorKind::Runtime, Some(3)));
-    assert_eq!(error.message, "RangeFont setSize: The argument is invalid or missing or has an incorrect format.");
+    assert_eq!(
+        error.message,
+        "RangeFont setSize: The argument is invalid or missing or has an incorrect format."
+    );
 
     // A promise nothing settles.
-    let error = fails(&mut wb, "async function main(workbook: ExcelScript.Workbook) {\n  await new Promise(() => {});\n}");
+    let error = fails(
+        &mut wb,
+        "async function main(workbook: ExcelScript.Workbook) {\n  await new Promise(() => {});\n}",
+    );
     assert!(error.message.contains("never"), "{}", error.message);
 }
 
@@ -165,24 +237,86 @@ fn runtime_errors_are_placed_in_the_typescript_text() {
 fn what_opensheet_does_not_have_says_so() {
     let mut wb = stock();
     let unsupported = |wb: &mut Workbook, body: &str, message: &str| {
-        let source = format!("function main(workbook: ExcelScript.Workbook) {{\n  const sheet = workbook.getActiveWorksheet();\n  sheet.getRange('A1').setValue('changed');\n  {body}\n}}");
+        let source = format!(
+            "function main(workbook: ExcelScript.Workbook) {{\n  const sheet = workbook.getActiveWorksheet();\n  sheet.getRange('A1').setValue('changed');\n  {body}\n}}"
+        );
         let error = fails(wb, &source);
-        assert_eq!((error.kind, error.message.as_str(), error.line), (ErrorKind::Unsupported, message, Some(4)), "{body}");
+        assert_eq!(
+            (error.kind, error.message.as_str(), error.line),
+            (ErrorKind::Unsupported, message, Some(4)),
+            "{body}"
+        );
     };
-    unsupported(&mut wb, "sheet.getRange('A1').getPivotTables();", "Range.getPivotTables is not supported in OpenSheet");
-    unsupported(&mut wb, "workbook.getProtection().protect();", "Workbook.getProtection is not supported in OpenSheet");
-    unsupported(&mut wb, "workbook.getSlicers();", "Workbook.getSlicers is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getProtection().pauseProtection();", "WorksheetProtection.pauseProtection is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getRange('A1').getFormat().getFont().setSuperscript(true);", "RangeFont.setSuperscript is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getRanges('A1,C3').setDirty();", "RangeAreas.setDirty is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getRange('A1').setValue(ExcelScript.SlicerSortType.ascending);", "ExcelScript.SlicerSortType is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.addChart(ExcelScript.ChartType.waterfall, sheet.getRange('A1:C4'));", "ExcelScript.ChartType.waterfall is not supported in OpenSheet");
-    unsupported(&mut wb, "const x = ExcelScript.ClearApplyTo.resetContents;", "ExcelScript.ClearApplyTo.resetContents is not supported in OpenSheet");
-    unsupported(&mut wb, "fetch('https://example.org');", "fetch is not supported in OpenSheet");
-    unsupported(&mut wb, "OfficeScript.saveCopyAs('copy.xlsx');", "OfficeScript.saveCopyAs is not supported in OpenSheet");
-    unsupported(&mut wb, "setTimeout(() => {}, 10);", "setTimeout is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getRange('A1').setVisibility('Hidden');", "Range.setVisibility is not supported in OpenSheet");
-    unsupported(&mut wb, "sheet.getRange('A1:B2').getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setStyle(ExcelScript.BorderLineStyle.slantDashDot);", "ExcelScript.BorderLineStyle.slantDashDot is not supported in OpenSheet");
+    unsupported(
+        &mut wb,
+        "sheet.getRange('A1').getPivotTables();",
+        "Range.getPivotTables is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "workbook.getProtection().protect();",
+        "Workbook.getProtection is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "workbook.getSlicers();",
+        "Workbook.getSlicers is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "sheet.getProtection().pauseProtection();",
+        "WorksheetProtection.pauseProtection is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "sheet.getRange('A1').getFormat().getFont().setSuperscript(true);",
+        "RangeFont.setSuperscript is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "sheet.getRanges('A1,C3').setDirty();",
+        "RangeAreas.setDirty is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "sheet.getRange('A1').setValue(ExcelScript.SlicerSortType.ascending);",
+        "ExcelScript.SlicerSortType is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "sheet.addChart(ExcelScript.ChartType.waterfall, sheet.getRange('A1:C4'));",
+        "ExcelScript.ChartType.waterfall is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "const x = ExcelScript.ClearApplyTo.resetContents;",
+        "ExcelScript.ClearApplyTo.resetContents is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "fetch('https://example.org');",
+        "fetch is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "OfficeScript.saveCopyAs('copy.xlsx');",
+        "OfficeScript.saveCopyAs is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "setTimeout(() => {}, 10);",
+        "setTimeout is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "sheet.getRange('A1').setVisibility('Hidden');",
+        "Range.setVisibility is not supported in OpenSheet",
+    );
+    unsupported(
+        &mut wb,
+        "sheet.getRange('A1:B2').getFormat().getRangeBorder(ExcelScript.BorderIndex.edgeTop).setStyle(ExcelScript.BorderLineStyle.slantDashDot);",
+        "ExcelScript.BorderLineStyle.slantDashDot is not supported in OpenSheet",
+    );
     // A script can step around what is missing.
     ok(
         &mut wb,
@@ -190,8 +324,14 @@ fn what_opensheet_does_not_have_says_so() {
     );
 
     // Scripts called from Power Automate take more than the workbook.
-    let error = fails(&mut wb, "\nfunction main(workbook: ExcelScript.Workbook, name: string, rows?: number) {\n  workbook.getActiveWorksheet().setName(name);\n}");
-    assert_eq!((error.kind, error.line, error.column), (ErrorKind::Unsupported, Some(2), Some(1)));
+    let error = fails(
+        &mut wb,
+        "\nfunction main(workbook: ExcelScript.Workbook, name: string, rows?: number) {\n  workbook.getActiveWorksheet().setName(name);\n}",
+    );
+    assert_eq!(
+        (error.kind, error.line, error.column),
+        (ErrorKind::Unsupported, Some(2), Some(1))
+    );
     assert!(error.message.contains("Power Automate"));
 }
 
@@ -201,23 +341,56 @@ fn a_script_is_stopped_at_its_time_limit() {
     let timed = |wb: &mut Workbook, source: &str| {
         let started = Instant::now();
         let (error, _) = fails_with(wb, source, &quick());
-        assert_eq!(error.kind, ErrorKind::Timeout, "{source}: {}", error.message);
-        assert!(started.elapsed() < Duration::from_secs(5), "stopped late: {:?}", started.elapsed());
+        assert_eq!(
+            error.kind,
+            ErrorKind::Timeout,
+            "{source}: {}",
+            error.message
+        );
+        assert!(
+            started.elapsed() < Duration::from_secs(5),
+            "stopped late: {:?}",
+            started.elapsed()
+        );
         error
     };
-    let error = timed(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().getRange('A1').setValue('x');\n  while (true) {}\n}");
+    let error = timed(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().getRange('A1').setValue('x');\n  while (true) {}\n}",
+    );
     // An empty loop has no place of its own: the line is the loop's or
     // the one before.
     assert!(matches!(error.line, Some(2 | 3)), "{:?}", error.line);
-    assert_eq!(error.message, "The script was stopped: it ran longer than 0.3 seconds.");
+    assert_eq!(
+        error.message,
+        "The script was stopped: it ran longer than 0.3 seconds."
+    );
     // The script cannot catch it.
-    timed(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  for (;;) {\n    try {\n      while (true) {}\n    } catch (e) {}\n  }\n}");
+    timed(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  for (;;) {\n    try {\n      while (true) {}\n    } catch (e) {}\n  }\n}",
+    );
     // After an await, in a callback, in calls of the model, in a regular expression.
-    timed(&mut wb, "async function main(workbook: ExcelScript.Workbook) {\n  await null;\n  for (;;) {}\n}");
-    timed(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  [1].forEach(() => { for (;;) {} });\n}");
-    timed(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  const sheet = workbook.getActiveWorksheet();\n  let n = 0;\n  while (true) { sheet.getRange('A1').setValue(n++); sheet.getRange('D2').getValue(); }\n}");
-    timed(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  /^(a+)+$/.test('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!');\n}");
-    timed(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  const f = (): void => f();\n  for (;;) { try { f(); } catch (e) {} }\n}");
+    timed(
+        &mut wb,
+        "async function main(workbook: ExcelScript.Workbook) {\n  await null;\n  for (;;) {}\n}",
+    );
+    timed(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  [1].forEach(() => { for (;;) {} });\n}",
+    );
+    timed(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  const sheet = workbook.getActiveWorksheet();\n  let n = 0;\n  while (true) { sheet.getRange('A1').setValue(n++); sheet.getRange('D2').getValue(); }\n}",
+    );
+    timed(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  /^(a+)+$/.test('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!');\n}",
+    );
+    timed(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  const f = (): void => f();\n  for (;;) { try { f(); } catch (e) {} }\n}",
+    );
 }
 
 #[test]
@@ -229,7 +402,10 @@ fn a_runaway_script_does_not_take_memory_or_the_stack() {
         "function main(workbook: ExcelScript.Workbook) {\n  const down = (n: number): number => down(n + 1) + 1;\n  try {\n    down(0);\n    return 'no';\n  } catch (error) {\n    return (error as Error).name;\n  }\n}",
     );
     assert_eq!(out.returned.as_deref(), Some("\"RangeError\""));
-    let error = fails(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  const down = (n: number): number => down(n + 1) + 1;\n  down(0);\n}");
+    let error = fails(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  const down = (n: number): number => down(n + 1) + 1;\n  down(0);\n}",
+    );
     assert_eq!((error.kind, error.line), (ErrorKind::Runtime, Some(2)));
 
     // Memory: the script hits its own ceiling long before the machine's.
@@ -254,13 +430,31 @@ fn a_runaway_script_does_not_take_memory_or_the_stack() {
     assert_eq!(error.kind, ErrorKind::Runtime);
 
     // The workbook: no array of a whole sheet, no endless sheets or logs.
-    let error = fails(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().getRange().getValues();\n}");
+    let error = fails(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().getRange().getValues();\n}",
+    );
     assert!(error.message.contains("too large"), "{}", error.message);
-    let error = fails(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().getRange('A:XFD').setValue(1);\n}");
+    let error = fails(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().getRange('A:XFD').setValue(1);\n}",
+    );
     assert!(error.message.contains("too large"), "{}", error.message);
-    let (error, _) = fails_with(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  while (true) workbook.addWorksheet();\n}", &limits);
-    assert!(error.message.contains("more than 5000 worksheets"), "{}", error.message);
-    let (error, out) = fails_with(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  while (true) console.log('again');\n}", &quick());
+    let (error, _) = fails_with(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  while (true) workbook.addWorksheet();\n}",
+        &limits,
+    );
+    assert!(
+        error.message.contains("more than 5000 worksheets"),
+        "{}",
+        error.message
+    );
+    let (error, out) = fails_with(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  while (true) console.log('again');\n}",
+        &quick(),
+    );
     assert_eq!(error.kind, ErrorKind::Timeout);
     assert_eq!(out.logs.len(), 5001);
     assert!(out.logs[5000].text.contains("The log is full"));
@@ -285,12 +479,20 @@ fn a_script_has_the_language_and_the_workbook_and_nothing_else() {
     );
     assert_eq!(
         out.returned.as_deref(),
-        Some(r#"{"absent":[],"fixed":["ExcelScript","console","fetch"],"contents":"Contents","keys":["_s"],"text":"[object Worksheet]","json":"{\"$\":3}"}"#)
+        Some(
+            r#"{"absent":[],"fixed":["ExcelScript","console","fetch"],"contents":"Contents","keys":["_s"],"text":"[object Worksheet]","json":"{\"$\":3}"}"#
+        )
     );
     // Modules are not loaded.
-    let error = fails(&mut wb, "import * as fs from 'fs';\nfunction main(workbook: ExcelScript.Workbook) {\n  fs.readFileSync('/etc/passwd');\n}");
+    let error = fails(
+        &mut wb,
+        "import * as fs from 'fs';\nfunction main(workbook: ExcelScript.Workbook) {\n  fs.readFileSync('/etc/passwd');\n}",
+    );
     assert_eq!(error.kind, ErrorKind::Syntax);
-    let error = fails(&mut wb, "async function main(workbook: ExcelScript.Workbook) {\n  const fs = await import('fs');\n  return fs;\n}");
+    let error = fails(
+        &mut wb,
+        "async function main(workbook: ExcelScript.Workbook) {\n  const fs = await import('fs');\n  return fs;\n}",
+    );
     assert_eq!(error.kind, ErrorKind::Runtime);
 }
 
@@ -319,34 +521,70 @@ fn what_a_run_reports() {
 }"#,
         &context,
     );
-    let logs: Vec<(LogLevel, &str, Option<u32>)> = out.logs.iter().map(|l| (l.level, l.text.as_str(), l.line)).collect();
+    let logs: Vec<(LogLevel, &str, Option<u32>)> = out
+        .logs
+        .iter()
+        .map(|l| (l.level, l.text.as_str(), l.line))
+        .collect();
     assert_eq!(
         logs,
         [
             (LogLevel::Log, "start 1 true null undefined", Some(2)),
-            (LogLevel::Warn, r#"(4) [1, "two", (2) [3, 4], {five: 5}] {name: "Pen", tags: (1) ["a"], when: undefined}"#, Some(3)),
+            (
+                LogLevel::Warn,
+                r#"(4) [1, "two", (2) [3, 4], {five: 5}] {name: "Pen", tags: (1) ["a"], when: undefined}"#,
+                Some(3)
+            ),
             (LogLevel::Error, "Error: careful Worksheet {}", Some(4)),
             (LogLevel::Log, "Sheet2 Sheet2!B3:D5 Sheet2!B3", Some(5)),
-            (LogLevel::Log, r#"Map(1) {"k" => 1} Set(1) {1} ƒ anonymous() 12.5 0  (2) [undefined, null]"#, Some(6)),
-            (LogLevel::Log, r#"(2) [(2) ["Name", "Qty"], (2) ["Pen", 10]]"#, Some(7)),
+            (
+                LogLevel::Log,
+                r#"Map(1) {"k" => 1} Set(1) {1} ƒ anonymous() 12.5 0  (2) [undefined, null]"#,
+                Some(6)
+            ),
+            (
+                LogLevel::Log,
+                r#"(2) [(2) ["Name", "Qty"], (2) ["Pen", 10]]"#,
+                Some(7)
+            ),
             (LogLevel::Log, "", Some(8)),
         ]
     );
-    assert_eq!((out.returned, out.activated, out.selected), (None, None, None));
+    assert_eq!(
+        (out.returned, out.activated, out.selected),
+        (None, None, None)
+    );
 
     let out = ok_with(
         &mut wb,
         "function main(workbook: ExcelScript.Workbook): number[] {\n  const first = workbook.getFirstWorksheet();\n  first.activate();\n  first.getRange('B2:C3').select();\n  return [1.5, 2];\n}",
         &context,
     );
-    assert_eq!((out.returned.as_deref(), out.activated, out.selected), (Some("[1.5,2]"), Some(0), Some((0, Rect::new(1, 1, 2, 2)))));
+    assert_eq!(
+        (out.returned.as_deref(), out.activated, out.selected),
+        (Some("[1.5,2]"), Some(0), Some((0, Rect::new(1, 1, 2, 2))))
+    );
     // The sheet in front stays in front when sheets move around it.
-    let out = ok_with(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  workbook.addWorksheet('First').setPosition(0);\n}", &context);
-    assert_eq!((out.activated, wb.sheets[2].name.as_str()), (Some(2), "Sheet2"));
+    let out = ok_with(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  workbook.addWorksheet('First').setPosition(0);\n}",
+        &context,
+    );
+    assert_eq!(
+        (out.activated, wb.sheets[2].name.as_str()),
+        (Some(2), "Sheet2")
+    );
     wb.undo();
     // Deleting the sheet in front brings the next one in front.
-    let out = ok_with(&mut wb, "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().delete();\n  return workbook.getActiveWorksheet().getName();\n}", &context);
-    assert_eq!((out.returned.as_deref(), out.activated), (Some("\"Sheet1\""), Some(0)));
+    let out = ok_with(
+        &mut wb,
+        "function main(workbook: ExcelScript.Workbook) {\n  workbook.getActiveWorksheet().delete();\n  return workbook.getActiveWorksheet().getName();\n}",
+        &context,
+    );
+    assert_eq!(
+        (out.returned.as_deref(), out.activated),
+        (Some("\"Sheet1\""), Some(0))
+    );
 }
 
 #[test]
@@ -354,32 +592,77 @@ fn a_protected_sheet_refuses_as_it_does_by_hand() {
     let mut wb = stock();
     wb.update_style(0, Rect::new(1, 1, 3, 1), &|style| style.locked = false);
     wb.commit("unlock");
-    wb.protect_sheet(0, SheetProtection::allowing(&[Permission::FormatColumns]), "");
+    wb.protect_sheet(
+        0,
+        SheetProtection::allowing(&[Permission::FormatColumns]),
+        "",
+    );
     let refused = |wb: &mut Workbook, body: &str| {
-        let error = fails(wb, &format!("function main(workbook: ExcelScript.Workbook) {{\n  const sheet = workbook.getActiveWorksheet();\n  sheet.getRange('B2').setValue(99);\n  {body}\n}}"));
-        assert_eq!((error.kind, error.line), (ErrorKind::Runtime, Some(4)), "{body}: {}", error.message);
-        assert!(error.message.contains("protected"), "{body}: {}", error.message);
+        let error = fails(
+            wb,
+            &format!(
+                "function main(workbook: ExcelScript.Workbook) {{\n  const sheet = workbook.getActiveWorksheet();\n  sheet.getRange('B2').setValue(99);\n  {body}\n}}"
+            ),
+        );
+        assert_eq!(
+            (error.kind, error.line),
+            (ErrorKind::Runtime, Some(4)),
+            "{body}: {}",
+            error.message
+        );
+        assert!(
+            error.message.contains("protected"),
+            "{body}: {}",
+            error.message
+        );
     };
     refused(&mut wb, "sheet.getRange('A2').setValue('x');");
     refused(&mut wb, "sheet.getRange('A2:B2').setValues([['x', 1]]);");
     refused(&mut wb, "sheet.getRange('A2').setFormula('=1');");
     refused(&mut wb, "sheet.getRange('A2').clear();");
-    refused(&mut wb, "sheet.getRange('B2').getFormat().getFont().setBold(true);");
+    refused(
+        &mut wb,
+        "sheet.getRange('B2').getFormat().getFont().setBold(true);",
+    );
     refused(&mut wb, "sheet.getRange('B2').setNumberFormat('0.00');");
-    refused(&mut wb, "sheet.getRange('2:2').delete(ExcelScript.DeleteShiftDirection.up);");
-    refused(&mut wb, "sheet.getRange('2:2').insert(ExcelScript.InsertShiftDirection.down);");
-    refused(&mut wb, "sheet.getRange('B2').insert(ExcelScript.InsertShiftDirection.down);");
-    refused(&mut wb, "sheet.getRange('A1:C4').getSort().apply([{ key: 0 }]);");
+    refused(
+        &mut wb,
+        "sheet.getRange('2:2').delete(ExcelScript.DeleteShiftDirection.up);",
+    );
+    refused(
+        &mut wb,
+        "sheet.getRange('2:2').insert(ExcelScript.InsertShiftDirection.down);",
+    );
+    refused(
+        &mut wb,
+        "sheet.getRange('B2').insert(ExcelScript.InsertShiftDirection.down);",
+    );
+    refused(
+        &mut wb,
+        "sheet.getRange('A1:C4').getSort().apply([{ key: 0 }]);",
+    );
     refused(&mut wb, "sheet.getRange('E1').copyFrom('A1');");
     refused(&mut wb, "sheet.getRange('A2').moveTo('F2');");
     refused(&mut wb, "sheet.getRange('B2:B3').merge();");
-    refused(&mut wb, "sheet.getRange('B2').getFormat().setRowHeight(30);");
-    refused(&mut wb, "sheet.getRange('B2').getFormat().getProtection().setLocked(true);");
+    refused(
+        &mut wb,
+        "sheet.getRange('B2').getFormat().setRowHeight(30);",
+    );
+    refused(
+        &mut wb,
+        "sheet.getRange('B2').getFormat().getProtection().setLocked(true);",
+    );
     refused(&mut wb, "sheet.addTable('A1:C4', true);");
     refused(&mut wb, "sheet.getAutoFilter().apply('A1:C4');");
     refused(&mut wb, "sheet.setTabColor('red');");
-    refused(&mut wb, "sheet.getRange('A1').setHyperlink({ address: 'https://example.org' });");
-    refused(&mut wb, "sheet.getRange('A1:A4').replaceAll('Pen', 'Pencil', {});");
+    refused(
+        &mut wb,
+        "sheet.getRange('A1').setHyperlink({ address: 'https://example.org' });",
+    );
+    refused(
+        &mut wb,
+        "sheet.getRange('A1:A4').replaceAll('Pen', 'Pencil', {});",
+    );
     refused(&mut wb, "sheet.getRange('B2:B3').autoFill('B2:B9');");
     // What the protection allows goes through: unlocked cells, column widths.
     ok(
@@ -391,9 +674,24 @@ fn a_protected_sheet_refuses_as_it_does_by_hand() {
     // The structure of the workbook.
     let mut wb = stock();
     wb.protect_workbook(true, false, "");
-    for body in ["workbook.addWorksheet();", "sheet.setName('x');", "sheet.delete();", "sheet.copy();", "sheet.setPosition(0); workbook.getActiveWorksheet().setPosition(1);"] {
-        let error = fails(&mut wb, &format!("function main(workbook: ExcelScript.Workbook) {{\n  const sheet = workbook.getActiveWorksheet();\n  workbook.getTables();\n  {body}\n}}"));
-        assert!(error.message.contains("protected") || error.message.contains("invalid"), "{body}: {}", error.message);
+    for body in [
+        "workbook.addWorksheet();",
+        "sheet.setName('x');",
+        "sheet.delete();",
+        "sheet.copy();",
+        "sheet.setPosition(0); workbook.getActiveWorksheet().setPosition(1);",
+    ] {
+        let error = fails(
+            &mut wb,
+            &format!(
+                "function main(workbook: ExcelScript.Workbook) {{\n  const sheet = workbook.getActiveWorksheet();\n  workbook.getTables();\n  {body}\n}}"
+            ),
+        );
+        assert!(
+            error.message.contains("protected") || error.message.contains("invalid"),
+            "{body}: {}",
+            error.message
+        );
     }
 }
 

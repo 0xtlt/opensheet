@@ -34,10 +34,10 @@ use super::write::{NS_DOC_REL, NS_MAIN, NS_PKG_REL, push_number};
 use super::xml::{Event, Reader, Tag, XML_DECL, decode_cell_text};
 use opensheet_engine::datetime::{date_to_serial, serial_to_ymd};
 use opensheet_engine::pivot::{
-    Aggregation, AxisField, BaseItem, CacheField, CalcItem, DataField, FieldGroup, FieldLayout, FieldSort,
-    FilterKind, GroupBy, GroupKind, LabelFilter, PageField, PivotCache, PivotField, PivotFilter,
-    PivotItem, PivotSource, PivotTable, ReportLine, ReportLineKind, ShowAs, SortOrder, Subtotals,
-    Top10By, ValueFilter,
+    Aggregation, AxisField, BaseItem, CacheField, CalcItem, DataField, FieldGroup, FieldLayout,
+    FieldSort, FilterKind, GroupBy, GroupKind, LabelFilter, PageField, PivotCache, PivotField,
+    PivotFilter, PivotItem, PivotSource, PivotTable, ReportLine, ReportLineKind, ShowAs, SortOrder,
+    Subtotals, Top10By, ValueFilter,
 };
 use opensheet_engine::value::ErrorKind;
 use opensheet_engine::{Rect, Value, Workbook};
@@ -428,7 +428,12 @@ fn push_field_group(x: &mut String, cache: &PivotCache, index: usize) {
 }
 
 /// The definition part of a cache.
-fn definition_xml(cache: &PivotCache, source: &PivotSource, extensions: &str, dxfs: &mut Dxfs) -> String {
+fn definition_xml(
+    cache: &PivotCache,
+    source: &PivotSource,
+    extensions: &str,
+    dxfs: &mut Dxfs,
+) -> String {
     let mut x = String::from(XML_DECL);
     w!(
         x,
@@ -482,8 +487,11 @@ fn definition_xml(cache: &PivotCache, source: &PivotSource, extensions: &str, dx
     }
     x.push_str("</cacheFields>");
     // calculatedItems: each formula, and the item it computes.
-    let items: Vec<(&opensheet_engine::pivot::CalcItem, u32)> =
-        cache.calc_items.iter().filter_map(|item| Some((item, cache.calc_item_index(item)?))).collect();
+    let items: Vec<(&opensheet_engine::pivot::CalcItem, u32)> = cache
+        .calc_items
+        .iter()
+        .filter_map(|item| Some((item, cache.calc_item_index(item)?)))
+        .collect();
     if !items.is_empty() {
         w!(x, "<calculatedItems count=\"{}\">", items.len());
         for (item, at) in items {
@@ -684,9 +692,16 @@ fn push_filter(x: &mut String, filter: &PivotFilter, id: usize) {
     let (kind, measure, values, top) = match &filter.kind {
         FilterKind::Date { start, end } => {
             // What a timeline sets: both days are whole days.
-            w!(x, "<filter fld=\"{}\" type=\"dateBetween\" evalOrder=\"-1\" id=\"{id}\">", filter.field);
+            w!(
+                x,
+                "<filter fld=\"{}\" type=\"dateBetween\" evalOrder=\"-1\" id=\"{id}\">",
+                filter.field
+            );
             x.push_str("<autoFilter ref=\"A1\"><filterColumn colId=\"0\">");
-            let tests = [("greaterThanOrEqual", number_text(*start)), ("lessThanOrEqual", number_text(*end))];
+            let tests = [
+                ("greaterThanOrEqual", number_text(*start)),
+                ("lessThanOrEqual", number_text(*end)),
+            ];
             push_custom_filters(x, true, &tests);
             w!(
                 x,
@@ -1215,7 +1230,12 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras, dxfs: &mut Dxfs) {
                 extras.add_part(
                     format!("xl/pivotCache/pivotCacheDefinition{n}.xml"),
                     Some(CT_DEFINITION),
-                    definition_xml(&p.cache, &p.source, &super::slicer::cache_extensions(wb, &p.cache, n), dxfs),
+                    definition_xml(
+                        &p.cache,
+                        &p.source,
+                        &super::slicer::cache_extensions(wb, &p.cache, n),
+                        dxfs,
+                    ),
                 );
                 extras.add_part(
                     format!("xl/pivotCache/_rels/pivotCacheDefinition{n}.xml.rels"),
@@ -1261,33 +1281,54 @@ const EXT_PIVOT_OPTIONS: &str = "{781A3756-C4B2-4CAC-9D66-4F8BD8637D16}";
 
 /// A sheet name as a reference writes it.
 fn quoted_sheet(name: &str) -> String {
-    let plain = name.chars().all(|ch| ch.is_alphanumeric() || ch == '_') && !name.starts_with(|ch: char| ch.is_ascii_digit());
-    if plain { name.to_string() } else { format!("'{}'", name.replace('\'', "''")) }
+    let plain = name.chars().all(|ch| ch.is_alphanumeric() || ch == '_')
+        && !name.starts_with(|ch: char| ch.is_ascii_digit());
+    if plain {
+        name.to_string()
+    } else {
+        format!("'{}'", name.replace('\'', "''"))
+    }
 }
 
 /// The part of a chart, completed with what makes it a PivotChart when
 /// `chart` is bound to a PivotTable: the name of the table before the
 /// chart (`c:pivotSource`), a format per series inside it
 /// (`c:pivotFmts`), and the field buttons in the extensions.
-pub(crate) fn bind_chart(wb: &Workbook, chart: &opensheet_engine::chart::Chart, mut xml: String) -> String {
+pub(crate) fn bind_chart(
+    wb: &Workbook,
+    chart: &opensheet_engine::chart::Chart,
+    mut xml: String,
+) -> String {
     let Some((sheet, p, link)) = wb.pivot_of_chart(chart.id) else {
         return xml;
     };
     // Excel writes the name of the workbook file in brackets and does not
     // mind when the file was renamed since.
     let mut source = String::from("<c:pivotSource><c:name>");
-    super::xml::push_text(&mut source, &format!("[workbook.xlsx]{}!{}", quoted_sheet(&wb.sheets[sheet].name), p.name));
+    super::xml::push_text(
+        &mut source,
+        &format!(
+            "[workbook.xlsx]{}!{}",
+            quoted_sheet(&wb.sheets[sheet].name),
+            p.name
+        ),
+    );
     source.push_str("</c:name><c:fmtId val=\"0\"/></c:pivotSource>");
     if let Some(at) = xml.find("<c:chart>") {
         xml.insert_str(at, &source);
     }
     let mut formats = String::from("<c:pivotFmts>");
     for index in 0..chart.series.len() {
-        w!(formats, "<c:pivotFmt><c:idx val=\"{index}\"/><c:marker><c:symbol val=\"none\"/></c:marker></c:pivotFmt>");
+        w!(
+            formats,
+            "<c:pivotFmt><c:idx val=\"{index}\"/><c:marker><c:symbol val=\"none\"/></c:marker></c:pivotFmt>"
+        );
     }
     formats.push_str("</c:pivotFmts>");
     // After the title and `autoTitleDeleted`, which open the chart.
-    let after = xml.find("<c:autoTitleDeleted").and_then(|at| xml[at..].find("/>").map(|end| at + end + 2));
+    let after = xml
+        .find("<c:autoTitleDeleted")
+        .and_then(|at| xml[at..].find("/>").map(|end| at + end + 2));
     let after = after.or_else(|| xml.find("<c:chart>").map(|at| at + "<c:chart>".len()));
     if let Some(at) = after {
         xml.insert_str(at, &formats);
@@ -1357,18 +1398,30 @@ fn link_charts(wb: &mut Workbook) {
         let Some(name) = name else {
             continue;
         };
-        let rest = name.rsplit_once(']').map_or(name.as_str(), |(_, rest)| rest);
+        let rest = name
+            .rsplit_once(']')
+            .map_or(name.as_str(), |(_, rest)| rest);
         if let Some((sheet, table)) = rest.rsplit_once('!') {
             let sheet = sheet.trim_matches('\'').replace("''", "'");
-            links.push((sheet, table.to_string(), chart.id, if visible { zones } else { [false; 4] }));
+            links.push((
+                sheet,
+                table.to_string(),
+                chart.id,
+                if visible { zones } else { [false; 4] },
+            ));
         }
     }
     for (sheet, table, chart, shown) in links {
         let Some(index) = wb.sheet_index(&sheet) else {
             continue;
         };
-        if let Some(p) = wb.sheets[index].pivots.iter_mut().find(|p| p.name.to_lowercase() == table.to_lowercase()) {
-            p.charts.push(opensheet_engine::pivot::PivotChartLink { chart, shown });
+        if let Some(p) = wb.sheets[index]
+            .pivots
+            .iter_mut()
+            .find(|p| p.name.to_lowercase() == table.to_lowercase())
+        {
+            p.charts
+                .push(opensheet_engine::pivot::PivotChartLink { chart, shown });
         }
     }
 }
@@ -1598,7 +1651,12 @@ fn parse_definition(
                             Event::Text(_) => {}
                         }
                     }
-                    calculated.extend(formula.zip(field).zip(item).map(|((formula, field), item)| (field, item, formula)));
+                    calculated.extend(
+                        formula
+                            .zip(field)
+                            .zip(item)
+                            .map(|((formula, field), item)| (field, item, formula)),
+                    );
                 }
                 "worksheetSource" => {
                     let text = |name: &str| t.attr(name).map(|v| decode_cell_text(&v).into_owned());
@@ -1668,13 +1726,15 @@ fn parse_definition(
     }
     let calc_items = calculated
         .into_iter()
-        .filter_map(|(field, item, formula)| match fields.get(field)?.shared.get(item as usize)? {
-            Value::Text(name) => Some(CalcItem {
-                field,
-                name: name.to_string(),
-                formula,
-            }),
-            _ => None,
+        .filter_map(|(field, item, formula)| {
+            match fields.get(field)?.shared.get(item as usize)? {
+                Value::Text(name) => Some(CalcItem {
+                    field,
+                    name: name.to_string(),
+                    formula,
+                }),
+                _ => None,
+            }
         })
         .collect();
     let moved = split_date_groups(&mut fields, locale);
@@ -2030,7 +2090,10 @@ fn parse_filter<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> Option<PivotFilter> {
     use ValueFilter as V;
     let kind = if kind == "dateBetween" {
         match bounds[..] {
-            [start, end] => FilterKind::Date { start: start.floor(), end: end.floor() },
+            [start, end] => FilterKind::Date {
+                start: start.floor(),
+                end: end.floor(),
+            },
             _ => return None,
         }
     } else if let Some(at) = LABEL_FILTERS.iter().position(|name| *name == kind) {

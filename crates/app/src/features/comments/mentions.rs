@@ -23,16 +23,25 @@ const MAX_QUERY: usize = 64;
 /// after it. An `@` counts when it starts a word (the one inside an
 /// address does not) and is not part of a mention already made; what
 /// follows it stays on its line.
-pub(super) fn query_at<'a>(text: &'a str, caret: usize, tokens: &[Range<usize>]) -> Option<(usize, &'a str)> {
+pub(super) fn query_at<'a>(
+    text: &'a str,
+    caret: usize,
+    tokens: &[Range<usize>],
+) -> Option<(usize, &'a str)> {
     let before = text.get(..caret)?;
     let line = before.rfind('\n').map_or(0, |index| index + 1);
     let mut end = before.len();
     while let Some(found) = before[line..end].rfind('@') {
         let at = line + found;
-        let starts_word = before[..at].chars().next_back().is_none_or(|ch| !ch.is_alphanumeric() && ch != '@' && ch != '.');
+        let starts_word = before[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|ch| !ch.is_alphanumeric() && ch != '@' && ch != '.');
         let query = &before[at + 1..];
         if starts_word {
-            let taken = tokens.iter().any(|token| token.start < caret && at < token.end);
+            let taken = tokens
+                .iter()
+                .any(|token| token.start < caret && at < token.end);
             let fits = query.len() <= MAX_QUERY && !query.starts_with(char::is_whitespace);
             return (!taken && fits).then_some((at, query));
         }
@@ -47,9 +56,13 @@ pub(super) fn is_email(text: &str) -> bool {
     let Some((name, domain)) = text.split_once('@') else {
         return false;
     };
-    let plain = |part: &str| !part.is_empty() && !part.contains(|ch: char| ch.is_whitespace() || ch == '@');
+    let plain =
+        |part: &str| !part.is_empty() && !part.contains(|ch: char| ch.is_whitespace() || ch == '@');
     let labels: Vec<&str> = domain.split('.').collect();
-    plain(name) && plain(domain) && labels.len() >= 2 && labels.iter().all(|label| !label.is_empty())
+    plain(name)
+        && plain(domain)
+        && labels.len() >= 2
+        && labels.iter().all(|label| !label.is_empty())
         && labels.last().is_some_and(|last| last.chars().count() >= 2)
 }
 
@@ -67,12 +80,16 @@ pub(super) fn candidates(known: &[Person], user: &str, query: &str) -> Vec<Perso
     let starts = |text: &str| {
         let text = text.to_lowercase();
         text.starts_with(&wanted)
-            || text
-                .char_indices()
-                .any(|(index, ch)| !ch.is_alphanumeric() && text[index + ch.len_utf8()..].starts_with(&wanted))
+            || text.char_indices().any(|(index, ch)| {
+                !ch.is_alphanumeric() && text[index + ch.len_utf8()..].starts_with(&wanted)
+            })
     };
     let mut people: Vec<Person> = Vec::new();
-    for person in known.iter().cloned().chain((!user.trim().is_empty()).then(|| Person::new(user))) {
+    for person in known
+        .iter()
+        .cloned()
+        .chain((!user.trim().is_empty()).then(|| Person::new(user)))
+    {
         // One line per name: the same person signed in two ways is one.
         if !person.name.trim().is_empty() && !people.iter().any(|seen| seen.name == person.name) {
             people.push(person);
@@ -80,11 +97,17 @@ pub(super) fn candidates(known: &[Person], user: &str, query: &str) -> Vec<Perso
     }
     let mut out: Vec<Person> = people
         .into_iter()
-        .filter(|person| starts(&person.name) || address(person).is_some_and(|address| starts(address)))
+        .filter(|person| {
+            starts(&person.name) || address(person).is_some_and(|address| starts(address))
+        })
         .take(MAX_SHOWN)
         .collect();
     let typed = query.trim();
-    if is_email(typed) && !out.iter().any(|person| person.user_id.eq_ignore_ascii_case(typed)) {
+    if is_email(typed)
+        && !out
+            .iter()
+            .any(|person| person.user_id.eq_ignore_ascii_case(typed))
+    {
         out.push(Person::mentioned(typed, typed));
     }
     out
@@ -102,7 +125,12 @@ pub(super) struct Named(Vec<(String, Person)>);
 
 impl Named {
     pub fn of(post: &Post) -> Named {
-        Named(post.pieces().into_iter().filter_map(|(text, person)| Some((text.to_string(), person?.clone()))).collect())
+        Named(
+            post.pieces()
+                .into_iter()
+                .filter_map(|(text, person)| Some((text.to_string(), person?.clone())))
+                .collect(),
+        )
     }
 
     pub fn add(&mut self, person: &Person) {
@@ -125,7 +153,10 @@ impl Named {
             .tokens()
             .iter()
             .filter_map(|range| {
-                let (_, person) = self.0.iter().find(|(known, _)| text.get(range.clone()) == Some(known.as_str()))?;
+                let (_, person) = self
+                    .0
+                    .iter()
+                    .find(|(known, _)| text.get(range.clone()) == Some(known.as_str()))?;
                 let start = range.start.checked_sub(lead)?;
                 (range.end - lead <= trimmed.len()).then(|| Mention {
                     person: person.clone(),
@@ -152,7 +183,11 @@ impl Suggestions {
     /// Move the selection, round the ends of the list.
     pub fn step(&mut self, down: bool) {
         let count = self.people.len().max(1);
-        self.selected = if down { (self.selected + 1) % count } else { (self.selected + count - 1) % count };
+        self.selected = if down {
+            (self.selected + 1) % count
+        } else {
+            (self.selected + count - 1) % count
+        };
     }
 }
 
@@ -169,7 +204,10 @@ mod tests {
         // An address in running text is not a mention being typed, but an
         // address typed after an `@` is.
         assert_eq!(query_at("write to ann@example.com", 24, &[]), None);
-        assert_eq!(query_at("ask @sam@example.com", 20, &[]), Some((4, "sam@example.com")));
+        assert_eq!(
+            query_at("ask @sam@example.com", 20, &[]),
+            Some((4, "sam@example.com"))
+        );
         // On its own line only, never across a blank right after the `@`.
         assert_eq!(query_at("@Ann\nLee", 8, &[]), None);
         assert_eq!(query_at("(@Bo", 4, &[]), Some((1, "Bo")));
@@ -188,7 +226,10 @@ mod tests {
         for good in ["a@b.co", "sam.lee+x@mail.example.com", "zoë@exämple.org"] {
             assert!(is_email(good), "{good}");
         }
-        for bad in ["", "sam", "sam@", "@b.co", "sam@b", "sam@b.", "sam@.co", "s m@b.co", "a@b@c.co", "sam@b.c"] {
+        for bad in [
+            "", "sam", "sam@", "@b.co", "sam@b", "sam@b.", "sam@.co", "s m@b.co", "a@b@c.co",
+            "sam@b.c",
+        ] {
             assert!(!is_email(bad), "{bad}");
         }
     }
@@ -198,9 +239,17 @@ mod tests {
         let ann = Person::new("Ann Lee");
         let bob = Person::mentioned("Bob Martin", "robert@example.com");
         let nobody = Person::default();
-        let known = [ann.clone(), bob.clone(), nobody, Person::mentioned("Ann Lee", "ann@example.com")];
+        let known = [
+            ann.clone(),
+            bob.clone(),
+            nobody,
+            Person::mentioned("Ann Lee", "ann@example.com"),
+        ];
         let names = |query: &str| -> Vec<String> {
-            candidates(&known, "Thomas Tastet", query).into_iter().map(|person| person.name).collect()
+            candidates(&known, "Thomas Tastet", query)
+                .into_iter()
+                .map(|person| person.name)
+                .collect()
         };
         // Everyone with a name, the user last, the same name once.
         assert_eq!(names(""), ["Ann Lee", "Bob Martin", "Thomas Tastet"]);
@@ -214,7 +263,10 @@ mod tests {
         // A whole address nobody has names someone new, as Excel records
         // the people of a directory.
         let new = candidates(&known, "Thomas Tastet", "sam@example.com");
-        assert_eq!(new, [Person::mentioned("sam@example.com", "sam@example.com")]);
+        assert_eq!(
+            new,
+            [Person::mentioned("sam@example.com", "sam@example.com")]
+        );
         assert_eq!(names("sam@example"), Vec::<String>::new());
         // An address someone has is that person.
         assert_eq!(candidates(&known, "", "Robert@Example.com"), [bob]);

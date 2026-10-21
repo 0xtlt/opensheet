@@ -8,7 +8,9 @@ use crate::features::{Command, Cx};
 use crate::i18n::t;
 use crate::theme::{self, c};
 use crate::widgets::{Sketch, icon, label, preview, tooltip};
-use gpui::{AnyElement, Context, FontWeight, SharedString, WeakEntity, Window, div, point, prelude::*, px};
+use gpui::{
+    AnyElement, Context, FontWeight, SharedString, WeakEntity, Window, div, point, prelude::*, px,
+};
 use opensheet_engine::pivot::PivotStyle;
 use opensheet_engine::style::StylePatch;
 
@@ -61,12 +63,23 @@ fn display_name(name: &str) -> SharedString {
     let Some(rest) = name.strip_prefix("PivotStyle") else {
         return t("None", "Aucun").into();
     };
-    let split = rest.find(|ch: char| ch.is_ascii_digit()).unwrap_or(rest.len());
+    let split = rest
+        .find(|ch: char| ch.is_ascii_digit())
+        .unwrap_or(rest.len());
     let (family, number) = rest.split_at(split);
     let pattern = match family {
-        "Light" => t("Pivot Style Light {}", "Style de tableau croisé dynamique clair {}"),
-        "Medium" => t("Pivot Style Medium {}", "Style de tableau croisé dynamique moyen {}"),
-        _ => t("Pivot Style Dark {}", "Style de tableau croisé dynamique foncé {}"),
+        "Light" => t(
+            "Pivot Style Light {}",
+            "Style de tableau croisé dynamique clair {}",
+        ),
+        "Medium" => t(
+            "Pivot Style Medium {}",
+            "Style de tableau croisé dynamique moyen {}",
+        ),
+        _ => t(
+            "Pivot Style Dark {}",
+            "Style de tableau croisé dynamique foncé {}",
+        ),
     };
     pattern.replace("{}", number).into()
 }
@@ -88,14 +101,20 @@ fn thumbnail(
         .id(("pivot-style", id))
         .p(px(2.))
         .border_1()
-        .border_color(if current { c(theme::ACCENT) } else { gpui::transparent_black() })
+        .border_color(if current {
+            c(theme::ACCENT)
+        } else {
+            gpui::transparent_black()
+        })
         .rounded(px(2.))
         .hover(|s| s.border_color(c(0xF2994A)))
         .child(
             div()
                 .border_1()
                 .border_color(c(theme::BORDER))
-                .child(preview(THUMB_W, THUMB_H, move |s| draw_thumbnail(s, &sample))),
+                .child(preview(THUMB_W, THUMB_H, move |s| {
+                    draw_thumbnail(s, &sample)
+                })),
         )
         .tooltip(tooltip(display_name(name)))
         .on_click(move |_, window, cx| on_pick(window, cx))
@@ -103,9 +122,14 @@ fn thumbnail(
 }
 
 fn set_style(app: &mut ExcelApp, id: u32, name: String, window: &mut Window, cx: &mut Cx) {
-    update(app, id, t("PivotTable Style", "Style de tableau croisé dynamique"), window, cx, move |p| {
-        p.style.name = name.clone()
-    });
+    update(
+        app,
+        id,
+        t("PivotTable Style", "Style de tableau croisé dynamique"),
+        window,
+        cx,
+        move |p| p.style.name = name.clone(),
+    );
 }
 
 /// The gallery as the Design tab shows it: the row of styles holding the
@@ -117,7 +141,10 @@ pub(super) fn ribbon_gallery(app: &mut ExcelApp, cx: &mut Cx) -> AnyElement {
     };
     let (id, options) = (pivot.id, pivot.style.clone());
     let names = PivotStyle::builtin_names();
-    let at = names.iter().position(|name| *name == options.name).unwrap_or(0);
+    let at = names
+        .iter()
+        .position(|name| *name == options.name)
+        .unwrap_or(0);
     let first = at / PER_ROW * PER_ROW;
     let weak = cx.weak_entity();
     let thumbs: Vec<AnyElement> = names[first..(first + PER_ROW).min(names.len())]
@@ -128,7 +155,8 @@ pub(super) fn ribbon_gallery(app: &mut ExcelApp, cx: &mut Cx) -> AnyElement {
             let pick = name.clone();
             thumbnail(first + k, &name, &options, move |window, cx| {
                 let name = pick.clone();
-                weak.update(cx, |app, cx| set_style(app, id, name, window, cx)).ok();
+                weak.update(cx, |app, cx| set_style(app, id, name, window, cx))
+                    .ok();
             })
         })
         .collect();
@@ -206,7 +234,13 @@ impl Gallery {
             .ok();
     }
 
-    fn section(&self, title: &'static str, names: &[String], offset: usize, cx: &mut Context<Self>) -> AnyElement {
+    fn section(
+        &self,
+        title: &'static str,
+        names: &[String],
+        offset: usize,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let rows: Vec<AnyElement> = names
             .chunks(PER_ROW)
             .enumerate()
@@ -217,9 +251,15 @@ impl Gallery {
                     .children(row.iter().enumerate().map(|(k, name)| {
                         let pick = name.clone();
                         let this = cx.weak_entity();
-                        thumbnail(offset + r * PER_ROW + k, name, &self.options, move |window, cx| {
-                            this.update(cx, |this, cx| this.pick(&pick, window, cx)).ok();
-                        })
+                        thumbnail(
+                            offset + r * PER_ROW + k,
+                            name,
+                            &self.options,
+                            move |window, cx| {
+                                this.update(cx, |this, cx| this.pick(&pick, window, cx))
+                                    .ok();
+                            },
+                        )
                     }))
                     .into_any_element()
             })
@@ -288,7 +328,10 @@ impl Render for Gallery {
             // Excel but does not answer.
             .child(entry(
                 "new-style",
-                t("New PivotTable Style...", "Nouveau style de tableau croisé dynamique..."),
+                t(
+                    "New PivotTable Style...",
+                    "Nouveau style de tableau croisé dynamique...",
+                ),
                 false,
             ))
             .child(

@@ -33,7 +33,10 @@ pub(super) fn paint(p: &mut Painter) {
         return;
     };
     for pivot in &sheet.pivots {
-        let parts: Vec<Rect> = pivot.footprint().filter_map(|rect| rect.intersection(&p.visible)).collect();
+        let parts: Vec<Rect> = pivot
+            .footprint()
+            .filter_map(|rect| rect.intersection(&p.visible))
+            .collect();
         if parts.is_empty() {
             continue;
         }
@@ -61,13 +64,22 @@ fn paint_buttons(p: &mut Painter, pivot: &PivotTable) {
     let visible = p.visible;
     let mut cells: Vec<(u32, u32)> = Vec::new();
     if let Some(pages) = pivot.page_location.and_then(|r| r.intersection(&visible)) {
-        cells.extend((pages.r0..=pages.r1).flat_map(|row| (pages.c0..=pages.c1).map(move |col| (row, col))));
+        cells.extend(
+            (pages.r0..=pages.r1).flat_map(|row| (pages.c0..=pages.c1).map(move |col| (row, col))),
+        );
     }
-    if let (Some(body), Some(seen)) = (pivot.location, pivot.location.and_then(|r| r.intersection(&visible))) {
+    if let (Some(body), Some(seen)) = (
+        pivot.location,
+        pivot.location.and_then(|r| r.intersection(&visible)),
+    ) {
         let header_end = body.r0 + pivot.report.first_data_row();
         let label_end = body.c0 + pivot.report.first_data_col();
         for row in seen.r0..=seen.r1 {
-            let last = if row < header_end { seen.c1 + 1 } else { label_end.min(seen.c1 + 1) };
+            let last = if row < header_end {
+                seen.c1 + 1
+            } else {
+                label_end.min(seen.c1 + 1)
+            };
             cells.extend((seen.c0..last).map(|col| (row, col)));
         }
     }
@@ -169,7 +181,11 @@ fn wrap(p: &Painter, text: &str, size: f32, width: f32) -> Vec<String> {
     let mut lines: Vec<String> = Vec::new();
     let mut line = String::new();
     for word in text.split_whitespace() {
-        let candidate = if line.is_empty() { word.to_string() } else { format!("{line} {word}") };
+        let candidate = if line.is_empty() {
+            word.to_string()
+        } else {
+            format!("{line} {word}")
+        };
         if !line.is_empty() && f32::from(p.shape(&candidate, size, c(0), false).width) > width {
             lines.push(std::mem::replace(&mut line, word.to_string()));
         } else {
@@ -217,7 +233,12 @@ fn paint_placeholder(p: &mut Painter, pivot: &PivotTable) {
         c(0xFFFFFF),
         Some(line),
     );
-    p.put(name, centre - name_w / 2.0, y + (line_h - size * 1.25) / 2.0, size);
+    p.put(
+        name,
+        centre - name_w / 2.0,
+        y + (line_h - size * 1.25) / 2.0,
+        size,
+    );
     y += line_h + pad * 2.0;
 
     let hint = t(
@@ -258,11 +279,30 @@ fn paint_placeholder(p: &mut Painter, pivot: &PivotTable) {
     let accent = c(theme::ACCENT);
     for k in 0..4 {
         let ly = y + (10.0 + k as f32 * 11.0) * u;
-        p.frame(sx0 + 8.0 * u, ly, sx0 + 14.0 * u, ly + 6.0 * u, 1.0, if k % 2 == 0 { accent } else { line });
+        p.frame(
+            sx0 + 8.0 * u,
+            ly,
+            sx0 + 14.0 * u,
+            ly + 6.0 * u,
+            1.0,
+            if k % 2 == 0 { accent } else { line },
+        );
         if k % 2 == 0 {
-            p.rect(sx0 + 9.5 * u, ly + 1.5 * u, sx0 + 12.5 * u, ly + 4.5 * u, accent);
+            p.rect(
+                sx0 + 9.5 * u,
+                ly + 1.5 * u,
+                sx0 + 12.5 * u,
+                ly + 4.5 * u,
+                accent,
+            );
         }
-        p.rect(sx0 + 19.0 * u, ly + 2.0 * u, sx1 - (10.0 + k as f32 * 7.0) * u, ly + 4.0 * u, c(0xC8C8C8));
+        p.rect(
+            sx0 + 19.0 * u,
+            ly + 2.0 * u,
+            sx1 - (10.0 + k as f32 * 7.0) * u,
+            ly + 4.0 * u,
+            c(0xC8C8C8),
+        );
     }
     let top = y + 58.0 * u;
     let (mid, gap) = (centre, 3.0 * u);
@@ -274,8 +314,20 @@ fn paint_placeholder(p: &mut Painter, pivot: &PivotTable) {
     ] {
         p.frame(ax0, ay, ax1, ay + 16.0 * u, 1.0, line);
     }
-    p.rect(mid + gap + 3.0 * u, top + 24.0 * u, sx1 - 12.0 * u, top + 29.0 * u, theme::ca(theme::ACCENT, 0.45));
-    p.rect(sx0 + 11.0 * u, top + 24.0 * u, mid - gap - 5.0 * u, top + 29.0 * u, c(0xC8C8C8));
+    p.rect(
+        mid + gap + 3.0 * u,
+        top + 24.0 * u,
+        sx1 - 12.0 * u,
+        top + 29.0 * u,
+        theme::ca(theme::ACCENT, 0.45),
+    );
+    p.rect(
+        sx0 + 11.0 * u,
+        top + 24.0 * u,
+        mid - gap - 5.0 * u,
+        top + 29.0 * u,
+        c(0xC8C8C8),
+    );
 }
 
 pub(super) fn mouse_down(
@@ -320,12 +372,24 @@ pub(super) fn mouse_down(
     }
 }
 
-fn press_button(app: &mut ExcelApp, zone: &ButtonZone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+fn press_button(
+    app: &mut ExcelApp,
+    zone: &ButtonZone,
+    ev: &ZoneEvent,
+    window: &mut Window,
+    cx: &mut Cx,
+) {
     app.select_cell(zone.row, zone.col, cx);
     match zone.button {
-        PivotButton::Filter { .. } => {
-            filter::toggle_drop_down(app, zone.pivot, zone.row, zone.col, Some(ev.position), window, cx)
-        }
+        PivotButton::Filter { .. } => filter::toggle_drop_down(
+            app,
+            zone.pivot,
+            zone.row,
+            zone.col,
+            Some(ev.position),
+            window,
+            cx,
+        ),
         PivotButton::Expand | PivotButton::Collapse => {
             let cell = app.wb.pivot_cell(app.sheet, zone.row, zone.col);
             if let Some((field, item)) = cell.and_then(|cell| cell.field.zip(cell.item)) {
@@ -340,7 +404,13 @@ fn press_button(app: &mut ExcelApp, zone: &ButtonZone, ev: &ZoneEvent, window: &
 /// (or the choice of a field to put below it), the settings of a field
 /// name. Elsewhere the click goes on to the cell, which answers that it
 /// cannot be edited.
-fn double_click(app: &mut ExcelApp, row: u32, col: u32, window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+fn double_click(
+    app: &mut ExcelApp,
+    row: u32,
+    col: u32,
+    window: &mut Window,
+    cx: &mut Cx,
+) -> ZoneResponse {
     let Some(cell) = app.wb.pivot_cell(app.sheet, row, col) else {
         return ZoneResponse::Ignored;
     };

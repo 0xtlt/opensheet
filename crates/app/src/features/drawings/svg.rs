@@ -60,7 +60,10 @@ pub fn install(cx: &App) {
         let image = gpui::Image::from_bytes(gpui::ImageFormat::Svg, svg.to_vec());
         let rendered = image.to_image_data(renderer.clone()).ok()?;
         let size = rendered.size(0);
-        let (width, height) = (u32::try_from(size.width.0).ok()?, u32::try_from(size.height.0).ok()?);
+        let (width, height) = (
+            u32::try_from(size.width.0).ok()?,
+            u32::try_from(size.height.0).ok()?,
+        );
         // The renderer gives red, green, blue and alpha with the colours
         // multiplied by alpha; GPUI paints blue, green, red, not
         // multiplied.
@@ -74,7 +77,11 @@ pub fn install(cx: &App) {
             }
             pixel.swap(0, 2);
         }
-        (width > 0 && height > 0).then_some(Bitmap { width, height, data })
+        (width > 0 && height > 0).then_some(Bitmap {
+            width,
+            height,
+            data,
+        })
     });
     RASTERIZER.with_borrow_mut(|slot| *slot = Some(rasterizer));
 }
@@ -124,7 +131,9 @@ pub fn image(svg: &str, flips: (bool, bool), quarters: u8) -> Option<Arc<RenderI
         .and_then(into_image);
     CACHE.with_borrow_mut(|cache| {
         let used = cache.repaint;
-        cache.images.insert(key, image.clone().map(|image| Shown { image, used }));
+        cache
+            .images
+            .insert(key, image.clone().map(|image| Shown { image, used }));
     });
     image
 }
@@ -134,7 +143,11 @@ pub fn image(svg: &str, flips: (bool, bool), quarters: u8) -> Option<Arc<RenderI
 pub fn sweep(window: &mut Window, cx: &mut App) {
     let retired = CACHE.with_borrow_mut(|cache| {
         cache.repaint += 1;
-        let Cache { images, repaint, retired } = cache;
+        let Cache {
+            images,
+            repaint,
+            retired,
+        } = cache;
         images.retain(|_, entry| match entry {
             Some(shown) if shown.used + KEPT_FOR < *repaint => {
                 retired.push(shown.image.clone());
@@ -147,7 +160,11 @@ pub fn sweep(window: &mut Window, cx: &mut App) {
         // A picture being resized is drawn at a new size at every
         // repaint: only the latest sizes are kept.
         while images.len() > MAX_KEPT {
-            let Some(oldest) = images.iter().min_by_key(|(_, entry)| entry.as_ref().map_or(0, |shown| shown.used)).map(|(key, _)| *key) else {
+            let Some(oldest) = images
+                .iter()
+                .min_by_key(|(_, entry)| entry.as_ref().map_or(0, |shown| shown.used))
+                .map(|(key, _)| *key)
+            else {
                 break;
             };
             if let Some(Some(shown)) = images.remove(&oldest) {

@@ -8,14 +8,18 @@
 use crate::features::drawings::geometry;
 use gpui::RenderImage;
 use opensheet_engine::chart::Chart;
-use opensheet_engine::chart_layout::{self, Ink, LayoutOptions, Prim, Seg, TextAnchor, layout_chart};
+use opensheet_engine::chart_layout::{
+    self, Ink, LayoutOptions, Prim, Seg, TextAnchor, layout_chart,
+};
 use opensheet_engine::condfmt::{Adornment, Bar, Icon};
 use opensheet_engine::drawing::{
     Drawing, DrawingKind, ImageFormat, PathCommand, Picture, Shape, TEXT_MARGIN, TextAlign,
     TextAnchor as ShapeAnchor,
 };
 use opensheet_engine::{Color, StyleId, Workbook};
-use opensheet_print::{Canvas, FontDb, Image, LineCap, LineJoin, ObjectPainter, Paint, Path, RectF, Stroke, TextStyle};
+use opensheet_print::{
+    Canvas, FontDb, Image, LineCap, LineJoin, ObjectPainter, Paint, Path, RectF, Stroke, TextStyle,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -31,7 +35,14 @@ impl chart_layout::TextMeasure for Measure<'_> {
         self.width_styled(text, size, bold, false, None)
     }
 
-    fn width_styled(&self, text: &str, size: f32, bold: bool, italic: bool, family: Option<&str>) -> f32 {
+    fn width_styled(
+        &self,
+        text: &str,
+        size: f32,
+        bold: bool,
+        italic: bool,
+        family: Option<&str>,
+    ) -> f32 {
         let face = self.fonts.face(family.unwrap_or(self.family), bold, italic);
         self.fonts.text_width(&face, text, size as f64) as f32
     }
@@ -43,7 +54,12 @@ fn paint_of(ink: Ink) -> Paint {
 
 fn stroke_of(stroke: &chart_layout::Stroke) -> Stroke {
     let width = stroke.width as f64;
-    let dash: Vec<f64> = stroke.dash.pattern().iter().map(|d| *d as f64 * width).collect();
+    let dash: Vec<f64> = stroke
+        .dash
+        .pattern()
+        .iter()
+        .map(|d| *d as f64 * width)
+        .collect();
     Stroke::solid(paint_of(stroke.ink), width)
         .dashed(&dash)
         .join(LineJoin::Round)
@@ -55,9 +71,9 @@ fn path_of(segs: &[Seg]) -> Path {
         path = match *seg {
             Seg::Move(x, y) => path.move_to(x as f64, y as f64),
             Seg::Line(x, y) => path.line_to(x as f64, y as f64),
-            Seg::Cubic(ax, ay, bx, by, x, y) => {
-                path.curve_to(ax as f64, ay as f64, bx as f64, by as f64, x as f64, y as f64)
-            }
+            Seg::Cubic(ax, ay, bx, by, x, y) => path.curve_to(
+                ax as f64, ay as f64, bx as f64, by as f64, x as f64, y as f64,
+            ),
             Seg::Close => path.close(),
         };
     }
@@ -120,16 +136,30 @@ impl PaperPainter {
         for pixel in pixels.chunks_exact_mut(4) {
             pixel.swap(0, 2);
         }
-        Image::from_rgba(i32::from(size.width) as u32, i32::from(size.height) as u32, pixels)
+        Image::from_rgba(
+            i32::from(size.width) as u32,
+            i32::from(size.height) as u32,
+            pixels,
+        )
     }
 }
 
 impl ObjectPainter for PaperPainter {
-    fn paint_chart(&self, wb: &Workbook, sheet: usize, chart: &Chart, size: (f64, f64), canvas: &mut Canvas) {
+    fn paint_chart(
+        &self,
+        wb: &Workbook,
+        sheet: usize,
+        chart: &Chart,
+        size: (f64, f64),
+        canvas: &mut Canvas,
+    ) {
         let data = wb.chart_data(sheet, chart);
         let family = wb.styles.get(StyleId(0)).font.name.clone();
         let fonts = canvas.fonts();
-        let measure = Measure { fonts, family: &family };
+        let measure = Measure {
+            fonts,
+            family: &family,
+        };
         // The canvas is in sheet pixels: the chart is laid out as on
         // screen at 100 %.
         let options = LayoutOptions {
@@ -137,7 +167,13 @@ impl ObjectPainter for PaperPainter {
             locale: wb.locale,
             labels: crate::chart_view::chart_labels(),
         };
-        for prim in layout_chart(chart, &data, (size.0 as f32, size.1 as f32), &options, &measure) {
+        for prim in layout_chart(
+            chart,
+            &data,
+            (size.0 as f32, size.1 as f32),
+            &options,
+            &measure,
+        ) {
             match prim {
                 Prim::Rect {
                     x,
@@ -155,8 +191,20 @@ impl ObjectPainter for PaperPainter {
                         canvas.stroke_rect(rect, stroke_of(&stroke));
                     }
                 }
-                Prim::Line { x0, y0, x1, y1, stroke } => {
-                    canvas.line(x0 as f64, y0 as f64, x1 as f64, y1 as f64, stroke_of(&stroke));
+                Prim::Line {
+                    x0,
+                    y0,
+                    x1,
+                    y1,
+                    stroke,
+                } => {
+                    canvas.line(
+                        x0 as f64,
+                        y0 as f64,
+                        x1 as f64,
+                        y1 as f64,
+                        stroke_of(&stroke),
+                    );
                 }
                 Prim::Path { segs, fill, stroke } => {
                     if let Some(fill) = fill {
@@ -167,7 +215,8 @@ impl ObjectPainter for PaperPainter {
                     }
                 }
                 Prim::Text(run) => {
-                    let face = fonts.face(run.font.as_deref().unwrap_or(&family), run.bold, run.italic);
+                    let face =
+                        fonts.face(run.font.as_deref().unwrap_or(&family), run.bold, run.italic);
                     let size = run.size as f64;
                     let width = fonts.text_width(&face, &run.text, size);
                     let left = match run.anchor {
@@ -183,10 +232,23 @@ impl ObjectPainter for PaperPainter {
                         // The layout turns clockwise, the canvas the other way.
                         canvas.rotate(-run.rotation as f64);
                     }
-                    canvas.face_text(&face, &run.text, left, baseline, size, Paint::from(run.color));
+                    canvas.face_text(
+                        &face,
+                        &run.text,
+                        left,
+                        baseline,
+                        size,
+                        Paint::from(run.color),
+                    );
                     if run.underline {
                         let under = baseline + size * 0.12;
-                        canvas.line(left, under, left + width, under, Stroke::solid(Paint::from(run.color), (size / 14.0).max(0.5)));
+                        canvas.line(
+                            left,
+                            under,
+                            left + width,
+                            under,
+                            Stroke::solid(Paint::from(run.color), (size / 14.0).max(0.5)),
+                        );
                     }
                     canvas.restore();
                 }
@@ -194,7 +256,14 @@ impl ObjectPainter for PaperPainter {
         }
     }
 
-    fn paint_drawing(&self, wb: &Workbook, _sheet: usize, drawing: &Drawing, size: (f64, f64), canvas: &mut Canvas) {
+    fn paint_drawing(
+        &self,
+        wb: &Workbook,
+        _sheet: usize,
+        drawing: &Drawing,
+        size: (f64, f64),
+        canvas: &mut Canvas,
+    ) {
         let (w, h) = size;
         if w <= 0.0 && h <= 0.0 {
             return;
@@ -222,23 +291,43 @@ impl ObjectPainter for PaperPainter {
                 let natural = (w as f32, h as f32);
                 let dress = crate::features::drawings::dress_for_page(drawing, picture);
                 let shorter = natural.0.min(natural.1).max(1.0);
-                let soft = (crate::grid::pt_to_px(drawing.effects.soft_edge.max(0.0)) / shorter).min(0.5);
-                let made = pixels::printed(picture, soft, natural, (drawing.flip_h, drawing.flip_v), &dress)
-                    .and_then(|(bitmap, share)| Some((Image::from_rgba(bitmap.width, bitmap.height, bitmap.data)?, share)));
+                let soft =
+                    (crate::grid::pt_to_px(drawing.effects.soft_edge.max(0.0)) / shorter).min(0.5);
+                let made = pixels::printed(
+                    picture,
+                    soft,
+                    natural,
+                    (drawing.flip_h, drawing.flip_v),
+                    &dress,
+                )
+                .and_then(|(bitmap, share)| {
+                    Some((
+                        Image::from_rgba(bitmap.width, bitmap.height, bitmap.data)?,
+                        share,
+                    ))
+                });
                 if let Some((image, share)) = made {
                     canvas.save();
                     turn(canvas, false);
                     let (bw, bh) = (w / share.0 as f64, h / share.1 as f64);
-                    canvas.image(&Arc::new(image), RectF::new((w - bw) / 2.0, (h - bh) / 2.0, bw, bh));
+                    canvas.image(
+                        &Arc::new(image),
+                        RectF::new((w - bw) / 2.0, (h - bh) / 2.0, bw, bh),
+                    );
                     canvas.restore();
                 } else if let Some(image) = self.image(picture) {
                     // A format only the window system decodes: the
                     // image as it is, cropped.
                     canvas.save();
                     turn(canvas, true);
-                    let whole = picture.adjust.uncropped(opensheet_engine::drawing::Frame::new(0.0, 0.0, w, h));
+                    let whole = picture
+                        .adjust
+                        .uncropped(opensheet_engine::drawing::Frame::new(0.0, 0.0, w, h));
                     canvas.clip_rect(RectF::new(0.0, 0.0, w, h));
-                    canvas.image(&image, RectF::new(whole.x, whole.y, whole.width, whole.height));
+                    canvas.image(
+                        &image,
+                        RectF::new(whole.x, whole.y, whole.width, whole.height),
+                    );
                     canvas.restore();
                 }
             }
@@ -253,18 +342,41 @@ impl ObjectPainter for PaperPainter {
                     };
                     canvas.save();
                     canvas.translate(leaf.frame.x, leaf.frame.y);
-                    self.paint_drawing(wb, _sheet, &member, (leaf.frame.width, leaf.frame.height), canvas);
+                    self.paint_drawing(
+                        wb,
+                        _sheet,
+                        &member,
+                        (leaf.frame.width, leaf.frame.height),
+                        canvas,
+                    );
                     canvas.restore();
                 }
             }
             DrawingKind::Shape(shape) => {
                 // Its shadow and its glow, under it, as on screen.
-                let effects = crate::features::drawings::shape_effects_for_page(drawing, shape, (w as f32, h as f32))
-                    .and_then(|(bitmap, took)| Some((Image::from_rgba(bitmap.width, bitmap.height, bitmap.data)?, took)));
+                let effects = crate::features::drawings::shape_effects_for_page(
+                    drawing,
+                    shape,
+                    (w as f32, h as f32),
+                )
+                .and_then(|(bitmap, took)| {
+                    Some((
+                        Image::from_rgba(bitmap.width, bitmap.height, bitmap.data)?,
+                        took,
+                    ))
+                });
                 if let Some((image, (bw, bh))) = effects {
                     canvas.save();
                     turn(canvas, false);
-                    canvas.image(&Arc::new(image), RectF::new((w - bw as f64) / 2.0, (h - bh as f64) / 2.0, bw as f64, bh as f64));
+                    canvas.image(
+                        &Arc::new(image),
+                        RectF::new(
+                            (w - bw as f64) / 2.0,
+                            (h - bh as f64) / 2.0,
+                            bw as f64,
+                            bh as f64,
+                        ),
+                    );
                     canvas.restore();
                 }
                 canvas.save();
@@ -303,14 +415,34 @@ impl ObjectPainter for PaperPainter {
                             // was given some, under it.
                             let effects = (!piece.effects.is_none())
                                 .then(|| {
-                                    let mut stand_in = Drawing::shape(piece.shape.clone(), (piece.width, piece.height));
+                                    let mut stand_in = Drawing::shape(
+                                        piece.shape.clone(),
+                                        (piece.width, piece.height),
+                                    );
                                     stand_in.effects = piece.effects;
-                                    crate::features::drawings::shape_effects_for_page(&stand_in, &piece.shape, (piece.width, piece.height))
+                                    crate::features::drawings::shape_effects_for_page(
+                                        &stand_in,
+                                        &piece.shape,
+                                        (piece.width, piece.height),
+                                    )
                                 })
                                 .flatten()
-                                .and_then(|(bitmap, took)| Some((Image::from_rgba(bitmap.width, bitmap.height, bitmap.data)?, took)));
+                                .and_then(|(bitmap, took)| {
+                                    Some((
+                                        Image::from_rgba(bitmap.width, bitmap.height, bitmap.data)?,
+                                        took,
+                                    ))
+                                });
                             if let Some((image, (bw, bh))) = effects {
-                                canvas.image(&Arc::new(image), RectF::new((pw - bw as f64) / 2.0, (ph - bh as f64) / 2.0, bw as f64, bh as f64));
+                                canvas.image(
+                                    &Arc::new(image),
+                                    RectF::new(
+                                        (pw - bw as f64) / 2.0,
+                                        (ph - bh as f64) / 2.0,
+                                        bw as f64,
+                                        bh as f64,
+                                    ),
+                                );
                             }
                             paint_shape(&piece.shape, pw, ph, canvas);
                         }
@@ -371,8 +503,15 @@ fn paint_shape(shape: &Shape, w: f64, h: f64, canvas: &mut Canvas) {
         return;
     };
     let width = outline.width as f64 * PX_PER_PT;
-    let dash: Vec<f64> = outline.dash.pattern().iter().map(|d| *d as f64 * width).collect();
-    let stroke = Stroke::solid(outline.color, width).dashed(&dash).join(LineJoin::Round);
+    let dash: Vec<f64> = outline
+        .dash
+        .pattern()
+        .iter()
+        .map(|d| *d as f64 * width)
+        .collect();
+    let stroke = Stroke::solid(outline.color, width)
+        .dashed(&dash)
+        .join(LineJoin::Round);
     if !shape.preset.is_line() {
         canvas.stroke_path(path, stroke);
         return;
@@ -383,9 +522,9 @@ fn paint_shape(shape: &Shape, w: f64, h: f64, canvas: &mut Canvas) {
     let mut points: Vec<(f32, f32)> = commands
         .iter()
         .filter_map(|command| match *command {
-            PathCommand::MoveTo(x, y) | PathCommand::LineTo(x, y) | PathCommand::CurveTo(_, _, _, _, x, y) => {
-                Some((x * w as f32, y * h as f32))
-            }
+            PathCommand::MoveTo(x, y)
+            | PathCommand::LineTo(x, y)
+            | PathCommand::CurveTo(_, _, _, _, x, y) => Some((x * w as f32, y * h as f32)),
             PathCommand::Close => None,
         })
         .collect();
@@ -403,13 +542,19 @@ fn paint_shape(shape: &Shape, w: f64, h: f64, canvas: &mut Canvas) {
             continue;
         };
         geometry::trim(&mut points, head.cut, at_end);
-        let outline_points: Vec<(f64, f64)> = head.points.iter().map(|p| (p.0 as f64, p.1 as f64)).collect();
+        let outline_points: Vec<(f64, f64)> = head
+            .points
+            .iter()
+            .map(|p| (p.0 as f64, p.1 as f64))
+            .collect();
         if head.filled {
             canvas.fill_path(Path::polyline(&outline_points).close(), outline.color);
         } else {
             canvas.stroke_path(
                 Path::polyline(&outline_points),
-                Stroke::solid(outline.color, width).cap(LineCap::Round).join(LineJoin::Round),
+                Stroke::solid(outline.color, width)
+                    .cap(LineCap::Round)
+                    .join(LineJoin::Round),
             );
         }
     }
@@ -484,7 +629,9 @@ fn paint_shape_text(wb: &Workbook, shape: &Shape, w: f64, h: f64, canvas: &mut C
             TextAlign::Center => (x0 + x1 - width) / 2.0,
             TextAlign::Right => x1 - width,
         };
-        let baseline = y + (line_height - (face.ascent() + face.descent()) * size) / 2.0 + face.ascent() * size;
+        let baseline = y
+            + (line_height - (face.ascent() + face.descent()) * size) / 2.0
+            + face.ascent() * size;
         canvas.text(&line, x, baseline, &style, color);
         y += line_height;
     }
@@ -499,7 +646,10 @@ const ICON_SIZE: f64 = 16.0;
 
 fn mix(a: Color, b: Color, t: f64) -> Color {
     let channel = |shift: u32| {
-        let (x, y) = (((a.value() >> shift) & 0xFF) as f64, ((b.value() >> shift) & 0xFF) as f64);
+        let (x, y) = (
+            ((a.value() >> shift) & 0xFF) as f64,
+            ((b.value() >> shift) & 0xFF) as f64,
+        );
         ((x + (y - x) * t).round() as u32) << shift
     };
     Color(channel(16) | channel(8) | channel(0))
@@ -521,18 +671,30 @@ fn paint_bar(bar: &Bar, size: (f64, f64), canvas: &mut Canvas) {
                 let (sa, sb) = (from + (to - from) * a, from + (to - from) * b);
                 let color = mix(bar.fill, Color::WHITE, (a + b) / 2.0 * 0.9);
                 // A hair of overlap hides the seams between strips.
-                canvas.fill_rect(RectF::new(sa.min(sb) - 0.05, top, (sb - sa).abs() + 0.1, height), color);
+                canvas.fill_rect(
+                    RectF::new(sa.min(sb) - 0.05, top, (sb - sa).abs() + 0.1, height),
+                    color,
+                );
             }
         } else {
             canvas.fill_rect(RectF::new(x0, top, x1 - x0, height), bar.fill);
         }
         if let Some(border) = bar.border {
-            canvas.stroke_rect(RectF::new(x0, top, x1 - x0, height), Stroke::solid(border, 0.75));
+            canvas.stroke_rect(
+                RectF::new(x0, top, x1 - x0, height),
+                Stroke::solid(border, 0.75),
+            );
         }
     }
     if let Some(axis) = bar.axis {
         let x = at(axis);
-        canvas.line(x, 0.0, x, h, Stroke::solid(bar.axis_color, 0.75).dashed(&[2.0, 1.5]));
+        canvas.line(
+            x,
+            0.0,
+            x,
+            h,
+            Stroke::solid(bar.axis_color, 0.75).dashed(&[2.0, 1.5]),
+        );
     }
 }
 
@@ -597,7 +759,10 @@ fn mark(canvas: &mut Canvas, s: f64, kind: u8, color: Color, heavy: bool) {
         }
         _ => {
             canvas.line(8.0 * u, 3.5 * u, 8.0 * u, 9.0 * u, stroke());
-            canvas.fill_path(Path::ellipse(RectF::new(6.7 * u, 10.8 * u, 2.6 * u, 2.6 * u)), color);
+            canvas.fill_path(
+                Path::ellipse(RectF::new(6.7 * u, 10.8 * u, 2.6 * u, 2.6 * u)),
+                color,
+            );
         }
     }
 }
@@ -623,7 +788,10 @@ fn star(canvas: &mut Canvas, s: f64, fill: Option<Color>, half: bool) {
         }
         (None, _) => {}
     }
-    canvas.stroke_path(outline, Stroke::solid(Color(0xC9A227), s / 20.0).join(LineJoin::Round));
+    canvas.stroke_path(
+        outline,
+        Stroke::solid(Color(0xC9A227), s / 20.0).join(LineJoin::Round),
+    );
 }
 
 /// Draw an icon of an icon set in a square of side `s` at (x, y). The
@@ -650,7 +818,13 @@ fn paint_icon(icon: Icon, x: f64, y: f64, s: f64, canvas: &mut Canvas) {
                 YellowFlag => YELLOW,
                 _ => RED,
             };
-            canvas.line(4.0 * u, 2.0 * u, 4.0 * u, 14.5 * u, Stroke::solid(DARK, 1.2 * u));
+            canvas.line(
+                4.0 * u,
+                2.0 * u,
+                4.0 * u,
+                14.5 * u,
+                Stroke::solid(DARK, 1.2 * u),
+            );
             let cloth = [(4.6 * u, 2.5 * u), (13.0 * u, 5.5 * u), (4.6 * u, 8.5 * u)];
             canvas.fill_path(Path::polyline(&cloth).close(), color);
         }
@@ -699,11 +873,19 @@ fn paint_icon(icon: Icon, x: f64, y: f64, s: f64, canvas: &mut Canvas) {
             disc(canvas, s, 3.0 * u, color);
         }
         YellowTriangle => {
-            let points = [(8.0 * u, 2.0 * u), (15.0 * u, 14.0 * u), (1.0 * u, 14.0 * u)];
+            let points = [
+                (8.0 * u, 2.0 * u),
+                (15.0 * u, 14.0 * u),
+                (1.0 * u, 14.0 * u),
+            ];
             canvas.fill_path(Path::polyline(&points).close(), YELLOW);
         }
         GreenUpTriangle => {
-            let points = [(8.0 * u, 4.0 * u), (14.0 * u, 12.0 * u), (2.0 * u, 12.0 * u)];
+            let points = [
+                (8.0 * u, 4.0 * u),
+                (14.0 * u, 12.0 * u),
+                (2.0 * u, 12.0 * u),
+            ];
             canvas.fill_path(Path::polyline(&points).close(), GREEN);
         }
         RedDownTriangle => {
@@ -745,9 +927,18 @@ fn paint_icon(icon: Icon, x: f64, y: f64, s: f64, canvas: &mut Canvas) {
             };
             for k in 0..4 {
                 let height = (4.0 + 3.0 * k as f64) * u;
-                let color = if k < filled { Color(0x4472C4) } else { Color(0xC8C8C8) };
+                let color = if k < filled {
+                    Color(0x4472C4)
+                } else {
+                    Color(0xC8C8C8)
+                };
                 canvas.fill_rect(
-                    RectF::new((1.5 + 3.5 * k as f64) * u, 14.5 * u - height, 2.6 * u, height),
+                    RectF::new(
+                        (1.5 + 3.5 * k as f64) * u,
+                        14.5 * u - height,
+                        2.6 * u,
+                        height,
+                    ),
                     color,
                 );
             }
@@ -764,7 +955,10 @@ fn paint_icon(icon: Icon, x: f64, y: f64, s: f64, canvas: &mut Canvas) {
                 _ => 0,
             };
             // Filled from the bottom-left box, as Excel's ratings are.
-            for (k, (bx, by)) in [(0.0, 1.0), (1.0, 1.0), (0.0, 0.0), (1.0, 0.0)].into_iter().enumerate() {
+            for (k, (bx, by)) in [(0.0, 1.0), (1.0, 1.0), (0.0, 0.0), (1.0, 0.0)]
+                .into_iter()
+                .enumerate()
+            {
                 let rect = RectF::new((2.0 + 6.5 * bx) * u, (2.0 + 6.5 * by) * u, 5.5 * u, 5.5 * u);
                 if k < filled {
                     canvas.fill_rect(rect, Color(0x4472C4));
@@ -811,7 +1005,10 @@ mod tests {
             panic!("the bar is filled first");
         };
         assert_eq!(path.segments[0], opensheet_print::Segment::MoveTo(2.0, 2.0));
-        assert_eq!(path.segments[2], opensheet_print::Segment::LineTo(52.0, 18.0));
+        assert_eq!(
+            path.segments[2],
+            opensheet_print::Segment::LineTo(52.0, 18.0)
+        );
         // A gradient bar is painted in strips.
         let mut canvas = Canvas::new(&fonts);
         paint_bar(
@@ -837,7 +1034,8 @@ mod tests {
                 paint_icon(*icon, 3.0, 2.0, 16.0, &mut canvas);
                 let ops = canvas.into_ops();
                 assert!(
-                    ops.iter().any(|op| matches!(op, Op::Fill { .. } | Op::Stroke { .. })),
+                    ops.iter()
+                        .any(|op| matches!(op, Op::Fill { .. } | Op::Stroke { .. })),
                     "{icon:?} draws nothing"
                 );
                 // Whatever was saved is restored.
@@ -947,11 +1145,19 @@ mod tests {
         let mut pixels = Vec::new();
         for _ in 0..20 {
             for x in 0..40 {
-                pixels.extend_from_slice(if x < 20 { &[220, 40, 40] } else { &[40, 80, 200] });
+                pixels.extend_from_slice(if x < 20 {
+                    &[220, 40, 40]
+                } else {
+                    &[40, 80, 200]
+                });
             }
         }
         let picture = wb
-            .add_picture(0, crate::features::page::scene::png(40, 20, 3, &pixels), (30, 5))
+            .add_picture(
+                0,
+                crate::features::page::scene::png(40, 20, 3, &pixels),
+                (30, 5),
+            )
             .unwrap();
         wb.update_drawing(0, picture, |d| d.size = (160.0, 80.0));
         wb.set_note(0, 3, 1, "Ana", "Ana:\nChiffre à confirmer.");
@@ -990,7 +1196,11 @@ mod tests {
         assert!(texts.contains(&"Chiffre à confirmer."));
         assert!(first.ops.iter().any(|op| matches!(op, Op::Image { .. })));
         // Bars and icons: many more filled shapes than the cells alone.
-        let fills = first.ops.iter().filter(|op| matches!(op, Op::Fill { .. })).count();
+        let fills = first
+            .ops
+            .iter()
+            .filter(|op| matches!(op, Op::Fill { .. }))
+            .count();
         assert!(fills > 300, "{fills} fills");
         let pdf = print_pdf(&wb, &job);
         assert!(pdf.starts_with(b"%PDF-1.7"));

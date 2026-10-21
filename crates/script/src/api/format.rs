@@ -7,7 +7,9 @@ use opensheet_engine::format::format_value;
 use opensheet_engine::metrics::FontMetrics;
 use opensheet_engine::protect::Action;
 use opensheet_engine::refs::Rect;
-use opensheet_engine::style::{Border, BorderStyle, Borders, Font, HAlign, Style, Underline, VAlign};
+use opensheet_engine::style::{
+    Border, BorderStyle, Borders, Font, HAlign, Style, Underline, VAlign,
+};
 use opensheet_engine::workbook::Content;
 
 use super::util::{color_arg, color_text, format_rects, this_range};
@@ -26,13 +28,19 @@ fn uniform(h: &Host, call: &Call, read: fn(&Style) -> J) -> Res<J> {
     let (sheet, rect) = this_range(h, call)?;
     let rect = if rect.rows() as u64 * rect.cols() as u64 > SCAN_LIMIT {
         let used = h.wb.sheets[sheet].used_rect().unwrap_or(Rect::cell(0, 0));
-        Rect::new(rect.r0, rect.c0, rect.r1.min(used.r1.max(rect.r0)), rect.c1.min(used.c1.max(rect.c0)))
+        Rect::new(
+            rect.r0,
+            rect.c0,
+            rect.r1.min(used.r1.max(rect.r0)),
+            rect.c1.min(used.c1.max(rect.c0)),
+        )
     } else {
         rect
     };
     h.sized(call, rect)?;
     let first = read(h.wb.style_at(sheet, rect.r0, rect.c0));
-    let same = (rect.r0..=rect.r1).all(|row| (rect.c0..=rect.c1).all(|col| read(h.wb.style_at(sheet, row, col)) == first));
+    let same = (rect.r0..=rect.r1)
+        .all(|row| (rect.c0..=rect.c1).all(|col| read(h.wb.style_at(sheet, row, col)) == first));
     Ok(if same { first } else { J::Null })
 }
 
@@ -61,7 +69,14 @@ fn set(h: &mut Host, call: &Call, change: &dyn Fn(&mut Style)) -> Res<Ret> {
 
 // ---- borders -----------------------------------------------------------------
 
-const SIDES: [&str; 6] = ["EdgeTop", "EdgeBottom", "EdgeLeft", "EdgeRight", "InsideVertical", "InsideHorizontal"];
+const SIDES: [&str; 6] = [
+    "EdgeTop",
+    "EdgeBottom",
+    "EdgeLeft",
+    "EdgeRight",
+    "InsideVertical",
+    "InsideHorizontal",
+];
 
 /// The side takes the sixth place of the state; the further ranges of a
 /// RangeAreas follow it.
@@ -103,10 +118,17 @@ fn line_of(call: &Call, style: &str, weight: &str) -> Res<BorderStyle> {
         ("Dash", "Thin" | "Hairline") => BorderStyle::Dashed,
         ("Dot", "Thin" | "Hairline") => BorderStyle::Dotted,
         ("Dash" | "Dot", heavy) => {
-            return Err(call.unsupported(format!("A {} border of weight {heavy}", style.to_lowercase())));
+            return Err(call.unsupported(format!(
+                "A {} border of weight {heavy}",
+                style.to_lowercase()
+            )));
         }
         (other, _) => {
-            return Err(call.unsupported(format!("ExcelScript.BorderLineStyle.{}{}", other[..1].to_lowercase(), &other[1..])));
+            return Err(call.unsupported(format!(
+                "ExcelScript.BorderLineStyle.{}{}",
+                other[..1].to_lowercase(),
+                &other[1..]
+            )));
         }
     })
 }
@@ -191,7 +213,9 @@ fn text_width(text: &str, font: &Font, digit: f64) -> f64 {
 
 /// What a cell shows, with its font, when it shows something.
 fn shown<'a>(h: &'a Host, sheet: usize, row: u32, col: u32) -> Option<(String, &'a Style)> {
-    let cell = h.wb.cell(sheet, row, col).filter(|cell| !matches!(cell.content, Content::Empty))?;
+    let cell =
+        h.wb.cell(sheet, row, col)
+            .filter(|cell| !matches!(cell.content, Content::Empty))?;
     let style = h.wb.styles.get(cell.style);
     let text = format_value(&cell.value, &style.num_fmt, h.wb.locale).text;
     (!text.is_empty()).then_some((text, style))

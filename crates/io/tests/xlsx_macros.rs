@@ -17,7 +17,8 @@ const MAIN: &str = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
 
 fn zip(parts: &[(&str, &[u8])]) -> Vec<u8> {
     let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
-    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let options = zip::write::SimpleFileOptions::default()
+        .compression_method(zip::CompressionMethod::Deflated);
     for (name, content) in parts {
         zip.start_file(*name, options).unwrap();
         zip.write_all(content).unwrap();
@@ -27,7 +28,9 @@ fn zip(parts: &[(&str, &[u8])]) -> Vec<u8> {
 
 fn bytes_of(package: &[u8], name: &str) -> Vec<u8> {
     let mut zip = zip::ZipArchive::new(Cursor::new(package)).expect("a zip archive");
-    let mut file = zip.by_name(name).unwrap_or_else(|_| panic!("missing part {name}"));
+    let mut file = zip
+        .by_name(name)
+        .unwrap_or_else(|_| panic!("missing part {name}"));
     let mut bytes = Vec::new();
     file.read_to_end(&mut bytes).unwrap();
     bytes
@@ -38,11 +41,15 @@ fn load(bytes: &[u8]) -> Workbook {
 }
 
 fn save_xlsm(wb: &Workbook) -> Vec<u8> {
-    opensheet_io::write_xlsm(wb, Cursor::new(Vec::new())).expect("a file").into_inner()
+    opensheet_io::write_xlsm(wb, Cursor::new(Vec::new()))
+        .expect("a file")
+        .into_inner()
 }
 
 fn save_xlsx(wb: &Workbook) -> Vec<u8> {
-    opensheet_io::write_xlsx(wb, Cursor::new(Vec::new())).expect("a file").into_inner()
+    opensheet_io::write_xlsx(wb, Cursor::new(Vec::new()))
+        .expect("a file")
+        .into_inner()
 }
 
 /// Every relationship of the package leads to a part that is there, every
@@ -56,16 +63,25 @@ fn assert_consistent(package: &[u8]) {
             continue;
         }
         let extension = name.rsplit('.').next().unwrap_or("");
-        let typed = types.contains(&format!("PartName=\"/{name}\"")) || types.contains(&format!("Extension=\"{extension}\""));
+        let typed = types.contains(&format!("PartName=\"/{name}\""))
+            || types.contains(&format!("Extension=\"{extension}\""));
         assert!(typed, "{name} has no content type");
         if !name.ends_with(".rels") {
             continue;
         }
         // "xl/_rels/workbook.xml.rels" speaks for "xl/workbook.xml".
-        let (dir, file) = name.rsplit_once("/_rels/").map_or(("", name.trim_start_matches("_rels/")), |(dir, file)| (dir, file));
+        let (dir, file) = name
+            .rsplit_once("/_rels/")
+            .map_or(("", name.trim_start_matches("_rels/")), |(dir, file)| {
+                (dir, file)
+            });
         let source = file.trim_end_matches(".rels");
         if !source.is_empty() {
-            let owner = if dir.is_empty() { source.to_string() } else { format!("{dir}/{source}") };
+            let owner = if dir.is_empty() {
+                source.to_string()
+            } else {
+                format!("{dir}/{source}")
+            };
             assert!(names.contains(&owner), "{name} belongs to no part");
         }
         let rels = part(package, name);
@@ -73,8 +89,16 @@ fn assert_consistent(package: &[u8]) {
             if chunk.contains("TargetMode=\"External\"") {
                 continue;
             }
-            let target = chunk.split("Target=\"").nth(1).and_then(|rest| rest.split('"').next()).expect("a target");
-            let mut path: Vec<&str> = if target.starts_with('/') { Vec::new() } else { dir.split('/').filter(|s| !s.is_empty()).collect() };
+            let target = chunk
+                .split("Target=\"")
+                .nth(1)
+                .and_then(|rest| rest.split('"').next())
+                .expect("a target");
+            let mut path: Vec<&str> = if target.starts_with('/') {
+                Vec::new()
+            } else {
+                dir.split('/').filter(|s| !s.is_empty()).collect()
+            };
             for segment in target.trim_start_matches('/').split('/') {
                 match segment {
                     ".." => {
@@ -90,7 +114,10 @@ fn assert_consistent(package: &[u8]) {
     }
     for chunk in types.split("PartName=\"/").skip(1) {
         let name = chunk.split('"').next().unwrap();
-        assert!(names.iter().any(|n| n == name), "a content type for {name}, which is not there");
+        assert!(
+            names.iter().any(|n| n == name),
+            "a content type for {name}, which is not there"
+        );
     }
 }
 
@@ -100,7 +127,9 @@ fn macro_workbook(project: &[u8]) -> Vec<u8> {
     let types = format!(
         "<?xml version=\"1.0\"?><Types xmlns=\"{CT}\"><Default Extension=\"bin\" ContentType=\"application/vnd.ms-office.vbaProject\"/><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.ms-excel.sheet.macroEnabled.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/><Override PartName=\"/xl/worksheets/sheet2.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/><Override PartName=\"/xl/vbaProjectSignature.bin\" ContentType=\"application/vnd.ms-office.vbaProjectSignature\"/><Override PartName=\"/xl/vbaProjectSignatureAgile.bin\" ContentType=\"application/vnd.ms-office.vbaProjectSignatureAgile\"/><Override PartName=\"/xl/vbaProjectSignatureV3.bin\" ContentType=\"application/vnd.ms-office.vbaProjectSignatureV3\"/></Types>"
     );
-    let root = format!("<Relationships xmlns=\"{PKG_REL}\"><Relationship Id=\"rId1\" Type=\"{DOC_REL}/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
+    let root = format!(
+        "<Relationships xmlns=\"{PKG_REL}\"><Relationship Id=\"rId1\" Type=\"{DOC_REL}/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>"
+    );
     let workbook = format!(
         "<workbook xmlns=\"{MAIN}\" xmlns:r=\"{DOC_REL}\"><fileVersion appName=\"xl\" codeName=\"{{37E998C4-C9E5-D4B9-71C8-EB1FF731991C}}\"/><workbookPr codeName=\"ThisWorkbook\" defaultThemeVersion=\"166925\"/><sheets><sheet name=\"Data\" sheetId=\"1\" r:id=\"rId1\"/><sheet name=\"Notes\" sheetId=\"2\" r:id=\"rId2\"/></sheets></workbook>"
     );
@@ -113,7 +142,9 @@ fn macro_workbook(project: &[u8]) -> Vec<u8> {
     let sheet1 = format!(
         "<worksheet xmlns=\"{MAIN}\"><sheetPr codeName=\"Sheet1\"><tabColor rgb=\"FFFF0000\"/></sheetPr><sheetData><row r=\"1\"><c r=\"A1\"><v>42</v></c></row></sheetData></worksheet>"
     );
-    let sheet2 = format!("<worksheet xmlns=\"{MAIN}\"><sheetPr codeName=\"Feuil2\"/><sheetData/></worksheet>");
+    let sheet2 = format!(
+        "<worksheet xmlns=\"{MAIN}\"><sheetPr codeName=\"Feuil2\"/><sheetData/></worksheet>"
+    );
     zip(&[
         ("[Content_Types].xml", types.as_bytes()),
         ("_rels/.rels", root.as_bytes()),
@@ -125,7 +156,10 @@ fn macro_workbook(project: &[u8]) -> Vec<u8> {
         ("xl/_rels/vbaProject.bin.rels", project_rels.as_bytes()),
         ("xl/vbaProjectSignature.bin", &[0xDE, 0xAD, 0x00, 0x01]),
         ("xl/vbaProjectSignatureAgile.bin", &[0xBE, 0xEF, 0xFF]),
-        ("xl/vbaProjectSignatureV3.bin", &[0x03, 0x00, 0x0D, 0x0A, 0x1A]),
+        (
+            "xl/vbaProjectSignatureV3.bin",
+            &[0x03, 0x00, 0x0D, 0x0A, 0x1A],
+        ),
     ])
 }
 
@@ -133,8 +167,16 @@ const MODULE: &str = "Option Explicit\n\nSub FormatReport()\n    Range(\"A1:C1\"
 
 fn project() -> Vec<u8> {
     build_project(&[
-        ("ThisWorkbook", ModuleKind::Document, "Private Sub Workbook_Open()\n    MsgBox \"Hello\"\nEnd Sub\n"),
-        ("Sheet1", ModuleKind::Document, "Sub Recalculate()\n    Me.Calculate\nEnd Sub\n"),
+        (
+            "ThisWorkbook",
+            ModuleKind::Document,
+            "Private Sub Workbook_Open()\n    MsgBox \"Hello\"\nEnd Sub\n",
+        ),
+        (
+            "Sheet1",
+            ModuleKind::Document,
+            "Sub Recalculate()\n    Me.Calculate\nEnd Sub\n",
+        ),
         ("Feuil2", ModuleKind::Document, ""),
         ("Module1", ModuleKind::Standard, MODULE),
     ])
@@ -148,13 +190,29 @@ fn a_project_goes_through_byte_for_byte() {
     let wb = load(&original);
     let kept = wb.vba.project.as_ref().expect("the project is kept");
     assert_eq!(&*kept.bin, project.as_slice());
-    let signatures: Vec<(&str, &str, &[u8])> = kept.signatures.iter().map(|s| (s.name.as_str(), s.kind.as_str(), &*s.data)).collect();
+    let signatures: Vec<(&str, &str, &[u8])> = kept
+        .signatures
+        .iter()
+        .map(|s| (s.name.as_str(), s.kind.as_str(), &*s.data))
+        .collect();
     assert_eq!(
         signatures,
         [
-            ("vbaProjectSignature.bin", "vbaProjectSignature", &[0xDE, 0xAD, 0x00, 0x01][..]),
-            ("vbaProjectSignatureAgile.bin", "vbaProjectSignatureAgile", &[0xBE, 0xEF, 0xFF][..]),
-            ("vbaProjectSignatureV3.bin", "vbaProjectSignatureV3", &[0x03, 0x00, 0x0D, 0x0A, 0x1A][..]),
+            (
+                "vbaProjectSignature.bin",
+                "vbaProjectSignature",
+                &[0xDE, 0xAD, 0x00, 0x01][..]
+            ),
+            (
+                "vbaProjectSignatureAgile.bin",
+                "vbaProjectSignatureAgile",
+                &[0xBE, 0xEF, 0xFF][..]
+            ),
+            (
+                "vbaProjectSignatureV3.bin",
+                "vbaProjectSignatureV3",
+                &[0x03, 0x00, 0x0D, 0x0A, 0x1A][..]
+            ),
         ]
     );
     assert_eq!(wb.vba.workbook_code_name.as_deref(), Some("ThisWorkbook"));
@@ -166,9 +224,18 @@ fn a_project_goes_through_byte_for_byte() {
     let saved = save_xlsm(&wb);
     assert_consistent(&saved);
     assert_eq!(bytes_of(&saved, "xl/vbaProject.bin"), project);
-    assert_eq!(bytes_of(&saved, "xl/vbaProjectSignature.bin"), [0xDE, 0xAD, 0x00, 0x01]);
-    assert_eq!(bytes_of(&saved, "xl/vbaProjectSignatureAgile.bin"), [0xBE, 0xEF, 0xFF]);
-    assert_eq!(bytes_of(&saved, "xl/vbaProjectSignatureV3.bin"), [0x03, 0x00, 0x0D, 0x0A, 0x1A]);
+    assert_eq!(
+        bytes_of(&saved, "xl/vbaProjectSignature.bin"),
+        [0xDE, 0xAD, 0x00, 0x01]
+    );
+    assert_eq!(
+        bytes_of(&saved, "xl/vbaProjectSignatureAgile.bin"),
+        [0xBE, 0xEF, 0xFF]
+    );
+    assert_eq!(
+        bytes_of(&saved, "xl/vbaProjectSignatureV3.bin"),
+        [0x03, 0x00, 0x0D, 0x0A, 0x1A]
+    );
     let types = part(&saved, "[Content_Types].xml");
     assert!(types.contains("<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.ms-excel.sheet.macroEnabled.main+xml\"/>"));
     assert!(types.contains("<Override PartName=\"/xl/vbaProject.bin\" ContentType=\"application/vnd.ms-office.vbaProject\"/>"));
@@ -176,14 +243,31 @@ fn a_project_goes_through_byte_for_byte() {
     assert!(types.contains("<Override PartName=\"/xl/vbaProjectSignatureAgile.bin\" ContentType=\"application/vnd.ms-office.vbaProjectSignatureAgile\"/>"));
     assert!(types.contains("<Override PartName=\"/xl/vbaProjectSignatureV3.bin\" ContentType=\"application/vnd.ms-office.vbaProjectSignatureV3\"/>"));
     let rels = part(&saved, "xl/_rels/workbook.xml.rels");
-    assert!(rels.contains(&format!("Type=\"{MS_REL}/vbaProject\" Target=\"vbaProject.bin\"")), "{rels}");
+    assert!(
+        rels.contains(&format!(
+            "Type=\"{MS_REL}/vbaProject\" Target=\"vbaProject.bin\""
+        )),
+        "{rels}"
+    );
     let project_rels = part(&saved, "xl/_rels/vbaProject.bin.rels");
-    for kind in ["vbaProjectSignature", "vbaProjectSignatureAgile", "vbaProjectSignatureV3"] {
-        assert!(project_rels.contains(&format!("Type=\"{MS_REL}/{kind}\" Target=\"{kind}.bin\"")), "{project_rels}");
+    for kind in [
+        "vbaProjectSignature",
+        "vbaProjectSignatureAgile",
+        "vbaProjectSignatureV3",
+    ] {
+        assert!(
+            project_rels.contains(&format!("Type=\"{MS_REL}/{kind}\" Target=\"{kind}.bin\"")),
+            "{project_rels}"
+        );
     }
     assert!(part(&saved, "xl/workbook.xml").contains("<workbookPr codeName=\"ThisWorkbook\"/>"));
-    assert!(part(&saved, "xl/worksheets/sheet1.xml").contains("<sheetPr codeName=\"Sheet1\"><tabColor"));
-    assert!(part(&saved, "xl/worksheets/sheet2.xml").contains("<sheetPr codeName=\"Feuil2\"></sheetPr>"));
+    assert!(
+        part(&saved, "xl/worksheets/sheet1.xml").contains("<sheetPr codeName=\"Sheet1\"><tabColor")
+    );
+    assert!(
+        part(&saved, "xl/worksheets/sheet2.xml")
+            .contains("<sheetPr codeName=\"Feuil2\"></sheetPr>")
+    );
     common::assert_well_formed("sheet1", &part(&saved, "xl/worksheets/sheet1.xml"));
 
     // And once more: what was written is read the same.
@@ -202,9 +286,16 @@ fn a_macro_free_file_has_nothing_of_the_project() {
     let saved = save_xlsx(&wb);
     assert_consistent(&saved);
     let names = part_names(&saved);
-    assert!(names.iter().all(|name| !name.to_lowercase().contains("vba")), "{names:?}");
+    assert!(
+        names
+            .iter()
+            .all(|name| !name.to_lowercase().contains("vba")),
+        "{names:?}"
+    );
     let types = part(&saved, "[Content_Types].xml");
-    assert!(types.contains("ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\""));
+    assert!(types.contains(
+        "ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\""
+    ));
     assert!(!types.contains("macroEnabled") && !types.contains("vbaProject"));
     assert!(!part(&saved, "xl/_rels/workbook.xml.rels").contains("vbaProject"));
     // The code names stay, as in a macro-free file Excel writes.
@@ -227,18 +318,31 @@ fn code_names_follow_renames_moves_copies_and_deletions() {
     let saved = save_xlsm(&wb);
     assert_consistent(&saved);
     let back = load(&saved);
-    let names: Vec<(&str, Option<&str>)> = back.sheets.iter().map(|s| (s.name.as_str(), s.code_name.as_deref())).collect();
+    let names: Vec<(&str, Option<&str>)> = back
+        .sheets
+        .iter()
+        .map(|s| (s.name.as_str(), s.code_name.as_deref()))
+        .collect();
     assert_eq!(added, 0);
     assert_eq!(copy, 2);
     assert_eq!(
         names,
-        [("Sheet4", None), ("Notes", Some("Feuil2")), ("Sales 2026", Some("Sheet1")), ("Sales 2026 (2)", None)]
+        [
+            ("Sheet4", None),
+            ("Notes", Some("Feuil2")),
+            ("Sales 2026", Some("Sheet1")),
+            ("Sales 2026 (2)", None)
+        ]
     );
     // A sheet without a code name has no attribute at all.
     assert!(!part(&saved, "xl/worksheets/sheet1.xml").contains("codeName"));
     assert!(!part(&saved, "xl/worksheets/sheet4.xml").contains("codeName"));
     // No two sheets share one.
-    let mut codes: Vec<&str> = back.sheets.iter().filter_map(|s| s.code_name.as_deref()).collect();
+    let mut codes: Vec<&str> = back
+        .sheets
+        .iter()
+        .filter_map(|s| s.code_name.as_deref())
+        .collect();
     codes.sort_unstable();
     codes.dedup();
     assert_eq!(codes.len(), 2);
@@ -249,7 +353,11 @@ fn code_names_follow_renames_moves_copies_and_deletions() {
     let saved = save_xlsm(&wb);
     assert_consistent(&saved);
     let back = load(&saved);
-    assert!(back.sheets.iter().all(|s| s.code_name.as_deref() != Some("Sheet1")));
+    assert!(
+        back.sheets
+            .iter()
+            .all(|s| s.code_name.as_deref() != Some("Sheet1"))
+    );
     assert_eq!(bytes_of(&saved, "xl/vbaProject.bin"), project());
     // Undo brings the sheet back with its code name.
     assert!(wb.undo());
@@ -266,21 +374,44 @@ fn templates_and_files_on_disk() {
         let bytes = std::fs::read(&path).unwrap();
         assert_consistent(&bytes);
         let types = part(&bytes, "[Content_Types].xml");
-        let start = types.find("PartName=\"/xl/workbook.xml\" ContentType=\"").unwrap() + 41;
+        let start = types
+            .find("PartName=\"/xl/workbook.xml\" ContentType=\"")
+            .unwrap()
+            + 41;
         let kind = types[start..].split('"').next().unwrap().to_string();
         // The file opens again, with or without its project.
         let back = opensheet_io::load(&path, Locale::en()).expect("loaded");
         (kind, back.has_vba_project())
     };
-    assert_eq!(content_type("a.xlsm"), ("application/vnd.ms-excel.sheet.macroEnabled.main+xml".to_string(), true));
-    assert_eq!(content_type("a.xltm"), ("application/vnd.ms-excel.template.macroEnabled.main+xml".to_string(), true));
+    assert_eq!(
+        content_type("a.xlsm"),
+        (
+            "application/vnd.ms-excel.sheet.macroEnabled.main+xml".to_string(),
+            true
+        )
+    );
+    assert_eq!(
+        content_type("a.xltm"),
+        (
+            "application/vnd.ms-excel.template.macroEnabled.main+xml".to_string(),
+            true
+        )
+    );
     assert_eq!(
         content_type("a.xlsx"),
-        ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml".to_string(), false)
+        (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
+                .to_string(),
+            false
+        )
     );
     assert_eq!(
         content_type("a.xltx"),
-        ("application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml".to_string(), false)
+        (
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.template.main+xml"
+                .to_string(),
+            false
+        )
     );
 }
 
@@ -292,7 +423,11 @@ fn a_workbook_without_macros_saved_as_xlsm_is_a_plain_macro_enabled_file() {
     let saved = save_xlsm(&wb);
     assert_consistent(&saved);
     assert!(part(&saved, "[Content_Types].xml").contains("macroEnabled.main+xml"));
-    assert!(part_names(&saved).iter().all(|name| !name.contains("vbaProject")));
+    assert!(
+        part_names(&saved)
+            .iter()
+            .all(|name| !name.contains("vbaProject"))
+    );
     assert!(part(&saved, "xl/workbook.xml").contains("<workbookPr/>"));
     assert!(!part(&saved, "xl/worksheets/sheet1.xml").contains("sheetPr"));
 }
@@ -307,7 +442,9 @@ fn what_is_not_read_is_dropped_without_leaving_loose_ends() {
     let types = format!(
         "<?xml version=\"1.0\"?><Types xmlns=\"{CT}\"><Default Extension=\"bin\" ContentType=\"application/vnd.ms-office.vbaProject\"/><Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/><Default Extension=\"vml\" ContentType=\"application/vnd.openxmlformats-officedocument.vmlDrawing\"/><Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.ms-excel.sheet.macroEnabled.main+xml\"/><Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/><Override PartName=\"/xl/dialogsheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.dialogsheet+xml\"/><Override PartName=\"/xl/ctrlProps/ctrlProp1.xml\" ContentType=\"application/vnd.ms-excel.controlproperties+xml\"/><Override PartName=\"/xl/activeX/activeX1.xml\" ContentType=\"application/vnd.ms-office.activeX+xml\"/></Types>"
     );
-    let root = format!("<Relationships xmlns=\"{PKG_REL}\"><Relationship Id=\"rId1\" Type=\"{DOC_REL}/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
+    let root = format!(
+        "<Relationships xmlns=\"{PKG_REL}\"><Relationship Id=\"rId1\" Type=\"{DOC_REL}/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>"
+    );
     let workbook = format!(
         "<workbook xmlns=\"{MAIN}\" xmlns:r=\"{DOC_REL}\"><workbookPr codeName=\"ThisWorkbook\"/><sheets><sheet name=\"Data\" sheetId=\"1\" r:id=\"rId1\"/><sheet name=\"Dialog1\" sheetId=\"2\" r:id=\"rId2\"/></sheets></workbook>"
     );
@@ -343,12 +480,21 @@ fn what_is_not_read_is_dropped_without_leaving_loose_ends() {
     assert_consistent(&saved);
     let names = part_names(&saved);
     for gone in ["ctrlProps", "activeX", "dialogsheets", "vmlDrawing"] {
-        assert!(names.iter().all(|name| !name.contains(gone)), "{gone} in {names:?}");
+        assert!(
+            names.iter().all(|name| !name.contains(gone)),
+            "{gone} in {names:?}"
+        );
     }
     let sheet = part(&saved, "xl/worksheets/sheet1.xml");
-    assert!(!sheet.contains("<controls") && !sheet.contains("legacyDrawing"), "{sheet}");
+    assert!(
+        !sheet.contains("<controls") && !sheet.contains("legacyDrawing"),
+        "{sheet}"
+    );
     assert_eq!(bytes_of(&saved, "xl/vbaProject.bin"), project);
-    assert_eq!(common::value(&load(&saved), 0, "A1"), opensheet_engine::Value::Number(7.0));
+    assert_eq!(
+        common::value(&load(&saved), 0, "A1"),
+        opensheet_engine::Value::Number(7.0)
+    );
 }
 
 /// The sample to open in Excel: a workbook with data and a project whose
@@ -378,14 +524,23 @@ fn sample_with_macros() {
     wb.add_sheet(1);
     wb.rename_sheet(0, "Report");
     wb.rename_sheet(1, "Notes");
-    enter(&mut wb, 1, "A1", "Open the Macros dialog (View > Macros): FormatReport, ClearReport, Sheet1.Recalculate");
+    enter(
+        &mut wb,
+        1,
+        "A1",
+        "Open the Macros dialog (View > Macros): FormatReport, ClearReport, Sheet1.Recalculate",
+    );
     wb.commit("sample");
     wb.vba.workbook_code_name = Some("ThisWorkbook".to_string());
     wb.sheets[0].code_name = Some("Sheet1".to_string());
     wb.sheets[1].code_name = Some("Sheet2".to_string());
     let project = build_project(&[
         ("ThisWorkbook", ModuleKind::Document, ""),
-        ("Sheet1", ModuleKind::Document, "Sub Recalculate()\n    Me.Calculate\nEnd Sub\n"),
+        (
+            "Sheet1",
+            ModuleKind::Document,
+            "Sub Recalculate()\n    Me.Calculate\nEnd Sub\n",
+        ),
         ("Sheet2", ModuleKind::Document, ""),
         ("Module1", ModuleKind::Standard, MODULE),
     ]);
@@ -400,21 +555,32 @@ fn sample_with_macros() {
     assert_eq!(back.vba, wb.vba);
     let read = read_project(&back.vba.project.as_ref().unwrap().bin).expect("a project");
     let macros: Vec<String> = read.macros().into_iter().map(|m| m.name).collect();
-    assert_eq!(macros, ["ClearReport", "FormatReport", "Sheet1.Recalculate"]);
-    assert_eq!(common::value(&back, 0, "C6"), opensheet_engine::Value::Number(6900.0));
+    assert_eq!(
+        macros,
+        ["ClearReport", "FormatReport", "Sheet1.Recalculate"]
+    );
+    assert_eq!(
+        common::value(&back, 0, "C6"),
+        opensheet_engine::Value::Number(6900.0)
+    );
 }
 
 /// A project Excel itself wrote (its Solver add-in), when Excel is on
 /// this machine: it goes through OpenSheet unchanged.
 #[test]
 fn a_project_written_by_excel_goes_through() {
-    let path = std::path::Path::new("/Applications/Microsoft Excel.app/Contents/Resources/en.lproj/Add-Ins/Solver.xlam");
+    let path = std::path::Path::new(
+        "/Applications/Microsoft Excel.app/Contents/Resources/en.lproj/Add-Ins/Solver.xlam",
+    );
     let Ok(original) = std::fs::read(path) else {
         return;
     };
     let project = bytes_of(&original, "xl/vbaProject.bin");
     let wb = load(&original);
-    assert_eq!(wb.vba.project.as_ref().map(|p| &*p.bin), Some(project.as_slice()));
+    assert_eq!(
+        wb.vba.project.as_ref().map(|p| &*p.bin),
+        Some(project.as_slice())
+    );
     assert_eq!(wb.vba.workbook_code_name.as_deref(), Some("ThisWorkbook"));
     assert!(wb.sheets.iter().all(|s| s.code_name.is_some()));
     let saved = save_xlsm(&wb);

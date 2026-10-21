@@ -30,7 +30,9 @@ mod text;
 
 pub use cache::{CacheField, CalcItem, FieldGroup, GroupBy, GroupKind, PivotCache};
 pub use calc::{CalcFormula, ListLabels};
-pub use chart::{ChartButtonKind, PivotChartFields, PivotChartLink, PivotChartPoints, chart_kind_allowed};
+pub use chart::{
+    ChartButtonKind, PivotChartFields, PivotChartLink, PivotChartPoints, chart_kind_allowed,
+};
 pub use commands::PivotDestination;
 pub use compute::{Report, ReportLine, ReportLineKind};
 pub use getdata::get_pivot_data;
@@ -105,7 +107,10 @@ impl PivotSource {
                         return Err(PivotError::InvalidSource);
                     }
                     let last = table.range.r1.saturating_sub(table.totals_row as u32);
-                    return Ok((si, Rect::new(table.range.r0, table.range.c0, last, table.range.c1)));
+                    return Ok((
+                        si,
+                        Rect::new(table.range.r0, table.range.c0, last, table.range.c1),
+                    ));
                 }
                 match wb.defined_name(name) {
                     Some(Expr::Ref(r)) => {
@@ -127,7 +132,8 @@ impl PivotSource {
             PivotSource::Range { sheet, range } => {
                 let mut out = String::new();
                 crate::ast::write_sheet_name(sheet, &mut out);
-                let cell = |r: u32, c: u32| format!("${}${}", crate::refs::col_to_letters(c), r + 1);
+                let cell =
+                    |r: u32, c: u32| format!("${}${}", crate::refs::col_to_letters(c), r + 1);
                 out.push('!');
                 out.push_str(&cell(range.r0, range.c0));
                 if !range.is_single() {
@@ -672,7 +678,13 @@ fn same_name(a: &str, b: &str) -> bool {
 
 impl PivotTable {
     /// A PivotTable without any field in its areas.
-    pub fn new(id: u32, name: String, source: PivotSource, cache: Arc<PivotCache>, anchor: (u32, u32)) -> PivotTable {
+    pub fn new(
+        id: u32,
+        name: String,
+        source: PivotSource,
+        cache: Arc<PivotCache>,
+        anchor: (u32, u32),
+    ) -> PivotTable {
         let mut p = PivotTable {
             id,
             name,
@@ -794,15 +806,23 @@ impl PivotTable {
         match f.sort.order {
             SortOrder::Manual => f.items.iter().map(|it| it.x).collect(),
             SortOrder::Ascending => compute::ascending_items(self, field),
-            SortOrder::Descending => compute::ascending_items(self, field).into_iter().rev().collect(),
+            SortOrder::Descending => compute::ascending_items(self, field)
+                .into_iter()
+                .rev()
+                .collect(),
         }
     }
 
     /// True when the field hides items or has a label or value filter.
     pub fn is_filtered(&self, field: usize) -> bool {
-        self.fields.get(field).is_some_and(|f| f.items.iter().any(|i| i.hidden))
+        self.fields
+            .get(field)
+            .is_some_and(|f| f.items.iter().any(|i| i.hidden))
             || self.filters.iter().any(|f| f.field == field)
-            || self.page_fields.iter().any(|p| p.field == field && p.item.is_some())
+            || self
+                .page_fields
+                .iter()
+                .any(|p| p.field == field && p.item.is_some())
     }
 
     /// The area Excel puts a field in when its box is checked in the field
@@ -869,13 +889,15 @@ impl PivotTable {
         for f in 0..nf {
             let count = self.cache.items(f).len();
             let mut seen = vec![false; count];
-            self.fields[f].items.retain(|it| match seen.get_mut(it.x as usize) {
-                Some(s) if !*s => {
-                    *s = true;
-                    true
-                }
-                _ => false,
-            });
+            self.fields[f]
+                .items
+                .retain(|it| match seen.get_mut(it.x as usize) {
+                    Some(s) if !*s => {
+                        *s = true;
+                        true
+                    }
+                    _ => false,
+                });
             if seen.iter().any(|s| !s) {
                 // New items go to the end, as Excel does on refresh.
                 for x in compute::ascending_items(self, f) {
@@ -892,7 +914,12 @@ impl PivotTable {
         }
         let mut used = vec![false; nf];
         // Calculated fields are value fields only.
-        let calculated: Vec<bool> = self.cache.fields.iter().map(|f| f.formula.is_some()).collect();
+        let calculated: Vec<bool> = self
+            .cache
+            .fields
+            .iter()
+            .map(|f| f.formula.is_some())
+            .collect();
         let mut keep_axis = |list: &mut Vec<AxisField>| {
             let mut values = false;
             list.retain(|a| match a {
@@ -917,7 +944,9 @@ impl PivotTable {
             ok
         });
         for p in &mut self.page_fields {
-            if p.item.is_some_and(|x| x as usize >= self.cache.items(p.field).len()) {
+            if p.item
+                .is_some_and(|x| x as usize >= self.cache.items(p.field).len())
+            {
                 p.item = None;
             }
         }
@@ -929,7 +958,10 @@ impl PivotTable {
             .filter_map(|a| a.field())
             .collect();
         for d in &mut self.data_fields {
-            if d.show_as.base_field().is_some_and(|f| !on_axis.contains(&f)) {
+            if d.show_as
+                .base_field()
+                .is_some_and(|f| !on_axis.contains(&f))
+            {
                 d.show_as = ShowAs::Normal;
             }
         }
@@ -938,7 +970,9 @@ impl PivotTable {
             f.field < nf
                 && match f.kind {
                     FilterKind::Label(_) | FilterKind::Date { .. } => true,
-                    FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => data_field < nd,
+                    FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => {
+                        data_field < nd
+                    }
                 }
         });
         self.sliced.retain(|f| *f < nf);
@@ -968,7 +1002,11 @@ impl PivotTable {
     pub fn rebind(&mut self, cache: Arc<PivotCache>) {
         let old = std::mem::replace(&mut self.cache, cache);
         let new = self.cache.clone();
-        let map: Vec<Option<usize>> = old.fields.iter().map(|f| new.field_index(&f.name)).collect();
+        let map: Vec<Option<usize>> = old
+            .fields
+            .iter()
+            .map(|f| new.field_index(&f.name))
+            .collect();
         let field = |f: usize| map.get(f).copied().flatten();
         let mut fields: Vec<Option<PivotField>> = vec![None; new.fields.len()];
         for (k, pf) in std::mem::take(&mut self.fields).into_iter().enumerate() {
@@ -1060,20 +1098,30 @@ impl PivotTable {
                 Some(n) => {
                     d.field = n;
                     d.show_as = match d.show_as {
-                        ShowAs::PercentOf { field: f, item } => field(f).map(|f| ShowAs::PercentOf { field: f, item }),
-                        ShowAs::PercentOfParent { field: f } => field(f).map(|f| ShowAs::PercentOfParent { field: f }),
+                        ShowAs::PercentOf { field: f, item } => {
+                            field(f).map(|f| ShowAs::PercentOf { field: f, item })
+                        }
+                        ShowAs::PercentOfParent { field: f } => {
+                            field(f).map(|f| ShowAs::PercentOfParent { field: f })
+                        }
                         ShowAs::Difference { field: f, item } => {
                             field(f).map(|f| ShowAs::Difference { field: f, item })
                         }
                         ShowAs::PercentDifference { field: f, item } => {
                             field(f).map(|f| ShowAs::PercentDifference { field: f, item })
                         }
-                        ShowAs::RunningTotal { field: f } => field(f).map(|f| ShowAs::RunningTotal { field: f }),
+                        ShowAs::RunningTotal { field: f } => {
+                            field(f).map(|f| ShowAs::RunningTotal { field: f })
+                        }
                         ShowAs::PercentRunningTotal { field: f } => {
                             field(f).map(|f| ShowAs::PercentRunningTotal { field: f })
                         }
-                        ShowAs::RankAscending { field: f } => field(f).map(|f| ShowAs::RankAscending { field: f }),
-                        ShowAs::RankDescending { field: f } => field(f).map(|f| ShowAs::RankDescending { field: f }),
+                        ShowAs::RankAscending { field: f } => {
+                            field(f).map(|f| ShowAs::RankAscending { field: f })
+                        }
+                        ShowAs::RankDescending { field: f } => {
+                            field(f).map(|f| ShowAs::RankDescending { field: f })
+                        }
                         other => Some(other),
                     }
                     .unwrap_or(ShowAs::Normal);
@@ -1122,7 +1170,13 @@ impl PivotTable {
     /// the values area this adds a value field, summed when the field is
     /// numeric and counted otherwise; a field can be there several times.
     /// In the other areas the field moves there from where it was.
-    pub fn add_field(&mut self, field: usize, area: Area, position: Option<usize>, locale: &Locale) {
+    pub fn add_field(
+        &mut self,
+        field: usize,
+        area: Area,
+        position: Option<usize>,
+        locale: &Locale,
+    ) {
         if field >= self.fields.len() {
             return;
         }
@@ -1182,7 +1236,9 @@ impl PivotTable {
         }
         self.data_fields.remove(index);
         self.filters.retain(|f| match f.kind {
-            FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => data_field != index,
+            FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } => {
+                data_field != index
+            }
             FilterKind::Label(_) | FilterKind::Date { .. } => true,
         });
         for f in &mut self.fields {
@@ -1196,7 +1252,9 @@ impl PivotTable {
 
     fn shift_data_refs(&mut self, shift: impl Fn(usize) -> usize) {
         for f in &mut self.filters {
-            if let FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } = &mut f.kind {
+            if let FilterKind::Value { data_field, .. } | FilterKind::Top10 { data_field, .. } =
+                &mut f.kind
+            {
                 *data_field = shift(*data_field);
             }
         }
@@ -1210,11 +1268,21 @@ impl PivotTable {
     /// the values area dropped elsewhere becomes a field there; a field
     /// dropped on the values area becomes a value field; "Σ Values" only
     /// moves between rows and columns. Returns false when nothing moves.
-    pub fn move_entry(&mut self, from: Area, index: usize, to: Area, position: usize, locale: &Locale) -> bool {
+    pub fn move_entry(
+        &mut self,
+        from: Area,
+        index: usize,
+        to: Area,
+        position: usize,
+        locale: &Locale,
+    ) -> bool {
         let axis = |p: &PivotTable, area: Area| match area {
             Area::Rows => p.row_fields.get(index).copied(),
             Area::Columns => p.col_fields.get(index).copied(),
-            Area::Filters => p.page_fields.get(index).map(|pf| AxisField::Field(pf.field)),
+            Area::Filters => p
+                .page_fields
+                .get(index)
+                .map(|pf| AxisField::Field(pf.field)),
             Area::Values => None,
         };
         if from == Area::Values {
@@ -1289,7 +1357,13 @@ impl PivotTable {
 
     /// "Sum of Sales", followed by a number when the name is taken
     /// ("Sum of Sales2"). `except` is the value field being renamed.
-    fn unique_data_name(&self, function: Aggregation, field: usize, except: Option<usize>, locale: &Locale) -> String {
+    fn unique_data_name(
+        &self,
+        function: Aggregation,
+        field: usize,
+        except: Option<usize>,
+        locale: &Locale,
+    ) -> String {
         let base = data_field_name(function, self.field_caption(field), locale);
         let taken = |n: &str| {
             self.data_fields
@@ -1301,7 +1375,10 @@ impl PivotTable {
         if !taken(&base) {
             return base;
         }
-        (2..).map(|k| format!("{base}{k}")).find(|n| !taken(n)).unwrap_or(base)
+        (2..)
+            .map(|k| format!("{base}{k}"))
+            .find(|n| !taken(n))
+            .unwrap_or(base)
     }
 
     /// Change the summary function of a value field. Its name follows
@@ -1344,7 +1421,8 @@ impl PivotTable {
     /// Refused (false) when another field or a value field has the name.
     pub fn set_field_caption(&mut self, field: usize, name: &str) -> bool {
         let name = name.trim();
-        let taken = (0..self.fields.len()).any(|f| f != field && same_name(self.field_caption(f), name))
+        let taken = (0..self.fields.len())
+            .any(|f| f != field && same_name(self.field_caption(f), name))
             || self
                 .cache
                 .fields
@@ -1365,7 +1443,13 @@ impl PivotTable {
 
     /// Type a label over an item's (an empty one restores it). Refused
     /// (false) when another item of the field shows that label.
-    pub fn set_item_caption(&mut self, field: usize, item: u32, label: &str, locale: &Locale) -> bool {
+    pub fn set_item_caption(
+        &mut self,
+        field: usize,
+        item: u32,
+        label: &str,
+        locale: &Locale,
+    ) -> bool {
         let label = label.trim();
         let count = self.cache.items(field).len() as u32;
         if (0..count).any(|x| x != item && same_name(&self.item_text(field, x, locale), label)) {
@@ -1381,7 +1465,11 @@ impl PivotTable {
     }
 
     fn item_mut(&mut self, field: usize, item: u32) -> Option<&mut PivotItem> {
-        self.fields.get_mut(field)?.items.iter_mut().find(|i| i.x == item)
+        self.fields
+            .get_mut(field)?
+            .items
+            .iter_mut()
+            .find(|i| i.x == item)
     }
 
     /// Check or uncheck an item in the field's list. Choosing items by hand
@@ -1484,8 +1572,9 @@ impl PivotTable {
     /// Set, replace or remove (`None`) the value filter of a field (a
     /// value test or a Top 10).
     pub fn set_value_filter(&mut self, field: usize, filter: Option<FilterKind>) {
-        self.filters
-            .retain(|f| f.field != field || matches!(f.kind, FilterKind::Label(_) | FilterKind::Date { .. }));
+        self.filters.retain(|f| {
+            f.field != field || matches!(f.kind, FilterKind::Label(_) | FilterKind::Date { .. })
+        });
         if let Some(kind) = filter
             && !matches!(kind, FilterKind::Label(_) | FilterKind::Date { .. })
         {
@@ -1526,7 +1615,11 @@ impl PivotTable {
     /// "Subtotals": none, at the bottom or at the top of each group.
     pub fn set_subtotals(&mut self, show: bool, top: bool) {
         for f in &mut self.fields {
-            f.subtotals = if show { Subtotals::Automatic } else { Subtotals::None };
+            f.subtotals = if show {
+                Subtotals::Automatic
+            } else {
+                Subtotals::None
+            };
             f.subtotal_top = top;
         }
     }
@@ -1554,7 +1647,9 @@ impl PivotTable {
         let r0 = self.anchor.0.max(above);
         let c0 = self.anchor.1;
         let width = cols.max(page_cols).max(1);
-        if r0 as u64 + rows.max(1) as u64 > MAX_ROWS as u64 || c0 as u64 + width as u64 > MAX_COLS as u64 {
+        if r0 as u64 + rows.max(1) as u64 > MAX_ROWS as u64
+            || c0 as u64 + width as u64 > MAX_COLS as u64
+        {
             return Err(PivotError::TooLarge);
         }
         let body = Rect::new(r0, c0, r0 + rows.max(1) - 1, c0 + cols.max(1) - 1);
@@ -1650,12 +1745,19 @@ impl PivotTable {
             match lvl.field {
                 None => out.data_field = line.data(),
                 Some(f) => {
-                    let path = if rows { &mut out.row_items } else { &mut out.col_items };
+                    let path = if rows {
+                        &mut out.row_items
+                    } else {
+                        &mut out.col_items
+                    };
                     path.truncate(lvl.depth as usize);
                     let item = path.last().filter(|(pf, _)| *pf == f).map(|(_, x)| *x);
                     out.field = Some(f);
                     out.item = item;
-                    let below = axis.iter().skip(level as usize + 1).any(|a| a.field().is_some());
+                    let below = axis
+                        .iter()
+                        .skip(level as usize + 1)
+                        .any(|a| a.field().is_some());
                     if below && self.options.show_drill && line.kind != LineKind::Subtotal {
                         let collapsed = out.item.is_some_and(|x| {
                             self.fields
@@ -1741,39 +1843,44 @@ impl PivotTable {
 /// Follow rows or columns inserted into or deleted from a sheet; `None`
 /// when the whole rectangle was deleted.
 fn adjust_rect(rect: Rect, edit: StructuralEdit) -> Option<Rect> {
-    let interval = |lo: u32, hi: u32, insert: bool, at: u32, count: u32, max: u32| -> Option<(u32, u32)> {
-        if insert {
-            let lo = if lo >= at { lo + count } else { lo };
-            let hi = if hi >= at { hi + count } else { hi };
-            (lo < max).then(|| (lo, hi.min(max - 1)))
-        } else {
-            let end = at + count - 1;
-            if lo >= at && hi <= end {
-                return None;
-            }
-            let lo = if lo > end { lo - count } else { lo.min(at) };
-            let hi = if hi > end {
-                hi - count
-            } else if hi >= at {
-                at - 1
+    let interval =
+        |lo: u32, hi: u32, insert: bool, at: u32, count: u32, max: u32| -> Option<(u32, u32)> {
+            if insert {
+                let lo = if lo >= at { lo + count } else { lo };
+                let hi = if hi >= at { hi + count } else { hi };
+                (lo < max).then(|| (lo, hi.min(max - 1)))
             } else {
-                hi
-            };
-            Some((lo, hi))
-        }
-    };
+                let end = at + count - 1;
+                if lo >= at && hi <= end {
+                    return None;
+                }
+                let lo = if lo > end { lo - count } else { lo.min(at) };
+                let hi = if hi > end {
+                    hi - count
+                } else if hi >= at {
+                    at - 1
+                } else {
+                    hi
+                };
+                Some((lo, hi))
+            }
+        };
     match edit {
         StructuralEdit::InsertRows { at, count } => {
-            interval(rect.r0, rect.r1, true, at, count, MAX_ROWS).map(|(a, b)| Rect::new(a, rect.c0, b, rect.c1))
+            interval(rect.r0, rect.r1, true, at, count, MAX_ROWS)
+                .map(|(a, b)| Rect::new(a, rect.c0, b, rect.c1))
         }
         StructuralEdit::DeleteRows { at, count } => {
-            interval(rect.r0, rect.r1, false, at, count, MAX_ROWS).map(|(a, b)| Rect::new(a, rect.c0, b, rect.c1))
+            interval(rect.r0, rect.r1, false, at, count, MAX_ROWS)
+                .map(|(a, b)| Rect::new(a, rect.c0, b, rect.c1))
         }
         StructuralEdit::InsertCols { at, count } => {
-            interval(rect.c0, rect.c1, true, at, count, MAX_COLS).map(|(a, b)| Rect::new(rect.r0, a, rect.r1, b))
+            interval(rect.c0, rect.c1, true, at, count, MAX_COLS)
+                .map(|(a, b)| Rect::new(rect.r0, a, rect.r1, b))
         }
         StructuralEdit::DeleteCols { at, count } => {
-            interval(rect.c0, rect.c1, false, at, count, MAX_COLS).map(|(a, b)| Rect::new(rect.r0, a, rect.r1, b))
+            interval(rect.c0, rect.c1, false, at, count, MAX_COLS)
+                .map(|(a, b)| Rect::new(rect.r0, a, rect.r1, b))
         }
     }
 }
@@ -1873,7 +1980,11 @@ pub(crate) fn on_sheet_duplicated(wb: &mut Workbook, copy: usize, _original: &st
 /// See `features::on_sheet_deleted`. A PivotTable whose records came from
 /// a range of the sheet keeps its cache, as in Excel, but has nothing left
 /// to refresh from: a sheet later given the same name is not its source.
-pub(crate) fn on_sheet_deleted(wb: &mut crate::workbook::Workbook, deleted: &crate::workbook::Sheet, _order: &[&str]) {
+pub(crate) fn on_sheet_deleted(
+    wb: &mut crate::workbook::Workbook,
+    deleted: &crate::workbook::Sheet,
+    _order: &[&str],
+) {
     for sh in &mut wb.sheets {
         for p in &mut sh.pivots {
             if let PivotSource::Range { sheet, .. } = &p.source
@@ -1886,7 +1997,18 @@ pub(crate) fn on_sheet_deleted(wb: &mut crate::workbook::Workbook, deleted: &cra
 }
 
 /// See `features::on_sheet_moved`.
-pub(crate) fn on_sheet_moved(_wb: &mut crate::workbook::Workbook, _moved: &str, _before: &[&str], _after: &[&str]) {}
+pub(crate) fn on_sheet_moved(
+    _wb: &mut crate::workbook::Workbook,
+    _moved: &str,
+    _before: &[&str],
+    _after: &[&str],
+) {
+}
 
 /// See `features::on_cells_shifted`.
-pub(crate) fn on_cells_shifted(_wb: &mut crate::workbook::Workbook, _sheet: usize, _shift: crate::features::CellShift) {}
+pub(crate) fn on_cells_shifted(
+    _wb: &mut crate::workbook::Workbook,
+    _sheet: usize,
+    _shift: crate::features::CellShift,
+) {
+}

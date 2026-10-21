@@ -38,7 +38,10 @@ fn least_squares(mut rows: Vec<Vec<f64>>, mut targets: Vec<f64>) -> Option<Vec<f
     }
     let scale = rows.iter().flatten().fold(0.0f64, |m, v| m.max(v.abs()));
     for col in 0..k {
-        let norm = (col..n).map(|r| rows[r][col] * rows[r][col]).sum::<f64>().sqrt();
+        let norm = (col..n)
+            .map(|r| rows[r][col] * rows[r][col])
+            .sum::<f64>()
+            .sqrt();
         if norm <= scale * 1e-13 {
             return None;
         }
@@ -48,13 +51,21 @@ fn least_squares(mut rows: Vec<Vec<f64>>, mut targets: Vec<f64>) -> Option<Vec<f
         let vv: f64 = v.iter().map(|x| x * x).sum();
         if vv > 0.0 {
             for c in col..k {
-                let dot: f64 = v.iter().enumerate().map(|(i, x)| x * rows[col + i][c]).sum();
+                let dot: f64 = v
+                    .iter()
+                    .enumerate()
+                    .map(|(i, x)| x * rows[col + i][c])
+                    .sum();
                 let f = 2.0 * dot / vv;
                 for (i, x) in v.iter().enumerate() {
                     rows[col + i][c] -= f * x;
                 }
             }
-            let dot: f64 = v.iter().enumerate().map(|(i, x)| x * targets[col + i]).sum();
+            let dot: f64 = v
+                .iter()
+                .enumerate()
+                .map(|(i, x)| x * targets[col + i])
+                .sum();
             let f = 2.0 * dot / vv;
             for (i, x) in v.iter().enumerate() {
                 targets[col + i] -= f * x;
@@ -97,8 +108,14 @@ pub fn fit(kind: TrendKind, points: &[(f64, f64)], intercept: Option<f64>) -> Op
     if points.len() < degree + 1 - fixed.is_some() as usize || points.len() < 2 {
         return None;
     }
-    let us: Vec<f64> = points.iter().map(|(x, _)| if log_x { x.ln() } else { *x }).collect();
-    let ts: Vec<f64> = points.iter().map(|(_, y)| if log_y { y.ln() } else { *y }).collect();
+    let us: Vec<f64> = points
+        .iter()
+        .map(|(x, _)| if log_x { x.ln() } else { *x })
+        .collect();
+    let ts: Vec<f64> = points
+        .iter()
+        .map(|(_, y)| if log_y { y.ln() } else { *y })
+        .collect();
     let first_power = fixed.is_some() as i32;
     let rows: Vec<Vec<f64>> = us
         .iter()
@@ -113,7 +130,11 @@ pub fn fit(kind: TrendKind, points: &[(f64, f64)], intercept: Option<f64>) -> Op
     let r_squared = if fixed.is_some() {
         // Through a forced intercept the variation is measured from it, as
         // LINEST does without a constant.
-        let sse: f64 = us.iter().zip(&ts).map(|(u, t)| (t - predicted(*u)).powi(2)).sum();
+        let sse: f64 = us
+            .iter()
+            .zip(&ts)
+            .map(|(u, t)| (t - predicted(*u)).powi(2))
+            .sum();
         let sst: f64 = targets.iter().map(|t| t * t).sum();
         if sst > 0.0 { 1.0 - sse / sst } else { f64::NAN }
     } else {
@@ -122,14 +143,33 @@ pub fn fit(kind: TrendKind, points: &[(f64, f64)], intercept: Option<f64>) -> Op
         // trends that is the share of the variation the trend explains;
         // for exponential and power trends it is not the R² of the line
         // fitted through the logarithms.
-        let fitted: Vec<f64> = us.iter().map(|u| if log_y { predicted(*u).exp() } else { predicted(*u) }).collect();
+        let fitted: Vec<f64> = us
+            .iter()
+            .map(|u| {
+                if log_y {
+                    predicted(*u).exp()
+                } else {
+                    predicted(*u)
+                }
+            })
+            .collect();
         let ys: Vec<f64> = points.iter().map(|(_, y)| *y).collect();
         let n = ys.len() as f64;
         let (my, mf) = (ys.iter().sum::<f64>() / n, fitted.iter().sum::<f64>() / n);
-        let cov: f64 = ys.iter().zip(&fitted).map(|(y, f)| (y - my) * (f - mf)).sum();
-        let (vy, vf): (f64, f64) =
-            (ys.iter().map(|y| (y - my).powi(2)).sum(), fitted.iter().map(|f| (f - mf).powi(2)).sum());
-        if vy > 0.0 && vf > 0.0 { cov * cov / (vy * vf) } else { f64::NAN }
+        let cov: f64 = ys
+            .iter()
+            .zip(&fitted)
+            .map(|(y, f)| (y - my) * (f - mf))
+            .sum();
+        let (vy, vf): (f64, f64) = (
+            ys.iter().map(|y| (y - my).powi(2)).sum(),
+            fitted.iter().map(|f| (f - mf).powi(2)).sum(),
+        );
+        if vy > 0.0 && vf > 0.0 {
+            cov * cov / (vy * vf)
+        } else {
+            f64::NAN
+        }
     };
     if log_y {
         c[0] = c[0].exp();
@@ -202,7 +242,11 @@ impl Fit {
                 raised(format!("{}{}", minus(c[1]), number(c[1], locale))),
             ],
             _ => {
-                let variable = if self.kind == TrendKind::Logarithmic { "ln(x)" } else { "x" };
+                let variable = if self.kind == TrendKind::Logarithmic {
+                    "ln(x)"
+                } else {
+                    "x"
+                };
                 let mut parts = vec![plain("y = ")];
                 let mut first = true;
                 for power in (0..c.len()).rev() {
@@ -218,7 +262,11 @@ impl Fit {
                     };
                     let digits = number(k, locale);
                     // "x", not "1x".
-                    let factor = if power > 0 && digits == "1" { "" } else { digits.as_str() };
+                    let factor = if power > 0 && digits == "1" {
+                        ""
+                    } else {
+                        digits.as_str()
+                    };
                     let term = if power > 0 { variable } else { "" };
                     parts.push(plain(format!("{sign}{factor}{term}")));
                     if power > 1 {
@@ -257,11 +305,24 @@ mod tests {
     fn text(parts: &[EquationPart]) -> String {
         parts
             .iter()
-            .map(|p| if p.raised { format!("^{}", p.text) } else { p.text.clone() })
+            .map(|p| {
+                if p.raised {
+                    format!("^{}", p.text)
+                } else {
+                    p.text.clone()
+                }
+            })
             .collect()
     }
 
-    const XY: [(f64, f64); 6] = [(1.0, 2.0), (2.0, 3.5), (3.0, 3.0), (4.0, 6.0), (5.0, 7.5), (6.0, 7.0)];
+    const XY: [(f64, f64); 6] = [
+        (1.0, 2.0),
+        (2.0, 3.5),
+        (3.0, 3.0),
+        (4.0, 6.0),
+        (5.0, 7.5),
+        (6.0, 7.0),
+    ];
 
     #[test]
     fn linear_matches_slope_and_intercept() {
@@ -290,7 +351,9 @@ mod tests {
     #[test]
     fn transformed_fits() {
         // y = 3·e^(0.5x), exactly.
-        let pts: Vec<(f64, f64)> = (1..=5).map(|i| (i as f64, 3.0 * (0.5 * i as f64).exp())).collect();
+        let pts: Vec<(f64, f64)> = (1..=5)
+            .map(|i| (i as f64, 3.0 * (0.5 * i as f64).exp()))
+            .collect();
         let f = fit(TrendKind::Exponential, &pts, None).unwrap();
         assert!(close(f.coefficients[0], 3.0) && close(f.coefficients[1], 0.5));
         assert!(close(f.r_squared, 1.0));
@@ -301,13 +364,17 @@ mod tests {
         assert!(close(f.coefficients[0], 3.0) && close(f.coefficients[1], 0.5));
 
         // y = 2·ln(x) − 1.
-        let pts: Vec<(f64, f64)> = (1..=5).map(|i| (i as f64, 2.0 * (i as f64).ln() - 1.0)).collect();
+        let pts: Vec<(f64, f64)> = (1..=5)
+            .map(|i| (i as f64, 2.0 * (i as f64).ln() - 1.0))
+            .collect();
         let f = fit(TrendKind::Logarithmic, &pts, None).unwrap();
         assert!(close(f.coefficients[1], 2.0) && close(f.coefficients[0], -1.0));
         assert_eq!(text(&f.equation(Locale::en())), "y = 2ln(x) - 1");
 
         // y = 4·x^1.5.
-        let pts: Vec<(f64, f64)> = (1..=5).map(|i| (i as f64, 4.0 * (i as f64).powf(1.5))).collect();
+        let pts: Vec<(f64, f64)> = (1..=5)
+            .map(|i| (i as f64, 4.0 * (i as f64).powf(1.5)))
+            .collect();
         let f = fit(TrendKind::Power, &pts, None).unwrap();
         assert!(close(f.coefficients[0], 4.0) && close(f.coefficients[1], 1.5));
         assert_eq!(text(&f.equation(Locale::en())), "y = 4x^1.5");
@@ -316,7 +383,9 @@ mod tests {
         // what LOGEST(y, x) returns.
         let f = fit(TrendKind::Exponential, &XY, None).unwrap();
         let n = XY.len() as f64;
-        let (sx, sl): (f64, f64) = XY.iter().fold((0.0, 0.0), |a, (x, y)| (a.0 + x, a.1 + y.ln()));
+        let (sx, sl): (f64, f64) = XY
+            .iter()
+            .fold((0.0, 0.0), |a, (x, y)| (a.0 + x, a.1 + y.ln()));
         let sxx: f64 = XY.iter().map(|(x, _)| x * x).sum();
         let sxl: f64 = XY.iter().map(|(x, y)| x * y.ln()).sum();
         let rate = (n * sxl - sx * sl) / (n * sxx - sx * sx);
@@ -324,22 +393,73 @@ mod tests {
         assert!(close(f.coefficients[0], ((sl - rate * sx) / n).exp()));
 
         // The labels Excel prints for these seven points.
-        let pts = [(1.0, 2.1), (2.0, 3.9), (3.0, 6.2), (4.0, 7.8), (5.0, 10.5), (6.0, 11.6), (7.0, 14.4)];
+        let pts = [
+            (1.0, 2.1),
+            (2.0, 3.9),
+            (3.0, 6.2),
+            (4.0, 7.8),
+            (5.0, 10.5),
+            (6.0, 11.6),
+            (7.0, 14.4),
+        ];
         let label = |kind: TrendKind, intercept: Option<f64>| {
             let f = fit(kind, &pts, intercept).unwrap();
-            format!("{} / {}", text(&f.equation(Locale::en())), text(&f.r_squared_label(Locale::en())))
+            format!(
+                "{} / {}",
+                text(&f.equation(Locale::en())),
+                text(&f.r_squared_label(Locale::en()))
+            )
         };
-        assert_eq!(label(TrendKind::Linear, None), "y = 2.0214x - 0.0143 / R² = 0.9946");
-        assert_eq!(label(TrendKind::Exponential, None), "y = 2.0335e^0.303x / R² = 0.9399");
-        assert_eq!(label(TrendKind::Logarithmic, None), "y = 6.1205ln(x) + 0.6174 / R² = 0.9163");
-        assert_eq!(label(TrendKind::Polynomial(3), None), "y = 0.0083x^3 - 0.0857x^2 + 2.2488x - 0.1429 / R² = 0.9949");
-        assert_eq!(label(TrendKind::Power, None), "y = 2.0514x^0.9879 / R² = 0.9945");
-        assert_eq!(label(TrendKind::Linear, Some(0.0)), "y = 2.0186x / R² = 0.9989");
+        assert_eq!(
+            label(TrendKind::Linear, None),
+            "y = 2.0214x - 0.0143 / R² = 0.9946"
+        );
+        assert_eq!(
+            label(TrendKind::Exponential, None),
+            "y = 2.0335e^0.303x / R² = 0.9399"
+        );
+        assert_eq!(
+            label(TrendKind::Logarithmic, None),
+            "y = 6.1205ln(x) + 0.6174 / R² = 0.9163"
+        );
+        assert_eq!(
+            label(TrendKind::Polynomial(3), None),
+            "y = 0.0083x^3 - 0.0857x^2 + 2.2488x - 0.1429 / R² = 0.9949"
+        );
+        assert_eq!(
+            label(TrendKind::Power, None),
+            "y = 2.0514x^0.9879 / R² = 0.9945"
+        );
+        assert_eq!(
+            label(TrendKind::Linear, Some(0.0)),
+            "y = 2.0186x / R² = 0.9989"
+        );
 
         // No logarithm of zero or of a negative number.
-        assert!(fit(TrendKind::Exponential, &[(1.0, 1.0), (2.0, -1.0), (3.0, 2.0)], None).is_none());
-        assert!(fit(TrendKind::Power, &[(0.0, 1.0), (2.0, 1.0), (3.0, 2.0)], None).is_none());
-        assert!(fit(TrendKind::Logarithmic, &[(0.0, 1.0), (2.0, 1.0), (3.0, 2.0)], None).is_none());
+        assert!(
+            fit(
+                TrendKind::Exponential,
+                &[(1.0, 1.0), (2.0, -1.0), (3.0, 2.0)],
+                None
+            )
+            .is_none()
+        );
+        assert!(
+            fit(
+                TrendKind::Power,
+                &[(0.0, 1.0), (2.0, 1.0), (3.0, 2.0)],
+                None
+            )
+            .is_none()
+        );
+        assert!(
+            fit(
+                TrendKind::Logarithmic,
+                &[(0.0, 1.0), (2.0, 1.0), (3.0, 2.0)],
+                None
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -365,7 +485,9 @@ mod tests {
         assert!((f.coefficients[1] - 39.0 / 28.0).abs() < 1e-9);
         assert!((f.coefficients[0] - 0.5).abs() < 1e-9);
         // Large X values (years) do not break it.
-        let years: Vec<(f64, f64)> = (0..10).map(|i| (2015.0 + i as f64, 3.0 + 2.0 * i as f64)).collect();
+        let years: Vec<(f64, f64)> = (0..10)
+            .map(|i| (2015.0 + i as f64, 3.0 + 2.0 * i as f64))
+            .collect();
         let f = fit(TrendKind::Polynomial(2), &years, None).unwrap();
         assert!((f.value_at(2030.0) - 33.0).abs() < 1e-3);
         // Too few points for the order.

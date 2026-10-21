@@ -45,9 +45,16 @@ impl Module {
     pub fn code(&self) -> String {
         let mut lines = self.source.lines().peekable();
         // VERSION 1.0 CLASS / BEGIN … END, the header of a class or form.
-        if lines.peek().is_some_and(|line| line.trim_start().to_ascii_uppercase().starts_with("VERSION ")) {
+        if lines.peek().is_some_and(|line| {
+            line.trim_start()
+                .to_ascii_uppercase()
+                .starts_with("VERSION ")
+        }) {
             lines.next();
-            if lines.peek().is_some_and(|line| line.trim_start().to_ascii_uppercase().starts_with("BEGIN")) {
+            if lines
+                .peek()
+                .is_some_and(|line| line.trim_start().to_ascii_uppercase().starts_with("BEGIN"))
+            {
                 for line in lines.by_ref() {
                     if line.trim().eq_ignore_ascii_case("END") {
                         break;
@@ -55,7 +62,11 @@ impl Module {
                 }
             }
         }
-        while lines.peek().is_some_and(|line| line.trim_start().to_ascii_lowercase().starts_with("attribute vb_")) {
+        while lines.peek().is_some_and(|line| {
+            line.trim_start()
+                .to_ascii_lowercase()
+                .starts_with("attribute vb_")
+        }) {
             lines.next();
         }
         let mut code = String::new();
@@ -93,10 +104,16 @@ impl Module {
             // "Name()" or "Name ( )" or just "Name": no argument.
             let rest = words[at + 1..].join(" ");
             let (name, arguments) = match rest.split_once('(') {
-                Some((name, after)) => (name.trim(), after.split_once(')').map_or("?", |(inside, _)| inside.trim())),
+                Some((name, after)) => (
+                    name.trim(),
+                    after
+                        .split_once(')')
+                        .map_or("?", |(inside, _)| inside.trim()),
+                ),
                 None => (rest.split_whitespace().next().unwrap_or(""), ""),
             };
-            let named = name.chars().next().is_some_and(char::is_alphabetic) && name.chars().all(|c| c.is_alphanumeric() || c == '_');
+            let named = name.chars().next().is_some_and(char::is_alphabetic)
+                && name.chars().all(|c| c.is_alphanumeric() || c == '_');
             if named && arguments.is_empty() {
                 found.push(name.to_string());
             }
@@ -167,8 +184,15 @@ impl Project {
         let mut found = Vec::new();
         for (index, module) in self.modules.iter().enumerate() {
             for name in module.macros() {
-                let name = if module.kind == ModuleKind::Document { format!("{}.{name}", module.name) } else { name };
-                found.push(Macro { name, module: index });
+                let name = if module.kind == ModuleKind::Document {
+                    format!("{}.{name}", module.name)
+                } else {
+                    name
+                };
+                found.push(Macro {
+                    name,
+                    module: index,
+                });
             }
         }
         found.sort_by_key(|m| m.name.to_lowercase());
@@ -183,15 +207,25 @@ impl Project {
 /// Windows-1252 would.
 fn decode(bytes: &[u8], code_page: u16) -> String {
     const CP1252_HIGH: [char; 32] = [
-        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8D}', 'Ž', '\u{8F}', '\u{90}', '‘', '’', '“', '”',
-        '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9D}', 'ž', 'Ÿ',
+        '€', '\u{81}', '‚', 'ƒ', '„', '…', '†', '‡', 'ˆ', '‰', 'Š', '‹', 'Œ', '\u{8D}', 'Ž',
+        '\u{8F}', '\u{90}', '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', '\u{9D}',
+        'ž', 'Ÿ',
     ];
     const MAC_ROMAN_HIGH: &str = "ÄÅÇÉÑÖÜáàâäãåçéèêëíìîïñóòôöõúùûü†°¢£§•¶ß®©™´¨≠ÆØ∞±≤≥¥µ∂∑∏π∫ªºΩæø¿¡¬√ƒ≈∆«»…\u{A0}ÀÃÕŒœ–—“”‘’÷◊ÿŸ⁄€‹›ﬁﬂ‡·‚„‰ÂÊÁËÈÍÎÏÌÓÔ\u{F8FF}ÒÚÛÙıˆ˜¯˘˙˚¸˝˛ˇ";
     match code_page {
         65001 => String::from_utf8_lossy(bytes).into_owned(),
         10000 => {
             let high: Vec<char> = MAC_ROMAN_HIGH.chars().collect();
-            bytes.iter().map(|b| if *b < 0x80 { *b as char } else { high[(*b - 0x80) as usize] }).collect()
+            bytes
+                .iter()
+                .map(|b| {
+                    if *b < 0x80 {
+                        *b as char
+                    } else {
+                        high[(*b - 0x80) as usize]
+                    }
+                })
+                .collect()
         }
         _ => bytes
             .iter()
@@ -208,7 +242,9 @@ fn encode_1252(text: &str) -> Vec<u8> {
     text.chars()
         .map(|ch| match ch as u32 {
             code @ (0..=0x7F | 0xA0..=0xFF) => code as u8,
-            _ => (0x80u8..=0x9F).find(|b| decode(&[*b], 1252).starts_with(ch)).unwrap_or(b'?'),
+            _ => (0x80u8..=0x9F)
+                .find(|b| decode(&[*b], 1252).starts_with(ch))
+                .unwrap_or(b'?'),
         })
         .collect()
 }
@@ -223,7 +259,9 @@ struct DirModule {
 /// Read a VBA project (the bytes of `xl/vbaProject.bin`).
 pub fn read_project(bytes: &[u8]) -> Result<Project, String> {
     let file = Compound::parse(bytes)?;
-    let dir = file.stream(&["VBA", "dir"]).ok_or("the project has no VBA/dir stream")?;
+    let dir = file
+        .stream(&["VBA", "dir"])
+        .ok_or("the project has no VBA/dir stream")?;
     let dir = compress::decompress(&dir).ok_or("the VBA/dir stream is damaged")?;
 
     let mut code_page = 1252u16;
@@ -232,7 +270,8 @@ pub fn read_project(bytes: &[u8]) -> Result<Project, String> {
     let mut at = 0;
     while at + 6 <= dir.len() {
         let id = u16::from_le_bytes([dir[at], dir[at + 1]]);
-        let mut size = u32::from_le_bytes([dir[at + 2], dir[at + 3], dir[at + 4], dir[at + 5]]) as usize;
+        let mut size =
+            u32::from_le_bytes([dir[at + 2], dir[at + 3], dir[at + 4], dir[at + 5]]) as usize;
         if id == 0x0009 {
             // The version record says 4 and holds 6 bytes.
             size = 6;
@@ -242,7 +281,10 @@ pub fn read_project(bytes: &[u8]) -> Result<Project, String> {
         };
         at += 6 + size;
         let utf16 = || {
-            let units: Vec<u16> = data.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect();
+            let units: Vec<u16> = data
+                .chunks_exact(2)
+                .map(|c| u16::from_le_bytes([c[0], c[1]]))
+                .collect();
             String::from_utf16_lossy(&units)
         };
         match id {
@@ -264,7 +306,9 @@ pub fn read_project(bytes: &[u8]) -> Result<Project, String> {
                     0x0047 if size > 0 => module.name = utf16(),
                     0x001A => module.stream = decode(data, code_page),
                     0x0032 if size > 0 => module.stream = utf16(),
-                    0x0031 if size >= 4 => module.offset = u32::from_le_bytes([data[0], data[1], data[2], data[3]]),
+                    0x0031 if size >= 4 => {
+                        module.offset = u32::from_le_bytes([data[0], data[1], data[2], data[3]])
+                    }
                     0x0022 => module.procedural = false,
                     _ => {}
                 }
@@ -273,7 +317,10 @@ pub fn read_project(bytes: &[u8]) -> Result<Project, String> {
     }
 
     // The PROJECT stream tells documents, classes and forms apart.
-    let listing = file.stream(&["PROJECT"]).map(|bytes| decode(&bytes, code_page)).unwrap_or_default();
+    let listing = file
+        .stream(&["PROJECT"])
+        .map(|bytes| decode(&bytes, code_page))
+        .unwrap_or_default();
     let mut kinds: Vec<(String, ModuleKind)> = Vec::new();
     for line in listing.lines() {
         let Some((key, value)) = line.split_once('=') else {
@@ -292,14 +339,23 @@ pub fn read_project(bytes: &[u8]) -> Result<Project, String> {
     }
 
     for module in modules {
-        let stream = file.stream(&["VBA", &module.stream]).ok_or_else(|| format!("the module {} has no stream", module.name))?;
-        let packed = stream.get(module.offset as usize..).ok_or_else(|| format!("the module {} is damaged", module.name))?;
-        let source = compress::decompress(packed).ok_or_else(|| format!("the source of the module {} is damaged", module.name))?;
+        let stream = file
+            .stream(&["VBA", &module.stream])
+            .ok_or_else(|| format!("the module {} has no stream", module.name))?;
+        let packed = stream
+            .get(module.offset as usize..)
+            .ok_or_else(|| format!("the module {} is damaged", module.name))?;
+        let source = compress::decompress(packed)
+            .ok_or_else(|| format!("the source of the module {} is damaged", module.name))?;
         let kind = kinds
             .iter()
             .find(|(name, _)| name.eq_ignore_ascii_case(&module.name))
             .map(|(_, kind)| *kind)
-            .unwrap_or(if module.procedural { ModuleKind::Standard } else { ModuleKind::Class });
+            .unwrap_or(if module.procedural {
+                ModuleKind::Standard
+            } else {
+                ModuleKind::Class
+            });
         project.modules.push(Module {
             name: module.name,
             kind,
@@ -314,23 +370,38 @@ pub fn read_project(bytes: &[u8]) -> Result<Project, String> {
 /// The `Attribute` lines Excel puts at the head of a module.
 fn header(name: &str, kind: ModuleKind) -> String {
     let mut text = match kind {
-        ModuleKind::Class | ModuleKind::Form => "VERSION 1.0 CLASS\r\nBEGIN\r\n  MultiUse = -1  'True\r\nEND\r\n".to_string(),
+        ModuleKind::Class | ModuleKind::Form => {
+            "VERSION 1.0 CLASS\r\nBEGIN\r\n  MultiUse = -1  'True\r\nEND\r\n".to_string()
+        }
         _ => String::new(),
     };
     text.push_str(&format!("Attribute VB_Name = \"{name}\"\r\n"));
     let (base, predeclared, exposed, customizable) = match kind {
         ModuleKind::Standard => return text,
-        ModuleKind::Document if name == "ThisWorkbook" => ("0{00020819-0000-0000-C000-000000000046}", true, true, true),
+        ModuleKind::Document if name == "ThisWorkbook" => {
+            ("0{00020819-0000-0000-C000-000000000046}", true, true, true)
+        }
         ModuleKind::Document => ("0{00020820-0000-0000-C000-000000000046}", true, true, true),
-        ModuleKind::Class | ModuleKind::Form => ("0{FCFB3D2A-A0FA-1068-A738-08002B3371B5}", false, false, false),
+        ModuleKind::Class | ModuleKind::Form => (
+            "0{FCFB3D2A-A0FA-1068-A738-08002B3371B5}",
+            false,
+            false,
+            false,
+        ),
     };
     let flag = |on: bool| if on { "True" } else { "False" };
     text.push_str(&format!("Attribute VB_Base = \"{base}\"\r\n"));
     text.push_str("Attribute VB_GlobalNameSpace = False\r\nAttribute VB_Creatable = False\r\n");
-    text.push_str(&format!("Attribute VB_PredeclaredId = {}\r\n", flag(predeclared)));
+    text.push_str(&format!(
+        "Attribute VB_PredeclaredId = {}\r\n",
+        flag(predeclared)
+    ));
     text.push_str(&format!("Attribute VB_Exposed = {}\r\n", flag(exposed)));
     text.push_str("Attribute VB_TemplateDerived = False\r\n");
-    text.push_str(&format!("Attribute VB_Customizable = {}\r\n", flag(customizable)));
+    text.push_str(&format!(
+        "Attribute VB_Customizable = {}\r\n",
+        flag(customizable)
+    ));
     text
 }
 
@@ -376,10 +447,22 @@ fn scramble(project_id: &str, data: &[u8]) -> String {
 
 /// A library a project refers to: its name and its registered identifier.
 const REFERENCES: [(&str, &str); 4] = [
-    ("VBA", "*\\G{000204EF-0000-0000-C000-000000000046}#4.2#9#C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\VBE7.DLL#Visual Basic For Applications"),
-    ("Excel", "*\\G{00020813-0000-0000-C000-000000000046}#1.9#0#C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE#Microsoft Excel 16.0 Object Library"),
-    ("stdole", "*\\G{00020430-0000-0000-C000-000000000046}#2.0#0#C:\\Windows\\System32\\stdole2.tlb#OLE Automation"),
-    ("Office", "*\\G{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}#2.8#0#C:\\Program Files\\Common Files\\Microsoft Shared\\OFFICE16\\MSO.DLL#Microsoft Office 16.0 Object Library"),
+    (
+        "VBA",
+        "*\\G{000204EF-0000-0000-C000-000000000046}#4.2#9#C:\\Program Files\\Common Files\\Microsoft Shared\\VBA\\VBA7.1\\VBE7.DLL#Visual Basic For Applications",
+    ),
+    (
+        "Excel",
+        "*\\G{00020813-0000-0000-C000-000000000046}#1.9#0#C:\\Program Files\\Microsoft Office\\root\\Office16\\EXCEL.EXE#Microsoft Excel 16.0 Object Library",
+    ),
+    (
+        "stdole",
+        "*\\G{00020430-0000-0000-C000-000000000046}#2.0#0#C:\\Windows\\System32\\stdole2.tlb#OLE Automation",
+    ),
+    (
+        "Office",
+        "*\\G{2DF8D04C-5BFA-101B-BDE5-00AA0044DE52}#2.8#0#C:\\Program Files\\Common Files\\Microsoft Shared\\OFFICE16\\MSO.DLL#Microsoft Office 16.0 Object Library",
+    ),
 ];
 
 /// Make a VBA project from source text: for each module its name, its
@@ -431,7 +514,15 @@ pub fn build_project(modules: &[(&str, ModuleKind, &str)]) -> Vec<u8> {
         record(&mut dir, 0x0031, &0u32.to_le_bytes());
         record(&mut dir, 0x001E, &0u32.to_le_bytes());
         record(&mut dir, 0x002C, &0xFFFFu16.to_le_bytes());
-        record(&mut dir, if *kind == ModuleKind::Standard { 0x0021 } else { 0x0022 }, b"");
+        record(
+            &mut dir,
+            if *kind == ModuleKind::Standard {
+                0x0021
+            } else {
+                0x0022
+            },
+            b"",
+        );
         record(&mut dir, 0x002B, b"");
     }
     record(&mut dir, 0x0010, b"");
@@ -440,7 +531,10 @@ pub fn build_project(modules: &[(&str, ModuleKind, &str)]) -> Vec<u8> {
     let mut names = Vec::new();
     let mut vba = vec![
         // No compiled code: the version that makes the reader compile.
-        Node::Stream("_VBA_PROJECT".to_string(), vec![0xCC, 0x61, 0xFF, 0xFF, 0x00, 0x00, 0x00]),
+        Node::Stream(
+            "_VBA_PROJECT".to_string(),
+            vec![0xCC, 0x61, 0xFF, 0xFF, 0x00, 0x00, 0x00],
+        ),
         Node::Stream("dir".to_string(), compress::compress(&dir)),
     ];
     for (name, kind, code) in modules {
@@ -454,12 +548,24 @@ pub fn build_project(modules: &[(&str, ModuleKind, &str)]) -> Vec<u8> {
         names.push(0);
         names.extend_from_slice(&utf16(name));
         names.extend_from_slice(&[0, 0]);
-        let source = format!("{}{}", header(name, *kind), code.replace("\r\n", "\n").replace('\n', "\r\n"));
-        vba.push(Node::Stream(name.to_string(), compress::compress(&encode_1252(&source))));
+        let source = format!(
+            "{}{}",
+            header(name, *kind),
+            code.replace("\r\n", "\n").replace('\n', "\r\n")
+        );
+        vba.push(Node::Stream(
+            name.to_string(),
+            compress::compress(&encode_1252(&source)),
+        ));
     }
     names.extend_from_slice(&[0, 0]);
-    listing.push_str("Name=\"VBAProject\"\r\nHelpContextID=\"0\"\r\nVersionCompatible32=\"393222000\"\r\n");
-    listing.push_str(&format!("CMG=\"{}\"\r\n", scramble(PROJECT_ID, &[0, 0, 0, 0])));
+    listing.push_str(
+        "Name=\"VBAProject\"\r\nHelpContextID=\"0\"\r\nVersionCompatible32=\"393222000\"\r\n",
+    );
+    listing.push_str(&format!(
+        "CMG=\"{}\"\r\n",
+        scramble(PROJECT_ID, &[0, 0, 0, 0])
+    ));
     listing.push_str(&format!("DPB=\"{}\"\r\n", scramble(PROJECT_ID, &[0])));
     listing.push_str(&format!("GC=\"{}\"\r\n", scramble(PROJECT_ID, &[0xFF])));
     listing.push_str("\r\n[Host Extender Info]\r\n&H00000001={3832D640-CF90-11CF-8E43-00A0C911005A};VBE;&H00000000\r\n");
@@ -483,14 +589,30 @@ mod tests {
     #[test]
     fn a_project_is_read_back() {
         let bytes = build_project(&[
-            ("ThisWorkbook", ModuleKind::Document, "Private Sub Workbook_Open()\nEnd Sub\n"),
-            ("Sheet1", ModuleKind::Document, "Sub Refresh()\n    Me.Calculate\nEnd Sub\n"),
+            (
+                "ThisWorkbook",
+                ModuleKind::Document,
+                "Private Sub Workbook_Open()\nEnd Sub\n",
+            ),
+            (
+                "Sheet1",
+                ModuleKind::Document,
+                "Sub Refresh()\n    Me.Calculate\nEnd Sub\n",
+            ),
             ("Module1", ModuleKind::Standard, MODULE),
-            ("Class1", ModuleKind::Class, "Public Name As String\n\nPublic Sub Reset()\nEnd Sub\n"),
+            (
+                "Class1",
+                ModuleKind::Class,
+                "Public Name As String\n\nPublic Sub Reset()\nEnd Sub\n",
+            ),
         ]);
         let project = read_project(&bytes).expect("a project");
         assert_eq!(project.name, "VBAProject");
-        let listed: Vec<(&str, ModuleKind)> = project.modules.iter().map(|m| (m.name.as_str(), m.kind)).collect();
+        let listed: Vec<(&str, ModuleKind)> = project
+            .modules
+            .iter()
+            .map(|m| (m.name.as_str(), m.kind))
+            .collect();
         assert_eq!(
             listed,
             [
@@ -503,11 +625,29 @@ mod tests {
         // The code is what was given; the stored source has the hidden
         // lines before it.
         assert_eq!(project.modules[2].code(), MODULE);
-        assert!(project.modules[2].source.starts_with("Attribute VB_Name = \"Module1\"\n"));
-        assert_eq!(project.modules[3].code(), "Public Name As String\n\nPublic Sub Reset()\nEnd Sub\n");
+        assert!(
+            project.modules[2]
+                .source
+                .starts_with("Attribute VB_Name = \"Module1\"\n")
+        );
+        assert_eq!(
+            project.modules[3].code(),
+            "Public Name As String\n\nPublic Sub Reset()\nEnd Sub\n"
+        );
         assert!(project.modules[3].source.starts_with("VERSION 1.0 CLASS\n"));
-        let macros: Vec<(String, usize)> = project.macros().into_iter().map(|m| (m.name, m.module)).collect();
-        assert_eq!(macros, [("Macro1".to_string(), 2), ("Sheet1.Refresh".to_string(), 1), ("Total_2".to_string(), 2)]);
+        let macros: Vec<(String, usize)> = project
+            .macros()
+            .into_iter()
+            .map(|m| (m.name, m.module))
+            .collect();
+        assert_eq!(
+            macros,
+            [
+                ("Macro1".to_string(), 2),
+                ("Sheet1.Refresh".to_string(), 1),
+                ("Total_2".to_string(), 2)
+            ]
+        );
     }
 
     #[test]
@@ -520,7 +660,11 @@ mod tests {
         let code = "Sub A\nEnd Sub\nsub b()\nEnd Sub\nPublic Static Sub C()\nEnd Sub\nFriend Sub D()\nEnd Sub\n' Sub E()\nSub F(Optional x)\nEnd Sub\nSub G( _\n)\nEnd Sub\nx = \"Sub H()\"\nSub I() ' Sub J()\nEnd Sub\n";
         assert_eq!(module(code).macros(), ["A", "b", "C", "G", "I"]);
         // A private module shows none of its macros.
-        assert!(module("Option Private Module\nSub A()\nEnd Sub\n").macros().is_empty());
+        assert!(
+            module("Option Private Module\nSub A()\nEnd Sub\n")
+                .macros()
+                .is_empty()
+        );
         let class = Module {
             kind: ModuleKind::Class,
             ..module("Sub A()\nEnd Sub\n")
@@ -530,10 +674,16 @@ mod tests {
 
     #[test]
     fn text_is_decoded_in_the_page_of_the_project() {
-        assert_eq!(decode(&[0x43, 0x61, 0x66, 0xE9, 0x80, 0x99], 1252), "Café€™");
+        assert_eq!(
+            decode(&[0x43, 0x61, 0x66, 0xE9, 0x80, 0x99], 1252),
+            "Café€™"
+        );
         assert_eq!(decode(&[0x43, 0x61, 0x66, 0x8E, 0xDB], 10000), "Café€");
         assert_eq!(decode("né".as_bytes(), 65001), "né");
-        assert_eq!(encode_1252("Café€™ ✓"), [0x43, 0x61, 0x66, 0xE9, 0x80, 0x99, 0x20, b'?']);
+        assert_eq!(
+            encode_1252("Café€™ ✓"),
+            [0x43, 0x61, 0x66, 0xE9, 0x80, 0x99, 0x20, b'?']
+        );
     }
 
     #[test]
@@ -556,19 +706,42 @@ mod tests {
     /// itself wrote. It is read where it is, when it is there.
     #[test]
     fn a_project_written_by_excel_is_read() {
-        let path = "/Applications/Microsoft Excel.app/Contents/Resources/en.lproj/Add-Ins/Solver.xlam";
+        let path =
+            "/Applications/Microsoft Excel.app/Contents/Resources/en.lproj/Add-Ins/Solver.xlam";
         let Ok(file) = std::fs::File::open(path) else {
             return;
         };
         let mut zip = zip::ZipArchive::new(file).expect("a package");
         let mut bytes = Vec::new();
-        std::io::Read::read_to_end(&mut zip.by_name("xl/vbaProject.bin").expect("a project"), &mut bytes).unwrap();
+        std::io::Read::read_to_end(
+            &mut zip.by_name("xl/vbaProject.bin").expect("a project"),
+            &mut bytes,
+        )
+        .unwrap();
         let project = read_project(&bytes).expect("Excel's own project");
-        assert!(project.modules.len() > 3, "{:?}", project.modules.iter().map(|m| &m.name).collect::<Vec<_>>());
-        assert!(project.modules.iter().any(|m| m.name == "ThisWorkbook" && m.kind == ModuleKind::Document));
+        assert!(
+            project.modules.len() > 3,
+            "{:?}",
+            project.modules.iter().map(|m| &m.name).collect::<Vec<_>>()
+        );
+        assert!(
+            project
+                .modules
+                .iter()
+                .any(|m| m.name == "ThisWorkbook" && m.kind == ModuleKind::Document)
+        );
         for module in &project.modules {
-            assert!(module.source.contains("Attribute VB_Name"), "{}", module.name);
+            assert!(
+                module.source.contains("Attribute VB_Name"),
+                "{}",
+                module.name
+            );
         }
-        assert!(project.modules.iter().any(|m| m.kind == ModuleKind::Standard && m.code().contains("Sub ")));
+        assert!(
+            project
+                .modules
+                .iter()
+                .any(|m| m.kind == ModuleKind::Standard && m.code().contains("Sub "))
+        );
     }
 }

@@ -2,7 +2,9 @@
 //! Layout, Change Colors, Chart Styles, and the two lists opened by the
 //! buttons that float beside a selected chart.
 
-use super::elements::{add_data_labels, add_trendline, axis_of, has_axis, series_name, takes_trendlines, target_series};
+use super::elements::{
+    add_data_labels, add_trendline, axis_of, has_axis, series_name, takes_trendlines, target_series,
+};
 use super::gallery::{Gallery, Item, Picture, Section};
 use super::{Cmd, insert};
 use crate::app::{ExcelApp, MenuEntry};
@@ -12,10 +14,13 @@ use crate::ribbon::{group, row};
 use crate::shell::Modal;
 use crate::theme::{self, c};
 use crate::widgets::{self, Checkbox, ListBox};
-use gpui::{AnyElement, Context, Entity, FontWeight, Render, SharedString, WeakEntity, Window, div, prelude::*, px};
+use gpui::{
+    AnyElement, Context, Entity, FontWeight, Render, SharedString, WeakEntity, Window, div,
+    prelude::*, px,
+};
 use opensheet_engine::chart::{
-    Axes, Chart, ChartTitle, DataLabels, DataTable, ErrorAmount, ErrorBars, ErrorDirection, Family, Fill, LabelPosition,
-    LegendPos, Line, ShapeFormat, TrendKind, Trendline,
+    Axes, Chart, ChartTitle, DataLabels, DataTable, ErrorAmount, ErrorBars, ErrorDirection, Family,
+    Fill, LabelPosition, LegendPos, Line, ShapeFormat, TrendKind, Trendline,
 };
 use opensheet_engine::chart_layout::{AxisId, ChartElement};
 use opensheet_engine::style::Color;
@@ -48,10 +53,19 @@ pub(super) fn design_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
             ]),
         )
         .into_any_element(),
-        group(t("Type", "Type"), row(vec![app.cmd_large("ch-type", Cmd::ChangeType, false, cx)])).into_any_element(),
+        group(
+            t("Type", "Type"),
+            row(vec![app.cmd_large("ch-type", Cmd::ChangeType, false, cx)]),
+        )
+        .into_any_element(),
         group(
             t("Location", "Emplacement"),
-            row(vec![app.cmd_large("ch-move", chart_format::Cmd::MoveChart, false, cx)]),
+            row(vec![app.cmd_large(
+                "ch-move",
+                chart_format::Cmd::MoveChart,
+                false,
+                cx,
+            )]),
         )
         .border_r_0()
         .into_any_element(),
@@ -61,27 +75,51 @@ pub(super) fn design_tab(app: &mut ExcelApp, cx: &mut Cx) -> Vec<AnyElement> {
 // --------------------------------------------------------- Add Chart Element
 
 /// A menu entry that changes the selected chart.
-fn edit(label: impl Into<SharedString>, undo: &'static str, f: impl Fn(&mut Chart) + 'static) -> MenuEntry {
+fn edit(
+    label: impl Into<SharedString>,
+    undo: &'static str,
+    f: impl Fn(&mut Chart) + 'static,
+) -> MenuEntry {
     MenuEntry::new(label, move |a, _, cx| a.edit_chart(undo, cx, |c| f(c)))
 }
 
 /// "More … Options…": select an element and open its pane.
 fn more(label: &'static str, element: ChartElement) -> MenuEntry {
     MenuEntry::new(label, move |a, window, cx| {
-        let present = a.selected_chart().is_some_and(|c| super::elements::exists(c, element));
-        a.select_chart_element(if present { element } else { ChartElement::ChartArea }, cx);
+        let present = a
+            .selected_chart()
+            .is_some_and(|c| super::elements::exists(c, element));
+        a.select_chart_element(
+            if present {
+                element
+            } else {
+                ChartElement::ChartArea
+            },
+            cx,
+        );
         chart_format::open_pane(a, window, cx);
     })
 }
 
 /// The label positions Excel offers for a kind of chart, with their names.
 pub(crate) fn label_positions(chart: &Chart) -> Vec<(LabelPosition, &'static str)> {
-    let center = (LabelPosition::Center, crate::i18n::t_ctx("label", "Center", "Centre"));
+    let center = (
+        LabelPosition::Center,
+        crate::i18n::t_ctx("label", "Center", "Centre"),
+    );
     let inside_end = (LabelPosition::InsideEnd, t("Inside End", "Bord intérieur"));
-    let inside_base = (LabelPosition::InsideBase, t("Inside Base", "Intérieur base"));
-    let outside_end = (LabelPosition::OutsideEnd, t("Outside End", "Bord extérieur"));
+    let inside_base = (
+        LabelPosition::InsideBase,
+        t("Inside Base", "Intérieur base"),
+    );
+    let outside_end = (
+        LabelPosition::OutsideEnd,
+        t("Outside End", "Bord extérieur"),
+    );
     match chart.kind.family() {
-        Family::Column | Family::Bar if chart.kind.is_stacked() || chart.kind.is_3d() => vec![center, inside_end, inside_base],
+        Family::Column | Family::Bar if chart.kind.is_stacked() || chart.kind.is_3d() => {
+            vec![center, inside_end, inside_base]
+        }
         Family::Column | Family::Bar => vec![center, inside_end, inside_base, outside_end],
         Family::Line | Family::Scatter | Family::Bubble | Family::Radar => vec![
             center,
@@ -90,7 +128,12 @@ pub(crate) fn label_positions(chart: &Chart) -> Vec<(LabelPosition, &'static str
             (LabelPosition::Above, t("Above", "Au-dessus")),
             (LabelPosition::Below, t("Below", "En dessous")),
         ],
-        Family::Pie => vec![center, inside_end, outside_end, (LabelPosition::BestFit, t("Best Fit", "Ajuster"))],
+        Family::Pie => vec![
+            center,
+            inside_end,
+            outside_end,
+            (LabelPosition::BestFit, t("Best Fit", "Ajuster")),
+        ],
         Family::Area | Family::Doughnut => Vec::new(),
     }
 }
@@ -129,7 +172,9 @@ fn add_trend(app: &mut ExcelApp, trend: Trendline, window: &mut Window, cx: &mut
         Some(series) => add_trend_to(app, series, trend, cx),
         None => {
             let data = app.wb.chart_data(app.sheet, chart);
-            let names: Vec<SharedString> = (0..chart.series.len()).map(|i| series_name(&data, i).into()).collect();
+            let names: Vec<SharedString> = (0..chart.series.len())
+                .map(|i| series_name(&data, i).into())
+                .collect();
             app.open_modal(window, cx, move |modal, _, _| PickSeries {
                 modal,
                 names,
@@ -143,11 +188,19 @@ fn add_trend(app: &mut ExcelApp, trend: Trendline, window: &mut Window, cx: &mut
 fn add_trend_to(app: &mut ExcelApp, series: usize, trend: Trendline, cx: &mut Cx) {
     add_trendline(app, series, trend.kind, cx);
     if trend.forward != 0.0 {
-        app.edit_chart(t("Add Trendline", "Ajouter une courbe de tendance"), cx, move |c| {
-            if let Some(last) = c.series.get_mut(series).and_then(|s| s.trendlines.last_mut()) {
-                last.forward = trend.forward;
-            }
-        });
+        app.edit_chart(
+            t("Add Trendline", "Ajouter une courbe de tendance"),
+            cx,
+            move |c| {
+                if let Some(last) = c
+                    .series
+                    .get_mut(series)
+                    .and_then(|s| s.trendlines.last_mut())
+                {
+                    last.forward = trend.forward;
+                }
+            },
+        );
     }
 }
 
@@ -163,32 +216,36 @@ impl PickSeries {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         let (series, trend) = (self.selected, self.trend.clone());
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| add_trend_to(app, series, trend, cx));
+        self.modal
+            .update_app(cx, |app, cx| add_trend_to(app, series, trend, cx));
     }
 }
 
 impl Render for PickSeries {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        widgets::dialog(&self.modal, t("Add Trendline", "Ajouter une courbe de tendance"))
-            .width(300.0)
-            .on_ok(cx.listener(Self::ok))
-            .child(widgets::label(t(
-                "Add a Trendline based on Series:",
-                "Ajouter une courbe de tendance en fonction des séries :",
-            )))
-            .child(
-                ListBox::new("series", self.names.clone(), Some(self.selected))
-                    .height(140.0)
-                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                        this.selected = *ix;
-                        cx.notify();
-                    }))
-                    .on_activate(cx.listener(|this, ix: &usize, window, cx| {
-                        this.selected = *ix;
-                        this.ok(&(), window, cx);
-                    })),
-            )
-            .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
+        widgets::dialog(
+            &self.modal,
+            t("Add Trendline", "Ajouter une courbe de tendance"),
+        )
+        .width(300.0)
+        .on_ok(cx.listener(Self::ok))
+        .child(widgets::label(t(
+            "Add a Trendline based on Series:",
+            "Ajouter une courbe de tendance en fonction des séries :",
+        )))
+        .child(
+            ListBox::new("series", self.names.clone(), Some(self.selected))
+                .height(140.0)
+                .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                    this.selected = *ix;
+                    cx.notify();
+                }))
+                .on_activate(cx.listener(|this, ix: &usize, window, cx| {
+                    this.selected = *ix;
+                    this.ok(&(), window, cx);
+                })),
+        )
+        .footer(widgets::ok_cancel(&self.modal, cx.listener(Self::ok)))
     }
 }
 
@@ -203,56 +260,97 @@ pub(super) fn add_element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
     let secondary = chart.has_secondary_axis();
     // The four axes by where they stand, as the submenus name them.
     let mut places: Vec<(AxisId, &'static str)> = vec![
-        (axis_of(chart, true, false), t("Primary Horizontal", "Horizontal principal")),
-        (axis_of(chart, false, false), t("Primary Vertical", "Vertical principal")),
+        (
+            axis_of(chart, true, false),
+            t("Primary Horizontal", "Horizontal principal"),
+        ),
+        (
+            axis_of(chart, false, false),
+            t("Primary Vertical", "Vertical principal"),
+        ),
     ];
     if secondary {
-        places.push((axis_of(chart, true, true), t("Secondary Horizontal", "Horizontal secondaire")));
-        places.push((axis_of(chart, false, true), t("Secondary Vertical", "Vertical secondaire")));
+        places.push((
+            axis_of(chart, true, true),
+            t("Secondary Horizontal", "Horizontal secondaire"),
+        ));
+        places.push((
+            axis_of(chart, false, true),
+            t("Secondary Vertical", "Vertical secondaire"),
+        ));
     }
 
     let mut axes: Vec<MenuEntry> = places
         .iter()
         .map(|&(axis, label)| {
             let on = axis.of(&chart.axes).visible;
-            edit(label, t("Axes", "Axes"), move |c| axis.of_mut(&mut c.axes).visible = !on).checked(on)
+            edit(label, t("Axes", "Axes"), move |c| {
+                axis.of_mut(&mut c.axes).visible = !on
+            })
+            .checked(on)
         })
         .collect();
     axes.push(MenuEntry::separator());
-    axes.push(more(t("More Axis Options…", "Autres options de l'axe…"), ChartElement::Axis(places[0].0)));
+    axes.push(more(
+        t("More Axis Options…", "Autres options de l'axe…"),
+        ChartElement::Axis(places[0].0),
+    ));
 
     let mut titles: Vec<MenuEntry> = places
         .iter()
         .map(|&(axis, label)| {
             let on = axis.of(&chart.axes).title.is_some();
             edit(label, t("Axis Titles", "Titres des axes"), move |c| {
-                axis.of_mut(&mut c.axes).title = (!on).then(|| t("Axis Title", "Titre de l'axe").to_string())
+                axis.of_mut(&mut c.axes).title =
+                    (!on).then(|| t("Axis Title", "Titre de l'axe").to_string())
             })
             .checked(on)
         })
         .collect();
     titles.push(MenuEntry::separator());
-    titles.push(more(t("More Axis Title Options…", "Autres options de titre de l'axe…"), ChartElement::AxisTitle(places[0].0)));
+    titles.push(more(
+        t(
+            "More Axis Title Options…",
+            "Autres options de titre de l'axe…",
+        ),
+        ChartElement::AxisTitle(places[0].0),
+    ));
 
     let titled = chart.title != ChartTitle::None;
     let title = vec![
-        edit(t("None", "Aucun"), t("Chart Title", "Titre du graphique"), |c| c.title = ChartTitle::None).checked(!titled),
-        edit(t("Above Chart", "Au-dessus du graphique"), t("Chart Title", "Titre du graphique"), |c| {
-            if c.title == ChartTitle::None {
-                c.title = ChartTitle::Auto;
-            }
-            c.title_overlay = false;
-        })
+        edit(
+            t("None", "Aucun"),
+            t("Chart Title", "Titre du graphique"),
+            |c| c.title = ChartTitle::None,
+        )
+        .checked(!titled),
+        edit(
+            t("Above Chart", "Au-dessus du graphique"),
+            t("Chart Title", "Titre du graphique"),
+            |c| {
+                if c.title == ChartTitle::None {
+                    c.title = ChartTitle::Auto;
+                }
+                c.title_overlay = false;
+            },
+        )
         .checked(titled && !chart.title_overlay),
-        edit(t("Centered Overlay", "Superposé centré"), t("Chart Title", "Titre du graphique"), |c| {
-            if c.title == ChartTitle::None {
-                c.title = ChartTitle::Auto;
-            }
-            c.title_overlay = true;
-        })
+        edit(
+            t("Centered Overlay", "Superposé centré"),
+            t("Chart Title", "Titre du graphique"),
+            |c| {
+                if c.title == ChartTitle::None {
+                    c.title = ChartTitle::Auto;
+                }
+                c.title_overlay = true;
+            },
+        )
         .checked(titled && chart.title_overlay),
         MenuEntry::separator(),
-        more(t("More Title Options…", "Autres options de titre…"), ChartElement::Title),
+        more(
+            t("More Title Options…", "Autres options de titre…"),
+            ChartElement::Title,
+        ),
     ];
 
     // Data labels: of the selected series, else of all of them.
@@ -278,14 +376,24 @@ pub(super) fn add_element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
     ];
     let positions = label_positions(chart);
     if positions.is_empty() {
-        labels.push(edit(t("Show", "Afficher"), undo_labels, move |c| add_data_labels(c, series)).checked(shown.is_some()));
+        labels.push(
+            edit(t("Show", "Afficher"), undo_labels, move |c| {
+                add_data_labels(c, series)
+            })
+            .checked(shown.is_some()),
+        );
     }
     for (position, name) in positions {
         labels.push(
             edit(name, undo_labels, move |c| {
                 add_data_labels(c, series);
                 match series {
-                    Some(s) => c.series[s].labels.get_or_insert_with(DataLabels::default).position = position,
+                    Some(s) => {
+                        c.series[s]
+                            .labels
+                            .get_or_insert_with(DataLabels::default)
+                            .position = position
+                    }
                     None => c.label_options.position = position,
                 }
             })
@@ -293,31 +401,53 @@ pub(super) fn add_element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
         );
     }
     labels.push(MenuEntry::separator());
-    let first_labelled = chart.series.iter().position(|s| chart.labels_for(s).is_some()).unwrap_or(0);
+    let first_labelled = chart
+        .series
+        .iter()
+        .position(|s| chart.labels_for(s).is_some())
+        .unwrap_or(0);
     labels.push(more(
-        t("More Data Label Options…", "Autres options d'étiquettes de données…"),
+        t(
+            "More Data Label Options…",
+            "Autres options d'étiquettes de données…",
+        ),
         ChartElement::DataLabels(series.unwrap_or(first_labelled) as u32),
     ));
 
     let undo_table = t("Data Table", "Table de données");
     let table = vec![
-        edit(t("None", "Aucun"), undo_table, |c| c.data_table = None).checked(chart.data_table.is_none()),
-        edit(t("With Legend Keys", "Avec symboles de légende"), undo_table, |c| {
-            c.data_table = Some(DataTable {
-                legend_keys: true,
-                ..c.data_table.unwrap_or_default()
-            })
-        })
+        edit(t("None", "Aucun"), undo_table, |c| c.data_table = None)
+            .checked(chart.data_table.is_none()),
+        edit(
+            t("With Legend Keys", "Avec symboles de légende"),
+            undo_table,
+            |c| {
+                c.data_table = Some(DataTable {
+                    legend_keys: true,
+                    ..c.data_table.unwrap_or_default()
+                })
+            },
+        )
         .checked(chart.data_table.is_some_and(|d| d.legend_keys)),
-        edit(t("No Legend Keys", "Aucun symbole de légende"), undo_table, |c| {
-            c.data_table = Some(DataTable {
-                legend_keys: false,
-                ..c.data_table.unwrap_or_default()
-            })
-        })
+        edit(
+            t("No Legend Keys", "Aucun symbole de légende"),
+            undo_table,
+            |c| {
+                c.data_table = Some(DataTable {
+                    legend_keys: false,
+                    ..c.data_table.unwrap_or_default()
+                })
+            },
+        )
         .checked(chart.data_table.is_some_and(|d| !d.legend_keys)),
         MenuEntry::separator(),
-        more(t("More Data Table Options…", "Autres options de table de données…"), ChartElement::DataTable),
+        more(
+            t(
+                "More Data Table Options…",
+                "Autres options de table de données…",
+            ),
+            ChartElement::DataTable,
+        ),
     ];
 
     let undo_bars = t("Error Bars", "Barres d'erreur");
@@ -326,22 +456,38 @@ pub(super) fn add_element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
         None => chart.series.iter().find_map(|s| s.error_bars.first()),
     };
     let amount = barred.map(|b| b.amount);
-    let first_barred = chart.series.iter().position(|s| !s.error_bars.is_empty()).unwrap_or(0);
+    let first_barred = chart
+        .series
+        .iter()
+        .position(|s| !s.error_bars.is_empty())
+        .unwrap_or(0);
     let errors = vec![
-        edit(t("None", "Aucun"), undo_bars, move |c| set_error_bars(c, series, None)).checked(barred.is_none()),
-        edit(t("Standard Error", "Erreur standard"), undo_bars, move |c| set_error_bars(c, series, Some(ErrorAmount::StdErr)))
-            .checked(amount == Some(ErrorAmount::StdErr)),
+        edit(t("None", "Aucun"), undo_bars, move |c| {
+            set_error_bars(c, series, None)
+        })
+        .checked(barred.is_none()),
+        edit(
+            t("Standard Error", "Erreur standard"),
+            undo_bars,
+            move |c| set_error_bars(c, series, Some(ErrorAmount::StdErr)),
+        )
+        .checked(amount == Some(ErrorAmount::StdErr)),
         edit(t("Percentage", "Pourcentage"), undo_bars, move |c| {
             set_error_bars(c, series, Some(ErrorAmount::Percent(5.0)))
         })
         .checked(matches!(amount, Some(ErrorAmount::Percent(_)))),
-        edit(t("Standard Deviation", "Écart type"), undo_bars, move |c| {
-            set_error_bars(c, series, Some(ErrorAmount::StdDev(1.0)))
-        })
+        edit(
+            t("Standard Deviation", "Écart type"),
+            undo_bars,
+            move |c| set_error_bars(c, series, Some(ErrorAmount::StdDev(1.0))),
+        )
         .checked(matches!(amount, Some(ErrorAmount::StdDev(_)))),
         MenuEntry::separator(),
         more(
-            t("More Error Bars Options…", "Autres options de barres d'erreur…"),
+            t(
+                "More Error Bars Options…",
+                "Autres options de barres d'erreur…",
+            ),
             ChartElement::ErrorBars(series.unwrap_or(first_barred) as u32, 0),
         ),
     ];
@@ -350,20 +496,47 @@ pub(super) fn add_element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
     let (across, up) = (axis_of(chart, true, false), axis_of(chart, false, false));
     let undo_grid = t("Gridlines", "Quadrillage");
     let gridline = |axis: AxisId, major: bool, label: &'static str| {
-        let on = if major { axis.of(&chart.axes).major_gridlines } else { axis.of(&chart.axes).minor_gridlines };
+        let on = if major {
+            axis.of(&chart.axes).major_gridlines
+        } else {
+            axis.of(&chart.axes).minor_gridlines
+        };
         edit(label, undo_grid, move |c| {
             let axis = axis.of_mut(&mut c.axes);
-            if major { axis.major_gridlines = !on } else { axis.minor_gridlines = !on }
+            if major {
+                axis.major_gridlines = !on
+            } else {
+                axis.minor_gridlines = !on
+            }
         })
         .checked(on)
     };
     let gridlines = vec![
-        gridline(up, true, t("Primary Major Horizontal", "Horizontal majeur principal")),
-        gridline(across, true, t("Primary Major Vertical", "Vertical majeur principal")),
-        gridline(up, false, t("Primary Minor Horizontal", "Horizontal mineur principal")),
-        gridline(across, false, t("Primary Minor Vertical", "Vertical mineur principal")),
+        gridline(
+            up,
+            true,
+            t("Primary Major Horizontal", "Horizontal majeur principal"),
+        ),
+        gridline(
+            across,
+            true,
+            t("Primary Major Vertical", "Vertical majeur principal"),
+        ),
+        gridline(
+            up,
+            false,
+            t("Primary Minor Horizontal", "Horizontal mineur principal"),
+        ),
+        gridline(
+            across,
+            false,
+            t("Primary Minor Vertical", "Vertical mineur principal"),
+        ),
         MenuEntry::separator(),
-        more(t("More Gridline Options…", "Autres options de quadrillage…"), ChartElement::MajorGridlines(up)),
+        more(
+            t("More Gridline Options…", "Autres options de quadrillage…"),
+            ChartElement::MajorGridlines(up),
+        ),
     ];
 
     let mut legend: Vec<MenuEntry> = [
@@ -381,31 +554,48 @@ pub(super) fn add_element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
             c.legend = pos;
             c.legend_layout = None;
         };
-        edit(label, t("Legend", "Légende"), place).checked(chart.legend == pos && chart.legend_layout.is_none())
+        edit(label, t("Legend", "Légende"), place)
+            .checked(chart.legend == pos && chart.legend_layout.is_none())
     })
     .collect();
     legend.push(MenuEntry::separator());
-    legend.push(more(t("More Legend Options…", "Autres options de légende…"), ChartElement::Legend));
+    legend.push(more(
+        t("More Legend Options…", "Autres options de légende…"),
+        ChartElement::Legend,
+    ));
 
     let trended = match series {
         Some(s) => !chart.series[s].trendlines.is_empty(),
         None => chart.series.iter().any(|s| !s.trendlines.is_empty()),
     };
     let trend = |label: &'static str, line: Trendline| {
-        MenuEntry::new(label, move |a, window, cx| add_trend(a, line.clone(), window, cx))
-    };
-    let first_trended = chart.series.iter().position(|s| !s.trendlines.is_empty()).unwrap_or(0);
-    let trends = vec![
-        edit(t("None", "Aucun"), t("Trendline", "Courbe de tendance"), move |c| {
-            for (i, s) in c.series.iter_mut().enumerate() {
-                if series.is_none_or(|only| only == i) {
-                    s.trendlines.clear();
-                }
-            }
+        MenuEntry::new(label, move |a, window, cx| {
+            add_trend(a, line.clone(), window, cx)
         })
+    };
+    let first_trended = chart
+        .series
+        .iter()
+        .position(|s| !s.trendlines.is_empty())
+        .unwrap_or(0);
+    let trends = vec![
+        edit(
+            t("None", "Aucun"),
+            t("Trendline", "Courbe de tendance"),
+            move |c| {
+                for (i, s) in c.series.iter_mut().enumerate() {
+                    if series.is_none_or(|only| only == i) {
+                        s.trendlines.clear();
+                    }
+                }
+            },
+        )
         .checked(!trended),
         trend(t("Linear", "Linéaire"), Trendline::new(TrendKind::Linear)),
-        trend(t("Exponential", "Exponentielle"), Trendline::new(TrendKind::Exponential)),
+        trend(
+            t("Exponential", "Exponentielle"),
+            Trendline::new(TrendKind::Exponential),
+        ),
         trend(
             t("Linear Forecast", "Prévision linéaire"),
             Trendline {
@@ -413,31 +603,80 @@ pub(super) fn add_element_menu(app: &ExcelApp) -> Vec<MenuEntry> {
                 ..Trendline::new(TrendKind::Linear)
             },
         ),
-        trend(t("Moving Average", "Moyenne mobile"), Trendline::new(TrendKind::MovingAverage(2))),
+        trend(
+            t("Moving Average", "Moyenne mobile"),
+            Trendline::new(TrendKind::MovingAverage(2)),
+        ),
         MenuEntry::separator(),
         more(
-            t("More Trendline Options…", "Autres options de la courbe de tendance…"),
+            t(
+                "More Trendline Options…",
+                "Autres options de la courbe de tendance…",
+            ),
             ChartElement::Trendline(series.unwrap_or(first_trended) as u32, 0),
         ),
     ];
 
-    let sub = |label: &'static str, icon: &'static str, entries: Vec<MenuEntry>, available: bool| {
-        MenuEntry::submenu(label, entries).icon(icon).disabled(!available)
-    };
+    let sub =
+        |label: &'static str, icon: &'static str, entries: Vec<MenuEntry>, available: bool| {
+            MenuEntry::submenu(label, entries)
+                .icon(icon)
+                .disabled(!available)
+        };
     let flat = !chart.kind.is_3d();
     vec![
         sub(t("Axes", "Axes"), "charts-el-axes", axes, has_axes),
-        sub(t("Axis Titles", "Titres des axes"), "charts-el-axis-titles", titles, cartesian),
-        sub(t("Chart Title", "Titre du graphique"), "charts-el-title", title, true),
-        sub(t("Data Labels", "Étiquettes de données"), "charts-el-labels", labels, true),
-        sub(t("Data Table", "Table de données"), "charts-el-table", table, cartesian && !chart.kind.is_xy() && !chart.kind.is_horizontal() && flat),
-        sub(t("Error Bars", "Barres d'erreur"), "charts-el-error", errors, takes_trendlines(chart)),
-        sub(t("Gridlines", "Quadrillage"), "charts-el-grid", gridlines, has_axes),
+        sub(
+            t("Axis Titles", "Titres des axes"),
+            "charts-el-axis-titles",
+            titles,
+            cartesian,
+        ),
+        sub(
+            t("Chart Title", "Titre du graphique"),
+            "charts-el-title",
+            title,
+            true,
+        ),
+        sub(
+            t("Data Labels", "Étiquettes de données"),
+            "charts-el-labels",
+            labels,
+            true,
+        ),
+        sub(
+            t("Data Table", "Table de données"),
+            "charts-el-table",
+            table,
+            cartesian && !chart.kind.is_xy() && !chart.kind.is_horizontal() && flat,
+        ),
+        sub(
+            t("Error Bars", "Barres d'erreur"),
+            "charts-el-error",
+            errors,
+            takes_trendlines(chart),
+        ),
+        sub(
+            t("Gridlines", "Quadrillage"),
+            "charts-el-grid",
+            gridlines,
+            has_axes,
+        ),
         sub(t("Legend", "Légende"), "charts-el-legend", legend, true),
         // Drop lines, high-low lines and up/down bars are not in the model.
         sub(t("Lines", "Lignes"), "charts-el-lines", Vec::new(), false),
-        sub(t("Trendline", "Courbe de tendance"), "charts-el-trend", trends, takes_trendlines(chart)),
-        sub(t("Up/Down Bars", "Barres haut/bas"), "charts-el-updown", Vec::new(), false),
+        sub(
+            t("Trendline", "Courbe de tendance"),
+            "charts-el-trend",
+            trends,
+            takes_trendlines(chart),
+        ),
+        sub(
+            t("Up/Down Bars", "Barres haut/bas"),
+            "charts-el-updown",
+            Vec::new(),
+            false,
+        ),
     ]
 }
 
@@ -525,7 +764,10 @@ pub const QUICK_LAYOUTS: [QuickLayout; 11] = {
             gridlines: (false, false, false),
             ..BASE
         },
-        QuickLayout { title: false, ..BASE },
+        QuickLayout {
+            title: false,
+            ..BASE
+        },
     ]
 };
 
@@ -555,9 +797,15 @@ pub fn apply_quick_layout(chart: &mut Chart, layout: &QuickLayout) {
         };
     }
     let (across, up) = (axis_of(chart, true, false), axis_of(chart, false, false));
-    let table_fits = !chart.kind.is_round() && !chart.kind.is_xy() && !chart.kind.is_horizontal() && !chart.kind.is_3d();
+    let table_fits = !chart.kind.is_round()
+        && !chart.kind.is_xy()
+        && !chart.kind.is_horizontal()
+        && !chart.kind.is_3d();
     chart.data_table = (layout.table && table_fits).then(DataTable::default);
-    for (axis, wanted, major) in [(across, layout.axis_titles.0, layout.gridlines.1), (up, layout.axis_titles.1, layout.gridlines.0)] {
+    for (axis, wanted, major) in [
+        (across, layout.axis_titles.0, layout.gridlines.1),
+        (up, layout.axis_titles.1, layout.gridlines.0),
+    ] {
         let axis = axis.of_mut(&mut chart.axes);
         axis.title = match (axis.title.take(), wanted) {
             (_, false) => None,
@@ -595,7 +843,11 @@ pub(crate) fn open_quick_layouts(app: &mut ExcelApp, window: &mut Window, cx: &m
             Item::new(
                 Picture::Chart(Rc::new(picture), Rc::new(data.clone())),
                 super::elements::fill(t("Layout {0}", "Disposition {0}"), &[&(i + 1).to_string()]),
-                move |a, _, cx| a.edit_chart(t("Quick Layout", "Disposition rapide"), cx, |c| apply_quick_layout(c, &layout)),
+                move |a, _, cx| {
+                    a.edit_chart(t("Quick Layout", "Disposition rapide"), cx, |c| {
+                        apply_quick_layout(c, &layout)
+                    })
+                },
             )
         })
         .collect();
@@ -639,7 +891,14 @@ pub fn palette(index: usize, count: usize) -> Vec<Color> {
     // Later rounds of a colourful palette are lighter and darker variants.
     const ROUNDS: [f32; 6] = [0.0, 0.4, -0.25, 0.6, -0.5, 0.2];
     let colorful = |picks: &[usize]| -> Vec<Color> {
-        (0..count).map(|i| shade(accents[picks[i % picks.len()]], ROUNDS[(i / picks.len()) % ROUNDS.len()])).collect()
+        (0..count)
+            .map(|i| {
+                shade(
+                    accents[picks[i % picks.len()]],
+                    ROUNDS[(i / picks.len()) % ROUNDS.len()],
+                )
+            })
+            .collect()
     };
     match index {
         0 => colorful(&[0, 1, 2, 3, 4, 5]),
@@ -656,7 +915,11 @@ pub fn palette(index: usize, count: usize) -> Vec<Color> {
             };
             (0..count)
                 .map(|i| {
-                    let step = if count > 1 { i as f32 / (count - 1) as f32 } else { 0.4 };
+                    let step = if count > 1 {
+                        i as f32 / (count - 1) as f32
+                    } else {
+                        0.4
+                    };
                     let step = if reversed { 1.0 - step } else { step };
                     shade(base, -0.4 + step)
                 })
@@ -667,9 +930,15 @@ pub fn palette(index: usize, count: usize) -> Vec<Color> {
 
 pub fn palette_name(index: usize) -> String {
     if index < COLORFUL {
-        super::elements::fill(t("Colorful Palette {0}", "Palette de couleurs {0}"), &[&(index + 1).to_string()])
+        super::elements::fill(
+            t("Colorful Palette {0}", "Palette de couleurs {0}"),
+            &[&(index + 1).to_string()],
+        )
     } else {
-        super::elements::fill(t("Monochromatic Palette {0}", "Palette monochrome {0}"), &[&(index + 1 - COLORFUL).to_string()])
+        super::elements::fill(
+            t("Monochromatic Palette {0}", "Palette monochrome {0}"),
+            &[&(index + 1 - COLORFUL).to_string()],
+        )
     }
 }
 
@@ -703,9 +972,15 @@ fn color_sections(app: &ExcelApp) -> Vec<Section> {
         .and_then(|data| data.series.first().map(|s| s.values.len()))
         .unwrap_or(0);
     let item = |index: usize| {
-        Item::new(Picture::Colors(palette(index, 6)), palette_name(index), move |a, _, cx| {
-            a.edit_chart(t("Change Colors", "Modifier les couleurs"), cx, |c| apply_palette(c, index, points))
-        })
+        Item::new(
+            Picture::Colors(palette(index, 6)),
+            palette_name(index),
+            move |a, _, cx| {
+                a.edit_chart(t("Change Colors", "Modifier les couleurs"), cx, |c| {
+                    apply_palette(c, index, points)
+                })
+            },
+        )
     };
     vec![
         Section {
@@ -720,7 +995,9 @@ fn color_sections(app: &ExcelApp) -> Vec<Section> {
 }
 
 pub(crate) fn open_colors(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let gallery = Gallery::new(app, cx, color_sections(app)).thumb(132.0, 16.0, 1.0).columns(1);
+    let gallery = Gallery::new(app, cx, color_sections(app))
+        .thumb(132.0, 16.0, 1.0)
+        .columns(1);
     let view = cx.new(|_| gallery);
     let anchor = app.command_anchor;
     super::open_ribbon_view(app, anchor, view, window, cx);
@@ -827,7 +1104,11 @@ fn style_section(app: &ExcelApp) -> Option<Section> {
             Item::new(
                 Picture::Chart(Rc::new(picture), Rc::new(data.clone())),
                 super::elements::fill(t("Style {0}", "Style {0}"), &[&(index + 1).to_string()]),
-                move |a, _, cx| a.edit_chart(t("Chart Style", "Style du graphique"), cx, |c| apply_style(c, index)),
+                move |a, _, cx| {
+                    a.edit_chart(t("Chart Style", "Style du graphique"), cx, |c| {
+                        apply_style(c, index)
+                    })
+                },
             )
         })
         .collect();
@@ -839,7 +1120,9 @@ fn style_section(app: &ExcelApp) -> Option<Section> {
 
 pub(crate) fn open_styles(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
     let sections: Vec<Section> = style_section(app).into_iter().collect();
-    let gallery = Gallery::new(app, cx, sections).thumb(92.0, 62.0, 0.34).columns(4);
+    let gallery = Gallery::new(app, cx, sections)
+        .thumb(92.0, 62.0, 0.34)
+        .columns(4);
     let view = cx.new(|_| gallery);
     let anchor = app.command_anchor;
     super::open_ribbon_view(app, anchor, view, window, cx);
@@ -849,7 +1132,9 @@ pub(crate) fn open_styles(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) 
 pub(super) fn styles_flyout(app: &mut ExcelApp, cx: &mut Cx) -> Entity<Gallery> {
     let mut sections: Vec<Section> = style_section(app).into_iter().collect();
     sections.extend(color_sections(app));
-    let gallery = Gallery::new(app, cx, sections).thumb(74.0, 50.0, 0.3).columns(4);
+    let gallery = Gallery::new(app, cx, sections)
+        .thumb(74.0, 50.0, 0.3)
+        .columns(4);
     cx.new(|_| gallery)
 }
 
@@ -922,7 +1207,9 @@ impl Toggle {
             Toggle::DataLabels => chart.series.iter().any(|s| chart.labels_for(s).is_some()),
             Toggle::DataTable => chart.data_table.is_some(),
             Toggle::ErrorBars => chart.series.iter().any(|s| !s.error_bars.is_empty()),
-            Toggle::Gridlines => primary.iter().any(|a| a.of(&chart.axes).major_gridlines || a.of(&chart.axes).minor_gridlines),
+            Toggle::Gridlines => primary
+                .iter()
+                .any(|a| a.of(&chart.axes).major_gridlines || a.of(&chart.axes).minor_gridlines),
             Toggle::Legend => chart.legend != LegendPos::None,
             Toggle::Trendline => chart.series.iter().any(|s| !s.trendlines.is_empty()),
         }
@@ -933,13 +1220,22 @@ impl Toggle {
     pub fn set(self, chart: &mut Chart, on: bool, series: usize) {
         let primary = [AxisId::Category, AxisId::Value];
         match self {
-            Toggle::Axes => primary.iter().for_each(|a| a.of_mut(&mut chart.axes).visible = on),
+            Toggle::Axes => primary
+                .iter()
+                .for_each(|a| a.of_mut(&mut chart.axes).visible = on),
             Toggle::AxisTitles => {
                 for axis in primary {
-                    axis.of_mut(&mut chart.axes).title = on.then(|| t("Axis Title", "Titre de l'axe").to_string());
+                    axis.of_mut(&mut chart.axes).title =
+                        on.then(|| t("Axis Title", "Titre de l'axe").to_string());
                 }
             }
-            Toggle::Title => chart.title = if on { ChartTitle::Auto } else { ChartTitle::None },
+            Toggle::Title => {
+                chart.title = if on {
+                    ChartTitle::Auto
+                } else {
+                    ChartTitle::None
+                }
+            }
             Toggle::DataLabels if on => add_data_labels(chart, None),
             Toggle::DataLabels => {
                 chart.data_labels = false;
@@ -958,7 +1254,13 @@ impl Toggle {
                     axis.minor_gridlines = false;
                 }
             }
-            Toggle::Legend => chart.legend = if on { LegendPos::Right } else { LegendPos::None },
+            Toggle::Legend => {
+                chart.legend = if on {
+                    LegendPos::Right
+                } else {
+                    LegendPos::None
+                }
+            }
             Toggle::Trendline if on => {
                 if let Some(s) = chart.series.get_mut(series) {
                     s.trendlines.push(Trendline::new(TrendKind::Linear));
@@ -992,7 +1294,12 @@ impl Render for ElementsFlyout {
             .upgrade()
             .and_then(|app| {
                 let app = app.read(cx);
-                app.selected_chart().map(|chart| Toggle::available(chart).into_iter().map(|t| (t, t.is_on(chart))).collect())
+                app.selected_chart().map(|chart| {
+                    Toggle::available(chart)
+                        .into_iter()
+                        .map(|t| (t, t.is_on(chart)))
+                        .collect()
+                })
             })
             .unwrap_or_default();
         let app = self.app.clone();
@@ -1011,14 +1318,19 @@ impl Render for ElementsFlyout {
             )
             .children(rows.into_iter().map(|(toggle, on)| {
                 let app = app.clone();
-                Checkbox::new(("chart-element", toggle as usize), toggle.label(), on).on_change(move |on: &bool, _, cx| {
-                    let on = *on;
-                    app.update(cx, |app, cx| {
-                        let series = app.selected_chart().and_then(|c| target_series(c, app.chart_element())).unwrap_or(0);
-                        app.edit_chart(toggle.label(), cx, |c| toggle.set(c, on, series));
-                    })
-                    .ok();
-                })
+                Checkbox::new(("chart-element", toggle as usize), toggle.label(), on).on_change(
+                    move |on: &bool, _, cx| {
+                        let on = *on;
+                        app.update(cx, |app, cx| {
+                            let series = app
+                                .selected_chart()
+                                .and_then(|c| target_series(c, app.chart_element()))
+                                .unwrap_or(0);
+                            app.edit_chart(toggle.label(), cx, |c| toggle.set(c, on, series));
+                        })
+                        .ok();
+                    },
+                )
             }))
     }
 }
@@ -1026,13 +1338,15 @@ impl Render for ElementsFlyout {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use opensheet_engine::chart::PALETTE;
     use opensheet_engine::ast::RefExpr;
+    use opensheet_engine::chart::PALETTE;
     use opensheet_engine::chart::{ChartKind, Series};
 
     fn chart(kind: ChartKind, series: usize) -> Chart {
         let mut chart = Chart::new(kind);
-        chart.series = (0..series).map(|i| Series::new(RefExpr::cell(0, i as u32))).collect();
+        chart.series = (0..series)
+            .map(|i| Series::new(RefExpr::cell(0, i as u32)))
+            .collect();
         chart
     }
 
@@ -1043,7 +1357,11 @@ mod tests {
         assert_eq!(c.legend, LegendPos::Top);
         assert!(c.data_labels && !c.axes.value.visible && !c.axes.value.major_gridlines);
         apply_quick_layout(&mut c, &QUICK_LAYOUTS[4]);
-        assert!(c.data_table.is_some() && c.axes.value.title.is_some() && c.axes.category.title.is_none());
+        assert!(
+            c.data_table.is_some()
+                && c.axes.value.title.is_some()
+                && c.axes.category.title.is_none()
+        );
         assert!(c.axes.value.visible && c.axes.value.major_gridlines && !c.data_labels);
         apply_quick_layout(&mut c, &QUICK_LAYOUTS[7]);
         assert_eq!((c.gap_width, c.legend), (Some(0), LegendPos::None));
@@ -1062,8 +1380,14 @@ mod tests {
 
     #[test]
     fn palettes() {
-        assert_eq!(palette(0, 3), vec![Color(PALETTE[0]), Color(PALETTE[1]), Color(PALETTE[2])]);
-        assert_eq!(palette(1, 4)[..3], [Color(PALETTE[0]), Color(PALETTE[2]), Color(PALETTE[4])]);
+        assert_eq!(
+            palette(0, 3),
+            vec![Color(PALETTE[0]), Color(PALETTE[1]), Color(PALETTE[2])]
+        );
+        assert_eq!(
+            palette(1, 4)[..3],
+            [Color(PALETTE[0]), Color(PALETTE[2]), Color(PALETTE[4])]
+        );
         // Monochromatic: one accent from dark to light, or back.
         let mono = palette(COLORFUL, 3);
         assert!(mono[0].r() < mono[2].r() && mono[0].b() < mono[2].b());
@@ -1077,7 +1401,10 @@ mod tests {
         // A pie is coloured point by point.
         let mut pie = chart(ChartKind::Pie, 1);
         apply_palette(&mut pie, 1, 3);
-        assert_eq!(pie.series[0].point(2).and_then(|p| p.color), Some(Color(PALETTE[4])));
+        assert_eq!(
+            pie.series[0].point(2).and_then(|p| p.color),
+            Some(Color(PALETTE[4]))
+        );
         assert_eq!(pie.series[0].color, None);
     }
 
@@ -1097,7 +1424,10 @@ mod tests {
         Toggle::DataLabels.set(&mut c, true, 0);
         assert!(Toggle::DataLabels.is_on(&c));
         let pie = chart(ChartKind::Pie, 1);
-        assert_eq!(Toggle::available(&pie), [Toggle::Title, Toggle::DataLabels, Toggle::Legend]);
+        assert_eq!(
+            Toggle::available(&pie),
+            [Toggle::Title, Toggle::DataLabels, Toggle::Legend]
+        );
     }
 
     #[test]
@@ -1110,6 +1440,9 @@ mod tests {
         assert_eq!(c.series[0].line.color, Some(Color::WHITE));
         apply_style(&mut c, 0);
         assert_eq!(c.series[0].line, Line::default());
-        assert_eq!((c.gap_width, c.chart_area.clone()), (None, ShapeFormat::default()));
+        assert_eq!(
+            (c.gap_width, c.chart_area.clone()),
+            (None, ShapeFormat::default())
+        );
     }
 }

@@ -32,7 +32,11 @@ pub(super) struct Options {
 /// The image of a picture made again for `options`, the picture showing
 /// `size` pixels wide and high at 100 %: the new file, its crop, and
 /// its size in pixels. `None` when nothing would be gained.
-pub(super) fn compressed(picture: &Picture, size: (f32, f32), options: &Options) -> Option<(Vec<u8>, [f32; 4])> {
+pub(super) fn compressed(
+    picture: &Picture,
+    size: (f32, f32),
+    options: &Options,
+) -> Option<(Vec<u8>, [f32; 4])> {
     // A vector picture has no pixels to spare, and a picture of cells
     // is made again whenever they change.
     if picture.svg.is_some() || picture.link.is_some() {
@@ -52,8 +56,13 @@ pub(super) fn compressed(picture: &Picture, size: (f32, f32), options: &Options)
         let top = (inwards[1] * full_h as f32).round() as u32;
         let right = (inwards[2] * full_w as f32).round() as u32;
         let bottom = (inwards[3] * full_h as f32).round() as u32;
-        let (w, h) = (full_w.saturating_sub(left + right).max(1), full_h.saturating_sub(top + bottom).max(1));
-        pixels = image::imageops::crop_imm(&pixels, left.min(full_w - 1), top.min(full_h - 1), w, h).to_image();
+        let (w, h) = (
+            full_w.saturating_sub(left + right).max(1),
+            full_h.saturating_sub(top + bottom).max(1),
+        );
+        pixels =
+            image::imageops::crop_imm(&pixels, left.min(full_w - 1), top.min(full_h - 1), w, h)
+                .to_image();
         let (sx, sy) = (full_w as f32 / w as f32, full_h as f32 / h as f32);
         crop = [
             if crop[0] > 0.0 { 0.0 } else { crop[0] * sx },
@@ -67,12 +76,23 @@ pub(super) fn compressed(picture: &Picture, size: (f32, f32), options: &Options)
         // The frame shows the part of the image the crop keeps: the
         // whole image is that much larger than the frame.
         let kept = |a: f32, b: f32| (1.0 - a - b).clamp(0.05, 10.0);
-        let whole = (size.0 / kept(crop[0], crop[2]), size.1 / kept(crop[1], crop[3]));
+        let whole = (
+            size.0 / kept(crop[0], crop[2]),
+            size.1 / kept(crop[1], crop[3]),
+        );
         // A pixel of the sheet is a 96th of an inch.
-        let wanted = ((whole.0 / 96.0 * ppi).ceil().max(1.0) as u32, (whole.1 / 96.0 * ppi).ceil().max(1.0) as u32);
+        let wanted = (
+            (whole.0 / 96.0 * ppi).ceil().max(1.0) as u32,
+            (whole.1 / 96.0 * ppi).ceil().max(1.0) as u32,
+        );
         let (w, h) = pixels.dimensions();
         if wanted.0 < w && wanted.1 < h {
-            pixels = image::imageops::resize(&pixels, wanted.0, wanted.1, image::imageops::FilterType::Lanczos3);
+            pixels = image::imageops::resize(
+                &pixels,
+                wanted.0,
+                wanted.1,
+                image::imageops::FilterType::Lanczos3,
+            );
             changed = true;
         }
     }
@@ -84,7 +104,11 @@ pub(super) fn compressed(picture: &Picture, size: (f32, f32), options: &Options)
     for pixel in data.chunks_exact_mut(4) {
         pixel.swap(0, 2);
     }
-    let bitmap = Bitmap { width, height, data };
+    let bitmap = Bitmap {
+        width,
+        height,
+        data,
+    };
     // A photograph stays a JPEG; anything else may be transparent.
     let file = match picture.format {
         ImageFormat::Jpeg => picture::jpeg_of(&bitmap)?,
@@ -139,11 +163,20 @@ pub(super) fn compress(app: &mut ExcelApp, options: Options, cx: &mut Cx) -> (us
         }
     }
     let chosen = selected_ids(app);
-    let sheets = if options.selected_only { app.sheet..app.sheet + 1 } else { 0..app.wb.sheets.len() };
+    let sheets = if options.selected_only {
+        app.sheet..app.sheet + 1
+    } else {
+        0..app.wb.sheets.len()
+    };
     // A protected sheet keeps its pictures as they are.
     let targets: Vec<(usize, u32)> = sheets
         .filter(|sheet| *sheet == app.sheet || app.wb.sheets[*sheet].protection.is_none())
-        .flat_map(|sheet| app.wb.sheets[sheet].drawings.iter().map(move |drawing| (sheet, drawing.id)))
+        .flat_map(|sheet| {
+            app.wb.sheets[sheet]
+                .drawings
+                .iter()
+                .map(move |drawing| (sheet, drawing.id))
+        })
         .filter(|(_, id)| !options.selected_only || chosen.contains(id))
         .collect();
     if targets.iter().any(|(sheet, _)| *sheet == app.sheet) && !app.may_edit_selected_objects(cx) {
@@ -191,18 +224,39 @@ impl CompressDialog {
 impl Render for CompressDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let qualities = vec![
-            t("Best for printing (220 ppi)", "Optimale pour l'impression (220 ppp)").into(),
-            t("Best for viewing on screen (150 ppi)", "Optimale pour l'affichage à l'écran (150 ppp)").into(),
-            t("Best for sending in e-mail (96 ppi)", "Optimale pour l'envoi par courrier (96 ppp)").into(),
-            t("Keep current resolution", "Conserver la résolution actuelle").into(),
+            t(
+                "Best for printing (220 ppi)",
+                "Optimale pour l'impression (220 ppp)",
+            )
+            .into(),
+            t(
+                "Best for viewing on screen (150 ppi)",
+                "Optimale pour l'affichage à l'écran (150 ppp)",
+            )
+            .into(),
+            t(
+                "Best for sending in e-mail (96 ppi)",
+                "Optimale pour l'envoi par courrier (96 ppp)",
+            )
+            .into(),
+            t(
+                "Keep current resolution",
+                "Conserver la résolution actuelle",
+            )
+            .into(),
         ];
-        let quality = Select::new("compress-quality", qualities, Some(self.quality)).width(270.0).on_change(cx.listener(|this, choice: &usize, _, cx| {
-            this.quality = *choice;
-            cx.notify();
-        }));
+        let quality = Select::new("compress-quality", qualities, Some(self.quality))
+            .width(270.0)
+            .on_change(cx.listener(|this, choice: &usize, _, cx| {
+                this.quality = *choice;
+                cx.notify();
+            }));
         let delete = Checkbox::new(
             "compress-delete",
-            t("Delete cropped areas of pictures", "Supprimer les zones de rognage des images"),
+            t(
+                "Delete cropped areas of pictures",
+                "Supprimer les zones de rognage des images",
+            ),
             self.delete_cropped,
         )
         .on_change(cx.listener(|this, on: &bool, _, cx| {
@@ -212,8 +266,16 @@ impl Render for CompressDialog {
         let scope = RadioGroup::new(
             "compress-scope",
             vec![
-                t("All pictures in this file", "Toutes les images dans ce fichier").into(),
-                t("Selected pictures only", "Uniquement les images sélectionnées").into(),
+                t(
+                    "All pictures in this file",
+                    "Toutes les images dans ce fichier",
+                )
+                .into(),
+                t(
+                    "Selected pictures only",
+                    "Uniquement les images sélectionnées",
+                )
+                .into(),
             ],
             Some((self.selected_only && self.has_selection) as usize),
         )
@@ -230,7 +292,10 @@ impl Render for CompressDialog {
                     .flex()
                     .flex_col()
                     .gap(px(12.))
-                    .child(labeled(t("Picture Quality:", "Qualité de l'image :"), quality))
+                    .child(labeled(
+                        t("Picture Quality:", "Qualité de l'image :"),
+                        quality,
+                    ))
                     .child(delete)
                     .child(scope),
             )
@@ -239,7 +304,8 @@ impl Render for CompressDialog {
 }
 
 pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let has_selection = super::selected(app).is_some_and(|drawing| super::any_leaf(drawing, &super::is_picture));
+    let has_selection =
+        super::selected(app).is_some_and(|drawing| super::any_leaf(drawing, &super::is_picture));
     app.open_modal(window, cx, move |modal, _, _| CompressDialog {
         modal,
         quality: 0,

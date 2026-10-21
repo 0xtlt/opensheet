@@ -43,7 +43,10 @@ impl Command for Cmd {
     fn run(self, app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
         // The drop-down only opens: its entries come back here.
         if self == Cmd::AccessibilityMenu {
-            let entries = vec![MenuEntry::command(Cmd::CheckAccessibility, app), MenuEntry::command(drawings::Cmd::AltText, app)];
+            let entries = vec![
+                MenuEntry::command(Cmd::CheckAccessibility, app),
+                MenuEntry::command(drawings::Cmd::AltText, app),
+            ];
             app.open_command_menu(entries, 240.0, window, cx);
             return;
         }
@@ -85,11 +88,18 @@ actions!(proofing, [Spelling, Thesaurus]);
 /// F7 and ⇧F7, as in Excel.
 pub fn bind_keys(cx: &mut App) {
     let w = Some("Workbook");
-    cx.bind_keys([KeyBinding::new("f7", Spelling, w), KeyBinding::new("shift-f7", Thesaurus, w)]);
+    cx.bind_keys([
+        KeyBinding::new("f7", Spelling, w),
+        KeyBinding::new("shift-f7", Thesaurus, w),
+    ]);
 }
 
 /// Make the window answer the shortcuts of `bind_keys`.
 pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Stateful<gpui::Div> {
-    root.on_action(cx.listener(|app, _: &Spelling, window, cx| app.run_command(Cmd::Spelling, window, cx)))
-        .on_action(cx.listener(|app, _: &Thesaurus, window, cx| app.run_command(Cmd::Thesaurus, window, cx)))
+    root.on_action(
+        cx.listener(|app, _: &Spelling, window, cx| app.run_command(Cmd::Spelling, window, cx)),
+    )
+    .on_action(
+        cx.listener(|app, _: &Thesaurus, window, cx| app.run_command(Cmd::Thesaurus, window, cx)),
+    )
 }

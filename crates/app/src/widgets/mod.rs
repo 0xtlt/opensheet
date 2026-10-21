@@ -54,9 +54,10 @@ use crate::text_input::{self, Spin, TextInput};
 use crate::theme::{self, c};
 pub use crate::view::{icon, tooltip};
 use gpui::{
-    AnyElement, App, BorderStyle, Bounds, Context, DispatchPhase, ElementId, Entity, FocusHandle, Focusable, FontWeight,
-    Hsla, IntoElement, KeyBinding, KeyDownEvent, MouseButton, MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point,
-    RenderOnce, ScrollHandle, ScrollWheelEvent, SharedString, TextRun, Window, actions, anchored, canvas, deferred, div,
+    AnyElement, App, BorderStyle, Bounds, Context, DispatchPhase, ElementId, Entity, FocusHandle,
+    Focusable, FontWeight, Hsla, IntoElement, KeyBinding, KeyDownEvent, MouseButton,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, RenderOnce, ScrollHandle,
+    ScrollWheelEvent, SharedString, TextRun, Window, actions, anchored, canvas, deferred, div,
     fill, point, prelude::*, px, quad, relative, size,
 };
 use std::rc::Rc;
@@ -131,7 +132,12 @@ impl Tri {
 
 /// The keyboard focus of a widget, kept under its id. `tab_stop`: whether
 /// Tab stops on it (not when disabled).
-pub(crate) fn focus_of(id: &ElementId, tab_stop: bool, window: &mut Window, cx: &mut App) -> FocusHandle {
+pub(crate) fn focus_of(
+    id: &ElementId,
+    tab_stop: bool,
+    window: &mut Window,
+    cx: &mut App,
+) -> FocusHandle {
     window
         .use_keyed_state(id.clone(), cx, |_, cx| cx.focus_handle())
         .read(cx)
@@ -209,7 +215,12 @@ pub fn label(text: impl Into<SharedString>) -> gpui::Div {
 /// labeled(t("Decimal places:", "Nombre de décimales :"), NumberField::new("dec", &self.decimals).width(60.0))
 /// ```
 pub fn labeled(text: impl Into<SharedString>, control: impl IntoElement) -> gpui::Div {
-    div().flex().items_center().gap(px(8.)).child(label(text)).child(control)
+    div()
+        .flex()
+        .items_center()
+        .gap(px(8.))
+        .child(label(text))
+        .child(control)
 }
 
 /// A thin horizontal line.
@@ -258,7 +269,14 @@ impl RenderOnce for GroupBox {
                     .child(label(self.title).text_color(c(theme::TEXT_MUTED)))
                     .child(div().flex_1().h(px(1.)).bg(c(theme::BORDER))),
             )
-            .child(div().pl(px(10.)).flex().flex_col().gap(px(6.)).children(self.children))
+            .child(
+                div()
+                    .pl(px(10.))
+                    .flex()
+                    .flex_col()
+                    .gap(px(6.))
+                    .children(self.children),
+            )
     }
 }
 
@@ -511,12 +529,19 @@ impl RenderOnce for DialogFrame {
 /// ```ignore
 /// .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
 /// ```
-pub fn ok_cancel(modal: &Modal, on_ok: impl Fn(&(), &mut Window, &mut App) + 'static) -> impl IntoElement {
+pub fn ok_cancel(
+    modal: &Modal,
+    on_ok: impl Fn(&(), &mut Window, &mut App) + 'static,
+) -> impl IntoElement {
     let modal = modal.clone();
     div()
         .flex()
         .gap(px(8.))
-        .child(Button::new("dialog-ok", crate::i18n::t("OK", "OK")).primary().on_click(on_ok))
+        .child(
+            Button::new("dialog-ok", crate::i18n::t("OK", "OK"))
+                .primary()
+                .on_click(on_ok),
+        )
         .child(
             Button::new("dialog-cancel", crate::i18n::t("Cancel", "Annuler"))
                 .on_click(move |_, window, cx| modal.close(window, cx)),
@@ -593,7 +618,11 @@ impl RenderOnce for Button {
             .min_w(px(self.width.unwrap_or(76.0)))
             .rounded(px(4.))
             .border_1()
-            .border_color(c(if focused && !self.primary { theme::ACCENT } else { border }))
+            .border_color(c(if focused && !self.primary {
+                theme::ACCENT
+            } else {
+                border
+            }))
             .bg(c(bg))
             .text_color(c(fg))
             // Space presses the button that has the focus.
@@ -617,11 +646,27 @@ impl RenderOnce for Button {
                     .whitespace_nowrap()
                     // The focus shows as a line inside the button.
                     .when(focused, |d| {
-                        d.border_1().border_color(c(if self.primary { 0xFFFFFF } else { theme::ACCENT }))
+                        d.border_1().border_color(c(if self.primary {
+                            0xFFFFFF
+                        } else {
+                            theme::ACCENT
+                        }))
                     })
                     .when(!self.disabled, |d| {
-                        d.hover(|s| s.bg(c(if self.primary { theme::ACCENT_DARK } else { theme::HOVER })))
-                            .active(|s| s.bg(c(if self.primary { theme::ACCENT_DARK } else { theme::PRESSED })))
+                        d.hover(|s| {
+                            s.bg(c(if self.primary {
+                                theme::ACCENT_DARK
+                            } else {
+                                theme::HOVER
+                            }))
+                        })
+                        .active(|s| {
+                            s.bg(c(if self.primary {
+                                theme::ACCENT_DARK
+                            } else {
+                                theme::PRESSED
+                            }))
+                        })
                     })
                     .child(self.label)
                     .on_click(move |_, window, cx| {
@@ -653,7 +698,11 @@ pub struct Checkbox {
 }
 
 impl Checkbox {
-    pub fn new(id: impl Into<ElementId>, label: impl Into<SharedString>, state: impl Into<Tri>) -> Checkbox {
+    pub fn new(
+        id: impl Into<ElementId>,
+        label: impl Into<SharedString>,
+        state: impl Into<Tri>,
+    ) -> Checkbox {
         Checkbox {
             id: id.into(),
             label: label.into(),
@@ -685,19 +734,31 @@ impl Checkbox {
 /// The square of a check box (also used by lists and trees).
 pub(crate) fn check_mark(state: Tri, disabled: bool) -> gpui::Div {
     let on = state != Tri::Off;
-    let color = if disabled { theme::TEXT_DISABLED } else { theme::ACCENT };
+    let color = if disabled {
+        theme::TEXT_DISABLED
+    } else {
+        theme::ACCENT
+    };
     div()
         .size(px(14.))
         .flex_none()
         .rounded(px(3.))
         .border_1()
-        .border_color(c(if on { color } else if disabled { theme::TEXT_DISABLED } else { theme::TEXT_MUTED }))
+        .border_color(c(if on {
+            color
+        } else if disabled {
+            theme::TEXT_DISABLED
+        } else {
+            theme::TEXT_MUTED
+        }))
         .bg(c(if on { color } else { 0xFFFFFF }))
         .flex()
         .items_center()
         .justify_center()
         .when(state == Tri::On, |d| d.child(icon("check", 11.0, 0xFFFFFF)))
-        .when(state == Tri::Mixed, |d| d.child(div().w(px(8.)).h(px(2.)).bg(c(0xFFFFFF))))
+        .when(state == Tri::Mixed, |d| {
+            d.child(div().w(px(8.)).h(px(2.)).bg(c(0xFFFFFF)))
+        })
 }
 
 impl RenderOnce for Checkbox {
@@ -705,7 +766,8 @@ impl RenderOnce for Checkbox {
         let focus = focus_of(&self.id, !self.disabled, window, cx);
         let focused = focus.is_focused(window);
         let state = self.state;
-        let (on_change, on_change_tri, disabled) = (self.on_change, self.on_change_tri, self.disabled);
+        let (on_change, on_change_tri, disabled) =
+            (self.on_change, self.on_change_tri, self.disabled);
         let toggle: Rc<dyn Fn(&mut Window, &mut App)> = Rc::new(move |window, cx| {
             if disabled {
                 return;
@@ -745,7 +807,11 @@ impl RenderOnce for Checkbox {
                         div()
                             .px(px(2.))
                             .border_1()
-                            .border_color(if focused { c(theme::ACCENT) } else { gpui::transparent_black() })
+                            .border_color(if focused {
+                                c(theme::ACCENT)
+                            } else {
+                                gpui::transparent_black()
+                            })
                             .rounded(px(2.))
                             .whitespace_nowrap()
                             .when(disabled, |d| d.text_color(c(theme::TEXT_DISABLED)))
@@ -777,7 +843,11 @@ pub struct RadioGroup {
 }
 
 impl RadioGroup {
-    pub fn new(id: impl Into<ElementId>, options: Vec<SharedString>, selected: Option<usize>) -> RadioGroup {
+    pub fn new(
+        id: impl Into<ElementId>,
+        options: Vec<SharedString>,
+        selected: Option<usize>,
+    ) -> RadioGroup {
         RadioGroup {
             id: id.into(),
             options,
@@ -818,7 +888,11 @@ impl RenderOnce for RadioGroup {
         for (i, option) in self.options.into_iter().enumerate() {
             let on = selected == Some(i);
             let handler = handler.clone();
-            let color = if disabled { theme::TEXT_DISABLED } else { theme::ACCENT };
+            let color = if disabled {
+                theme::TEXT_DISABLED
+            } else {
+                theme::ACCENT
+            };
             items.push(
                 div()
                     .id(("radio", i))
@@ -837,7 +911,9 @@ impl RenderOnce for RadioGroup {
                             .flex()
                             .items_center()
                             .justify_center()
-                            .when(on, |d| d.child(div().size(px(8.)).rounded_full().bg(c(color)))),
+                            .when(on, |d| {
+                                d.child(div().size(px(8.)).rounded_full().bg(c(color)))
+                            }),
                     )
                     .child(
                         div()
@@ -876,7 +952,11 @@ impl RenderOnce for RadioGroup {
                 }
                 let next = match ev.keystroke.key.as_str() {
                     "down" | "right" => Some(selected.map(|s| (s + 1) % count).unwrap_or(0)),
-                    "up" | "left" => Some(selected.map(|s| (s + count - 1) % count).unwrap_or(count - 1)),
+                    "up" | "left" => Some(
+                        selected
+                            .map(|s| (s + count - 1) % count)
+                            .unwrap_or(count - 1),
+                    ),
                     "space" if selected.is_none() => Some(0),
                     _ => None,
                 };
@@ -943,13 +1023,20 @@ impl RenderOnce for TabStrip {
                     .items_center()
                     .rounded_t(px(4.))
                     .whitespace_nowrap()
-                    .when(on, |d| d.font_weight(FontWeight::SEMIBOLD).text_color(c(theme::ACCENT_DARK)))
+                    .when(on, |d| {
+                        d.font_weight(FontWeight::SEMIBOLD)
+                            .text_color(c(theme::ACCENT_DARK))
+                    })
                     .when(!on, |d| d.hover(|s| s.bg(c(theme::HOVER))))
                     .child(
                         div()
                             .px(px(2.))
                             .border_1()
-                            .border_color(if on && focused { c(theme::ACCENT) } else { gpui::transparent_black() })
+                            .border_color(if on && focused {
+                                c(theme::ACCENT)
+                            } else {
+                                gpui::transparent_black()
+                            })
                             .rounded(px(2.))
                             .child(name),
                     )
@@ -1025,7 +1112,13 @@ pub fn input<V: 'static>(cx: &mut Context<V>, text: impl Into<String>) -> Entity
 /// ```ignore
 /// let decimals = widgets::number_input(cx, Some(2.0), 0.0, 30.0, 1.0);
 /// ```
-pub fn number_input<V: 'static>(cx: &mut Context<V>, value: Option<f64>, min: f64, max: f64, step: f64) -> Entity<TextInput> {
+pub fn number_input<V: 'static>(
+    cx: &mut Context<V>,
+    value: Option<f64>,
+    min: f64,
+    max: f64,
+    step: f64,
+) -> Entity<TextInput> {
     let field = input(cx, "");
     let decimal_sep = crate::i18n::lang().locale().decimal_sep;
     field.update(cx, |field, cx| {
@@ -1118,7 +1211,13 @@ impl RenderOnce for TextField {
                 window.focus(&handle);
                 input.update(cx, |input, cx| input.caret_to_point(ev.position, cx));
             })
-            .child(div().flex_1().min_w(px(0.)).overflow_hidden().child(self.input))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w(px(0.))
+                    .overflow_hidden()
+                    .child(self.input),
+            )
             .children(self.trailing)
     }
 }
@@ -1162,21 +1261,22 @@ impl RenderOnce for NumberField {
     fn render(self, _: &mut Window, _: &mut App) -> impl IntoElement {
         // The two arrows fill the box, less its border.
         let arrow_height = (self.height - 2.0) / 2.0 - 1.0;
-        let arrow = |name: &'static str, icon_name: &'static str, steps: f64, input: Entity<TextInput>| {
-            div()
-                .id(name)
-                .w(px(14.))
-                .h(px(arrow_height))
-                .flex()
-                .items_center()
-                .justify_center()
-                .hover(|s| s.bg(c(theme::HOVER)))
-                .active(|s| s.bg(c(theme::PRESSED)))
-                .child(icon(icon_name, 8.0, theme::TEXT_MUTED))
-                // Stepping does not move the caret into the padding.
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .on_click(move |_, _, cx| input.update(cx, |input, cx| input.step(steps, cx)))
-        };
+        let arrow =
+            |name: &'static str, icon_name: &'static str, steps: f64, input: Entity<TextInput>| {
+                div()
+                    .id(name)
+                    .w(px(14.))
+                    .h(px(arrow_height))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .hover(|s| s.bg(c(theme::HOVER)))
+                    .active(|s| s.bg(c(theme::PRESSED)))
+                    .child(icon(icon_name, 8.0, theme::TEXT_MUTED))
+                    // Stepping does not move the caret into the padding.
+                    .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                    .on_click(move |_, _, cx| input.update(cx, |input, cx| input.step(steps, cx)))
+            };
         let spinner = div()
             .id(self.id)
             .flex_none()
@@ -1186,7 +1286,10 @@ impl RenderOnce for NumberField {
             .border_color(c(theme::BORDER))
             .child(arrow("up", "chevron-up", 1.0, self.input.clone()))
             .child(arrow("down", "chevron-down", -1.0, self.input.clone()));
-        TextField::new(&self.input).width(self.width).height(self.height).trailing(spinner)
+        TextField::new(&self.input)
+            .width(self.width)
+            .height(self.height)
+            .trailing(spinner)
     }
 }
 
@@ -1227,7 +1330,11 @@ impl RefEdit {
 }
 
 /// The button that shrinks a dialog to a range field and back.
-fn collapse_button(modal: &Modal, field: &Entity<TextInput>, window: &Window) -> impl IntoElement + use<> {
+fn collapse_button(
+    modal: &Modal,
+    field: &Entity<TextInput>,
+    window: &Window,
+) -> impl IntoElement + use<> {
     let view = window.current_view();
     let shared = modal.shared.clone();
     let collapsed = shared.collapsed.borrow().is_some();
@@ -1242,7 +1349,15 @@ fn collapse_button(modal: &Modal, field: &Entity<TextInput>, window: &Window) ->
         .justify_center()
         .rounded(px(2.))
         .hover(|s| s.bg(c(theme::HOVER)))
-        .child(icon(if collapsed { "chevron-down" } else { "chevron-up" }, 10.0, theme::ACCENT))
+        .child(icon(
+            if collapsed {
+                "chevron-down"
+            } else {
+                "chevron-up"
+            },
+            10.0,
+            theme::ACCENT,
+        ))
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .on_click(move |_, window, cx| {
             let mut collapsed = shared.collapsed.borrow_mut();
@@ -1258,7 +1373,8 @@ fn collapse_button(modal: &Modal, field: &Entity<TextInput>, window: &Window) ->
 
 impl RenderOnce for RefEdit {
     fn render(self, window: &mut Window, _: &mut App) -> impl IntoElement {
-        let mut text = TextField::new(&self.input).trailing(collapse_button(&self.modal, &self.input, window));
+        let mut text =
+            TextField::new(&self.input).trailing(collapse_button(&self.modal, &self.input, window));
         if let Some(width) = self.width {
             text = text.width(width);
         }
@@ -1278,7 +1394,10 @@ pub(crate) struct ScrollState {
 
 impl ScrollState {
     pub fn new() -> ScrollState {
-        ScrollState { top: 0.0, drag: None }
+        ScrollState {
+            top: 0.0,
+            drag: None,
+        }
     }
 
     /// Scroll as little as needed to show the rows `first..=last`.
@@ -1322,20 +1441,29 @@ pub(crate) fn virtual_rows(
                 .into_any_element(),
         );
     }
-    let mut list = div().relative().h(px(height)).overflow_hidden().children(rows).on_scroll_wheel({
-        let state = state.clone();
-        move |ev: &ScrollWheelEvent, _, cx| {
-            let delta = f32::from(ev.delta.pixel_delta(px(row_h)).y);
-            state.update(cx, |s, cx| {
-                s.top = (s.top - delta).clamp(0.0, max_top);
-                cx.notify();
-            });
-            cx.stop_propagation();
-        }
-    });
+    let mut list = div()
+        .relative()
+        .h(px(height))
+        .overflow_hidden()
+        .children(rows)
+        .on_scroll_wheel({
+            let state = state.clone();
+            move |ev: &ScrollWheelEvent, _, cx| {
+                let delta = f32::from(ev.delta.pixel_delta(px(row_h)).y);
+                state.update(cx, |s, cx| {
+                    s.top = (s.top - delta).clamp(0.0, max_top);
+                    cx.notify();
+                });
+                cx.stop_propagation();
+            }
+        });
     if scrollable {
         let thumb_h = (height / content * height).max(20.0);
-        let thumb_y = if max_top > 0.0 { top / max_top * (height - thumb_h) } else { 0.0 };
+        let thumb_y = if max_top > 0.0 {
+            top / max_top * (height - thumb_h)
+        } else {
+            0.0
+        };
         let grab = state.clone();
         let follow = state.clone();
         let release = state.clone();
@@ -1380,7 +1508,11 @@ pub(crate) fn virtual_rows(
                             .top(px(thumb_y))
                             .h(px(thumb_h))
                             .rounded(px(3.))
-                            .bg(c(if dragging.is_some() { 0x8A8A8A } else { 0xC1C1C1 }))
+                            .bg(c(if dragging.is_some() {
+                                0x8A8A8A
+                            } else {
+                                0xC1C1C1
+                            }))
                             .hover(|s| s.bg(c(0xA8A8A8)))
                             .on_mouse_down(MouseButton::Left, move |ev: &MouseDownEvent, _, cx| {
                                 grab.update(cx, |s, cx| {
@@ -1397,7 +1529,9 @@ pub(crate) fn virtual_rows(
                     follow.update(cx, |s, cx| {
                         if let Some((start_y, start_top)) = s.drag {
                             let travel = (height - thumb_h).max(1.0);
-                            s.top = (start_top + (f32::from(position.y) - start_y) / travel * max_top).clamp(0.0, max_top);
+                            s.top = (start_top
+                                + (f32::from(position.y) - start_y) / travel * max_top)
+                                .clamp(0.0, max_top);
                             cx.notify();
                         }
                     });
@@ -1475,7 +1609,10 @@ impl RenderOnce for ScrollArea {
                         let thumb_h = (height / (height + max) * height).max(20.0);
                         let y = offset / max * (height - thumb_h);
                         let origin = point(bounds.right() - px(8.), bounds.top() + px(y));
-                        window.paint_quad(fill(Bounds::new(origin, size(px(6.), px(thumb_h))), c(0xC1C1C1)).corner_radii(px(3.)));
+                        window.paint_quad(
+                            fill(Bounds::new(origin, size(px(6.), px(thumb_h))), c(0xC1C1C1))
+                                .corner_radii(px(3.)),
+                        );
                     },
                 )
                 // Pinned to the corner: left to its place in the flow, the
@@ -1516,13 +1653,21 @@ impl DropState {
     }
 
     pub fn just_closed(&self) -> bool {
-        self.closed_at.is_some_and(|at| at.elapsed() < Duration::from_millis(250))
+        self.closed_at
+            .is_some_and(|at| at.elapsed() < Duration::from_millis(250))
     }
 
     /// The option reached by typing `ch` (type-to-select), starting after
     /// `from`.
-    pub fn type_to_select(&mut self, ch: &str, options: &[SharedString], from: Option<usize>) -> Option<usize> {
-        let fresh = self.typed_at.is_none_or(|at| at.elapsed() > Duration::from_millis(800));
+    pub fn type_to_select(
+        &mut self,
+        ch: &str,
+        options: &[SharedString],
+        from: Option<usize>,
+    ) -> Option<usize> {
+        let fresh = self
+            .typed_at
+            .is_none_or(|at| at.elapsed() > Duration::from_millis(800));
         if fresh {
             self.typed.clear();
         }
@@ -1619,7 +1764,11 @@ pub struct Select {
 
 impl Select {
     /// `selected`: `None` shows an empty box (mixed selection).
-    pub fn new(id: impl Into<ElementId>, options: Vec<SharedString>, selected: Option<usize>) -> Select {
+    pub fn new(
+        id: impl Into<ElementId>,
+        options: Vec<SharedString>,
+        selected: Option<usize>,
+    ) -> Select {
         Select {
             id: id.into(),
             options,
@@ -1756,11 +1905,17 @@ impl RenderOnce for Select {
                     "space" if open => key_pick(cursor, window, cx),
                     "space" => key_toggle(cx),
                     _ => {
-                        let Some(ch) = ev.keystroke.key_char.as_deref().filter(|ch| !ch.trim().is_empty()) else {
+                        let Some(ch) = ev
+                            .keystroke
+                            .key_char
+                            .as_deref()
+                            .filter(|ch| !ch.trim().is_empty())
+                        else {
                             return;
                         };
                         let from = if open { Some(cursor) } else { selected };
-                        let found = key_state.update(cx, |s, _| s.type_to_select(ch, &key_options, from));
+                        let found =
+                            key_state.update(cx, |s, _| s.type_to_select(ch, &key_options, from));
                         match found {
                             Some(i) if open => {
                                 key_state.update(cx, |s, cx| {
@@ -1805,7 +1960,11 @@ impl RenderOnce for Select {
                     .gap(px(4.))
                     .pl(px(6.))
                     .pr(px(4.))
-                    .bg(c(if self.disabled { theme::CHROME_BG } else { 0xFFFFFF }))
+                    .bg(c(if self.disabled {
+                        theme::CHROME_BG
+                    } else {
+                        0xFFFFFF
+                    }))
                     .border_1()
                     .border_color(c(if focused { theme::ACCENT } else { FIELD_BORDER }))
                     .rounded(px(3.))
@@ -1841,7 +2000,11 @@ pub struct ComboBox {
 }
 
 impl ComboBox {
-    pub fn new(id: impl Into<ElementId>, input: &Entity<TextInput>, options: Vec<SharedString>) -> ComboBox {
+    pub fn new(
+        id: impl Into<ElementId>,
+        input: &Entity<TextInput>,
+        options: Vec<SharedString>,
+    ) -> ComboBox {
         ComboBox {
             id: id.into(),
             input: input.clone(),
@@ -1951,7 +2114,11 @@ impl RenderOnce for ComboBox {
                     return;
                 }
                 if open {
-                    let next = if down { (cursor + 1).min(count - 1) } else { cursor.saturating_sub(1) };
+                    let next = if down {
+                        (cursor + 1).min(count - 1)
+                    } else {
+                        cursor.saturating_sub(1)
+                    };
                     state.update(cx, |s, cx| {
                         s.cursor = next;
                         cx.notify();
@@ -1991,7 +2158,11 @@ impl RenderOnce for ComboBox {
                     cx.propagate();
                 }
             })
-            .child(TextField::new(&self.input).width(self.width).trailing(button))
+            .child(
+                TextField::new(&self.input)
+                    .width(self.width)
+                    .trailing(button),
+            )
             .children(panel)
     }
 }
@@ -2011,13 +2182,17 @@ pub struct Sketch<'a> {
 impl Sketch<'_> {
     fn bounds(&self, x0: f32, y0: f32, x1: f32, y1: f32) -> Bounds<Pixels> {
         Bounds::new(
-            point(self.origin.x + px(x0.min(x1)), self.origin.y + px(y0.min(y1))),
+            point(
+                self.origin.x + px(x0.min(x1)),
+                self.origin.y + px(y0.min(y1)),
+            ),
             size(px((x1 - x0).abs()), px((y1 - y0).abs())),
         )
     }
 
     pub fn rect(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, color: Hsla) {
-        self.items.push(Draw::Quad(fill(self.bounds(x0, y0, x1, y1), color)));
+        self.items
+            .push(Draw::Quad(fill(self.bounds(x0, y0, x1, y1), color)));
     }
 
     pub fn frame(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, width: f32, color: Hsla) {
@@ -2034,7 +2209,10 @@ impl Sketch<'_> {
     /// A straight line of any direction.
     pub fn line(&mut self, from: (f32, f32), to: (f32, f32), width: f32, color: Hsla) {
         let mut builder = gpui::PathBuilder::stroke(px(width));
-        builder.move_to(point(self.origin.x + px(from.0), self.origin.y + px(from.1)));
+        builder.move_to(point(
+            self.origin.x + px(from.0),
+            self.origin.y + px(from.1),
+        ));
         builder.line_to(point(self.origin.x + px(to.0), self.origin.y + px(to.1)));
         if let Ok(path) = builder.build() {
             self.items.push(Draw::Path(path, color));
@@ -2043,10 +2221,21 @@ impl Sketch<'_> {
 
     /// Width of a text in a font.
     pub fn measure(&self, text: &str, font: &gpui::Font, size: f32) -> f32 {
-        f32::from(self.shape(text, font, size, gpui::black(), false, false).width)
+        f32::from(
+            self.shape(text, font, size, gpui::black(), false, false)
+                .width,
+        )
     }
 
-    fn shape(&self, text: &str, font: &gpui::Font, size: f32, color: Hsla, underline: bool, strike: bool) -> gpui::ShapedLine {
+    fn shape(
+        &self,
+        text: &str,
+        font: &gpui::Font,
+        size: f32,
+        color: Hsla,
+        underline: bool,
+        strike: bool,
+    ) -> gpui::ShapedLine {
         let text: SharedString = text.replace(['\n', '\r'], " ").into();
         let run = TextRun {
             len: text.len(),
@@ -2063,7 +2252,9 @@ impl Sketch<'_> {
                 thickness: px(1.0),
             }),
         };
-        self.window.text_system().shape_line(text, px(size), &[run], None)
+        self.window
+            .text_system()
+            .shape_line(text, px(size), &[run], None)
     }
 
     /// Draw text with its top-left corner at (x, y), clipped to the box.
@@ -2071,7 +2262,17 @@ impl Sketch<'_> {
         self.styled_text(text, x, y, font, size, color, false, false);
     }
 
-    pub fn styled_text(&mut self, text: &str, x: f32, y: f32, font: &gpui::Font, size: f32, color: Hsla, underline: bool, strike: bool) {
+    pub fn styled_text(
+        &mut self,
+        text: &str,
+        x: f32,
+        y: f32,
+        font: &gpui::Font,
+        size: f32,
+        color: Hsla,
+        underline: bool,
+        strike: bool,
+    ) {
         let line = self.shape(text, font, size, color, underline, strike);
         let clip = self.bounds(0.0, 0.0, self.width, self.height);
         self.items.push(Draw::Text {
@@ -2105,7 +2306,14 @@ pub fn preview(width: f32, height: f32, draw: impl Fn(&mut Sketch) + 'static) ->
             };
             draw(&mut sketch);
             let items = sketch.items;
-            crate::grid::paint_layers(vec![Layer { clip: bounds, items }], window, cx);
+            crate::grid::paint_layers(
+                vec![Layer {
+                    clip: bounds,
+                    items,
+                }],
+                window,
+                cx,
+            );
         },
     )
     .w(px(width))

@@ -6,8 +6,8 @@
 use super::cartesian::{Shape, shapes};
 use super::scale::{Fit, Scale};
 use super::{
-    AXIS, AXIS_TITLE_POINTS, AxisId, ChartElement, LABEL_POINTS, GRIDLINE, Ink, Painter, Stroke, TEXT, TextAnchor, fmt_value, groups, label_text, line_height,
-    shade,
+    AXIS, AXIS_TITLE_POINTS, AxisId, ChartElement, GRIDLINE, Ink, LABEL_POINTS, Painter, Stroke,
+    TEXT, TextAnchor, fmt_value, groups, label_text, line_height, shade,
 };
 use crate::chart::{Family, TickLabels, View3D};
 use crate::style::Color;
@@ -70,7 +70,10 @@ impl Camera {
 
     /// The box of the projected corners: (left, bottom, width, height).
     fn extent(&self) -> (f32, f32, f32, f32) {
-        let (mut lo, mut hi) = ((f32::INFINITY, f32::INFINITY), (f32::NEG_INFINITY, f32::NEG_INFINITY));
+        let (mut lo, mut hi) = (
+            (f32::INFINITY, f32::INFINITY),
+            (f32::NEG_INFINITY, f32::NEG_INFINITY),
+        );
         for corner in 0..8 {
             let (x, y) = self.raw(
                 if corner & 1 == 0 { 0.0 } else { self.w },
@@ -167,7 +170,10 @@ impl Camera {
         cam.min = (x, y);
         cam.scale = (pw / bw).min(ph / bh);
         // Centred in the room that is left over.
-        cam.origin = (px0 + (pw - bw * cam.scale) / 2.0, py1 - (ph - bh * cam.scale) / 2.0);
+        cam.origin = (
+            px0 + (pw - bw * cam.scale) / 2.0,
+            py1 - (ph - bh * cam.scale) / 2.0,
+        );
         cam
     }
 
@@ -199,10 +205,30 @@ fn quad(p: &mut Painter, cam: &Camera, corners: [(f32, f32, f32); 4], color: Col
 fn paint_solid(p: &mut Painter, cam: &Camera, s: &Solid) {
     let ((x0, x1), (y0, y1), (z0, z1)) = (s.x, s.y, s.z);
     let side = if cam.sees_right() { x1 } else { x0 };
-    quad(p, cam, [(side, y0, z0), (side, y0, z1), (side, y1, z1), (side, y1, z0)], shade(s.color, SIDE_SHADE));
+    quad(
+        p,
+        cam,
+        [
+            (side, y0, z0),
+            (side, y0, z1),
+            (side, y1, z1),
+            (side, y1, z0),
+        ],
+        shade(s.color, SIDE_SHADE),
+    );
     let lid = if cam.sees_top() { y1 } else { y0 };
-    quad(p, cam, [(x0, lid, z0), (x1, lid, z0), (x1, lid, z1), (x0, lid, z1)], shade(s.color, TOP_SHADE));
-    quad(p, cam, [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)], s.color);
+    quad(
+        p,
+        cam,
+        [(x0, lid, z0), (x1, lid, z0), (x1, lid, z1), (x0, lid, z1)],
+        shade(s.color, TOP_SHADE),
+    );
+    quad(
+        p,
+        cam,
+        [(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0)],
+        s.color,
+    );
 }
 
 /// Twice the signed area of a polygon on screen: its sign says which way
@@ -228,8 +254,16 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let horizontal = kind.is_horizontal();
 
     let groups = groups(chart, data);
-    let series: Vec<usize> = groups.iter().flat_map(|g| g.series.iter().copied()).collect();
-    let n = data.series.iter().map(|s| s.values.len()).max().unwrap_or(0);
+    let series: Vec<usize> = groups
+        .iter()
+        .flat_map(|g| g.series.iter().copied())
+        .collect();
+    let n = data
+        .series
+        .iter()
+        .map(|s| s.values.len())
+        .max()
+        .unwrap_or(0);
     if n == 0 || series.is_empty() {
         return;
     }
@@ -257,7 +291,11 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
 
     // Lines and plain areas stand one behind the other; everything else
     // shares a single row.
-    let rows = if family == Family::Line || (family == Family::Area && !kind.is_stacked()) { series.len() } else { 1 };
+    let rows = if family == Family::Line || (family == Family::Area && !kind.is_stacked()) {
+        series.len()
+    } else {
+        1
+    };
     let on_ticks = family == Family::Area && n > 1;
     let slots = if on_ticks { n - 1 } else { n } as f32;
 
@@ -265,7 +303,11 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let locale = p.options.locale;
     let value_axis = &chart.axes.value;
     let code = value_axis.number_format.clone().unwrap_or_else(|| {
-        if kind.is_percent() { "0%".to_string() } else { data.value_format.clone() }
+        if kind.is_percent() {
+            "0%".to_string()
+        } else {
+            data.value_format.clone()
+        }
     });
     let value_face = p.face(&value_axis.text, LABEL_POINTS);
     let cat_face = p.face(&chart.axes.category.text, LABEL_POINTS);
@@ -285,17 +327,18 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
             .collect()
     };
     let value_labels = labels_of(p, &scale);
-    let cat_labels: Vec<(String, f32)> = if chart.axes.category.visible && chart.axes.category.labels != TickLabels::None {
-        (0..n)
-            .map(|k| {
-                let text = data.categories.get(k).cloned().unwrap_or_default();
-                let w = p.width_of(&text, &cat_face);
-                (text, w)
-            })
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let cat_labels: Vec<(String, f32)> =
+        if chart.axes.category.visible && chart.axes.category.labels != TickLabels::None {
+            (0..n)
+                .map(|k| {
+                    let text = data.categories.get(k).cloned().unwrap_or_default();
+                    let w = p.width_of(&text, &cat_face);
+                    (text, w)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
     let row_labels: Vec<(String, f32)> = if rows > 1 {
         series
             .iter()
@@ -313,16 +356,48 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     let title_size = (13.33 * z).max(6.0);
     let title_h = line_height(title_size);
     let (side_title, foot_title) = if horizontal {
-        (chart.axes.category.title.as_ref(), value_axis.title.as_ref())
+        (
+            chart.axes.category.title.as_ref(),
+            value_axis.title.as_ref(),
+        )
     } else {
-        (value_axis.title.as_ref(), chart.axes.category.title.as_ref())
+        (
+            value_axis.title.as_ref(),
+            chart.axes.category.title.as_ref(),
+        )
     };
-    let side_w = if horizontal { widest(&cat_labels).min((right - left) * 0.4) } else { value_w };
-    let foot_h = if (horizontal && value_labels.is_empty()) || (!horizontal && cat_labels.is_empty()) { 0.0 } else { label_h + 6.0 * z };
-    let px0 = left + if side_w > 0.0 { side_w + 8.0 * z } else { 0.0 } + if side_title.is_some() { title_h + 6.0 * z } else { 0.0 };
-    let px1 = right - if row_labels.is_empty() { 4.0 * z } else { widest(&row_labels) + 8.0 * z };
+    let side_w = if horizontal {
+        widest(&cat_labels).min((right - left) * 0.4)
+    } else {
+        value_w
+    };
+    let foot_h =
+        if (horizontal && value_labels.is_empty()) || (!horizontal && cat_labels.is_empty()) {
+            0.0
+        } else {
+            label_h + 6.0 * z
+        };
+    let px0 = left
+        + if side_w > 0.0 { side_w + 8.0 * z } else { 0.0 }
+        + if side_title.is_some() {
+            title_h + 6.0 * z
+        } else {
+            0.0
+        };
+    let px1 = right
+        - if row_labels.is_empty() {
+            4.0 * z
+        } else {
+            widest(&row_labels) + 8.0 * z
+        };
     let py0 = top + label_h / 2.0;
-    let py1 = bottom - foot_h - if foot_title.is_some() { title_h + 4.0 * z } else { 0.0 };
+    let py1 = bottom
+        - foot_h
+        - if foot_title.is_some() {
+            title_h + 4.0 * z
+        } else {
+            0.0
+        };
     // The smallest plot worth drawing shrinks with the zoom, so that the
     // thumbnails of the galleries, drawn at a small zoom, are not left empty.
     if px1 - px0 < 20.0 * z || py1 - py0 < 20.0 * z {
@@ -339,16 +414,25 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         Family::Column | Family::Bar => chart.gap_width_or_default() as f32 / 100.0,
         _ => 1.5,
     };
-    let row_share = (1.0 + GAP_DEPTH) / (across + gap) * view.depth_percent.clamp(20, 2000) as f32 / 100.0;
+    let row_share =
+        (1.0 + GAP_DEPTH) / (across + gap) * view.depth_percent.clamp(20, 2000) as f32 / 100.0;
     let depth = rows as f32 * row_share / slots.max(1.0);
     let cam = Camera::new(&view, (px0, py0, px1, py1), depth, horizontal);
     let (w, h, d) = (cam.w, cam.h, cam.d);
     let row_d = d / rows as f32;
     // Now that the length of the value axis is known: no more gridlines
     // than its labels have room for.
-    let (from, to) = if horizontal { (cam.at(0.0, 0.0, 0.0), cam.at(w, 0.0, 0.0)) } else { (cam.at(0.0, 0.0, 0.0), cam.at(0.0, h, 0.0)) };
+    let (from, to) = if horizontal {
+        (cam.at(0.0, 0.0, 0.0), cam.at(w, 0.0, 0.0))
+    } else {
+        (cam.at(0.0, 0.0, 0.0), cam.at(0.0, h, 0.0))
+    };
     let length = ((to.0 - from.0).powi(2) + (to.1 - from.1).powi(2)).sqrt();
-    let spacing = if horizontal { (value_w + 12.0 * z).max(34.0 * z) } else { label_h * 1.25 };
+    let spacing = if horizontal {
+        (value_w + 12.0 * z).max(34.0 * z)
+    } else {
+        label_h * 1.25
+    };
     let scale = Scale::new(value_axis, lo, hi, fit(Fit::along(length, spacing).room));
     p.scale(AxisId::Value, &scale);
     let base = scale.crossing(value_axis.crossing);
@@ -357,7 +441,11 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     // A point of the chart: position along the categories (in slots),
     // fraction of the value axis, depth.
     let pos = |c: f32, f: f32, depth: f32| -> (f32, f32, f32) {
-        if horizontal { (f * w, c / slots.max(1.0) * h, depth) } else { (c / slots.max(1.0) * w, f * h, depth) }
+        if horizontal {
+            (f * w, c / slots.max(1.0) * h, depth)
+        } else {
+            (c / slots.max(1.0) * w, f * h, depth)
+        }
     };
 
     // ---- walls, floor, gridlines -------------------------------------------
@@ -373,9 +461,25 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     p.tag(ChartElement::PlotArea);
     p.area(ChartElement::PlotArea, (px0, py0, px1, py1));
     if horizontal {
-        outline(p, [(far_x, 0.0, 0.0), (far_x, 0.0, d), (far_x, h, d), (far_x, h, 0.0)]);
+        outline(
+            p,
+            [
+                (far_x, 0.0, 0.0),
+                (far_x, 0.0, d),
+                (far_x, h, d),
+                (far_x, h, 0.0),
+            ],
+        );
     } else {
-        outline(p, [(0.0, far_y, 0.0), (w, far_y, 0.0), (w, far_y, d), (0.0, far_y, d)]);
+        outline(
+            p,
+            [
+                (0.0, far_y, 0.0),
+                (w, far_y, 0.0),
+                (w, far_y, d),
+                (0.0, far_y, d),
+            ],
+        );
     }
     if value_axis.major_gridlines {
         let element = ChartElement::MajorGridlines(AxisId::Value);
@@ -392,7 +496,11 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
             p.line(a2.0, a2.1, b2.0, b2.1, grid);
             p.anchor(element, a2.0, a2.1);
             p.anchor(element, b2.0, b2.1);
-            let near = if horizontal { (f * w, far_y, d) } else { (far_x, f * h, d) };
+            let near = if horizontal {
+                (f * w, far_y, d)
+            } else {
+                (far_x, f * h, d)
+            };
             let (n2, c2) = (cam.at(near.0, near.1, near.2), cam.at(c.0, c.1, c.2));
             p.line(n2.0, n2.1, c2.0, c2.1, grid);
         }
@@ -440,13 +548,22 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 let y = if cam.sees_top() { s.y.0 } else { -s.y.1 };
                 if horizontal { (y, x) } else { (x, y) }
             };
-            solids.sort_by(|a, b| order(&a.0).partial_cmp(&order(&b.0)).unwrap_or(std::cmp::Ordering::Equal));
+            solids.sort_by(|a, b| {
+                order(&a.0)
+                    .partial_cmp(&order(&b.0))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             for (solid, si, k) in &solids {
                 let element = ChartElement::Point(*si as u32, *k as u32);
                 p.tag(element);
                 paint_solid(p, &cam, solid);
                 // Handles on the corners of the face that looks at the viewer.
-                for (x, y) in [(solid.x.0, solid.y.0), (solid.x.1, solid.y.0), (solid.x.1, solid.y.1), (solid.x.0, solid.y.1)] {
+                for (x, y) in [
+                    (solid.x.0, solid.y.0),
+                    (solid.x.1, solid.y.0),
+                    (solid.x.1, solid.y.1),
+                    (solid.x.0, solid.y.1),
+                ] {
                     let (x, y) = cam.at(x, y, solid.z.0);
                     p.anchor(element, x, y);
                 }
@@ -457,10 +574,24 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                     }
                     if horizontal {
                         let (x, y) = cam.at(solid.x.1, (solid.y.0 + solid.y.1) / 2.0, z0);
-                        texts.push((*si, *k, text, x + 4.0 * z, y - p.label_face(*si).h / 2.0, TextAnchor::Start));
+                        texts.push((
+                            *si,
+                            *k,
+                            text,
+                            x + 4.0 * z,
+                            y - p.label_face(*si).h / 2.0,
+                            TextAnchor::Start,
+                        ));
                     } else {
                         let (x, y) = cam.at((solid.x.0 + solid.x.1) / 2.0, solid.y.1, z0);
-                        texts.push((*si, *k, text, x, y - p.label_face(*si).h - 2.0 * z, TextAnchor::Middle));
+                        texts.push((
+                            *si,
+                            *k,
+                            text,
+                            x,
+                            y - p.label_face(*si).h - 2.0 * z,
+                            TextAnchor::Middle,
+                        ));
                     }
                 }
             }
@@ -476,7 +607,10 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
             for (row, si) in order {
                 let Some(shape) = &shapes[si] else { continue };
                 let row = if rows > 1 { row as f32 } else { 0.0 };
-                let (z0, z1) = (row * row_d + (row_d - thick) / 2.0, row * row_d + (row_d + thick) / 2.0);
+                let (z0, z1) = (
+                    row * row_d + (row_d - thick) / 2.0,
+                    row * row_d + (row_d + thick) / 2.0,
+                );
                 let color = data.series[si].color;
                 let centre = |k: usize| if on_ticks { k as f32 } else { k as f32 + 0.5 };
                 p.tag(ChartElement::Series(si as u32));
@@ -486,7 +620,11 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                     match shape.to[k] {
                         Some(v) => {
                             let lower = scale.clamped(shape.from[k].unwrap_or(base)) as f32;
-                            runs.last_mut().expect("a run").push((centre(k), scale.clamped(v) as f32, lower));
+                            runs.last_mut().expect("a run").push((
+                                centre(k),
+                                scale.clamped(v) as f32,
+                                lower,
+                            ));
                         }
                         None => runs.push(Vec::new()),
                     }
@@ -505,12 +643,18 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                         let (a, b) = (run[i], run[i + 1]);
                         let (a0, b0) = (pos(a.0, a.1, z0), pos(b.0, b.1, z0));
                         let (a1, b1) = (pos(a.0, a.1, z1), pos(b.0, b.1, z1));
-                        let pts: Vec<(f32, f32)> =
-                            [a0, b0, b1, a1].iter().map(|(x, y, z)| cam.at(*x, *y, *z)).collect();
+                        let pts: Vec<(f32, f32)> = [a0, b0, b1, a1]
+                            .iter()
+                            .map(|(x, y, z)| cam.at(*x, *y, *z))
+                            .collect();
                         // Seen from above or from below?
                         let upper = winding(&pts) < 0.0;
                         if family == Family::Line {
-                            let tone = if upper { color } else { shade(color, SIDE_SHADE) };
+                            let tone = if upper {
+                                color
+                            } else {
+                                shade(color, SIDE_SHADE)
+                            };
                             p.polygon(&pts, Some(Ink::solid(tone)), Some(Stroke::new(tone, 0.5)));
                         } else if upper {
                             let tone = shade(color, TOP_SHADE);
@@ -519,11 +663,20 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                     }
                     if family == Family::Area {
                         // The end of the prism that faces the viewer.
-                        let end = if cam.sees_right() { run[run.len() - 1] } else { run[0] };
+                        let end = if cam.sees_right() {
+                            run[run.len() - 1]
+                        } else {
+                            run[0]
+                        };
                         quad(
                             p,
                             &cam,
-                            [pos(end.0, end.2, z0), pos(end.0, end.2, z1), pos(end.0, end.1, z1), pos(end.0, end.1, z0)],
+                            [
+                                pos(end.0, end.2, z0),
+                                pos(end.0, end.2, z1),
+                                pos(end.0, end.1, z1),
+                                pos(end.0, end.1, z0),
+                            ],
                             shade(color, SIDE_SHADE),
                         );
                         let mut front: Vec<(f32, f32)> = run
@@ -537,7 +690,11 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                             let (x, y, z) = pos(pt.0, pt.2, z0);
                             cam.at(x, y, z)
                         }));
-                        p.polygon(&front, Some(Ink::solid(color)), Some(Stroke::new(color, 0.5)));
+                        p.polygon(
+                            &front,
+                            Some(Ink::solid(color)),
+                            Some(Stroke::new(color, 0.5)),
+                        );
                     }
                 }
                 if let Some(labels) = labelled(si) {
@@ -549,7 +706,14 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                         }
                         let (x, y, depth) = pos(centre(k), scale.clamped(v) as f32, z0);
                         let (x, y) = cam.at(x, y, depth);
-                        texts.push((si, k, text, x, y - p.label_face(si).h - 2.0 * z, TextAnchor::Middle));
+                        texts.push((
+                            si,
+                            k,
+                            text,
+                            x,
+                            y - p.label_face(si).h - 2.0 * z,
+                            TextAnchor::Middle,
+                        ));
                     }
                 }
             }
@@ -561,7 +725,10 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     // The category axis runs along the front edge of the floor (or of the
     // side wall, for bars), at the value where it crosses the scale.
     let (a, b) = (pos(0.0, fb, 0.0), pos(slots, fb, 0.0));
-    let (value_id, category_id) = (ChartElement::Axis(AxisId::Value), ChartElement::Axis(AxisId::Category));
+    let (value_id, category_id) = (
+        ChartElement::Axis(AxisId::Value),
+        ChartElement::Axis(AxisId::Category),
+    );
     p.tag(category_id);
     if chart.axes.category.visible {
         let (a2, b2) = (cam.at(a.0, a.1, a.2), cam.at(b.0, b.1, b.2));
@@ -572,7 +739,13 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
         p.tag(value_id);
         for (f, label, _) in &value_labels {
             let (x, y) = cam.at(*f as f32 * w, 0.0, 0.0);
-            p.write(label, x.round(), y + 5.0 * z, &value_face, TextAnchor::Middle);
+            p.write(
+                label,
+                x.round(),
+                y + 5.0 * z,
+                &value_face,
+                TextAnchor::Middle,
+            );
         }
         p.tag(category_id);
         let step = ((label_h / (cam.scale * h / slots.max(1.0)).max(1.0)).ceil() as usize).max(1);
@@ -581,13 +754,25 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 continue;
             }
             let (x, y) = cam.at(0.0, centre(k) / slots.max(1.0) * h, 0.0);
-            p.write(label, x - 6.0 * z - lw.min(side_w), y - cat_face.h / 2.0, &cat_face, TextAnchor::Start);
+            p.write(
+                label,
+                x - 6.0 * z - lw.min(side_w),
+                y - cat_face.h / 2.0,
+                &cat_face,
+                TextAnchor::Start,
+            );
         }
     } else {
         p.tag(value_id);
         for (f, label, _) in &value_labels {
             let (x, y) = cam.at(0.0, *f as f32 * h, 0.0);
-            p.write(label, x - 6.0 * z, y.round() - value_face.h / 2.0, &value_face, TextAnchor::End);
+            p.write(
+                label,
+                x - 6.0 * z,
+                y.round() - value_face.h / 2.0,
+                &value_face,
+                TextAnchor::End,
+            );
         }
         p.tag(category_id);
         let slot_px = cam.scale * w / slots.max(1.0);
@@ -597,16 +782,33 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
                 continue;
             }
             let (x, y) = cam.at(centre(k) / slots.max(1.0) * w, 0.0, 0.0);
-            p.write(label, x - lw / 2.0, y + 5.0 * z, &cat_face, TextAnchor::Start);
+            p.write(
+                label,
+                x - lw / 2.0,
+                y + 5.0 * z,
+                &cat_face,
+                TextAnchor::Start,
+            );
         }
     }
     // Rows are named along the edge of the floor that runs into the depth.
     p.tag(ChartElement::PlotArea);
     for (row, (label, _)) in row_labels.iter().enumerate() {
         let (x, y) = cam.at(w, 0.0, (row as f32 + 0.5) * row_d);
-        p.text(label, x + 6.0 * z, y - label_h / 2.0, label_size, text, TextAnchor::Start);
+        p.text(
+            label,
+            x + 6.0 * z,
+            y - label_h / 2.0,
+            label_size,
+            text,
+            TextAnchor::Start,
+        );
     }
-    let (side_id, foot_id) = if horizontal { (AxisId::Category, AxisId::Value) } else { (AxisId::Value, AxisId::Category) };
+    let (side_id, foot_id) = if horizontal {
+        (AxisId::Category, AxisId::Value)
+    } else {
+        (AxisId::Value, AxisId::Category)
+    };
     if let Some(title) = side_title.filter(|t| !t.is_empty()) {
         p.tag(ChartElement::AxisTitle(side_id));
         let face = p.face(&side_id.of(&chart.axes).title_text, AXIS_TITLE_POINTS);
@@ -615,7 +817,13 @@ pub(super) fn draw_3d(p: &mut Painter, area: (f32, f32, f32, f32)) {
     if let Some(title) = foot_title.filter(|t| !t.is_empty()) {
         p.tag(ChartElement::AxisTitle(foot_id));
         let face = p.face(&foot_id.of(&chart.axes).title_text, AXIS_TITLE_POINTS);
-        p.write(title, (px0 + px1) / 2.0, py1 + foot_h + 2.0 * z, &face, TextAnchor::Middle);
+        p.write(
+            title,
+            (px0 + px1) / 2.0,
+            py1 + foot_h + 2.0 * z,
+            &face,
+            TextAnchor::Middle,
+        );
     }
     for (si, point, label, x, y, anchor) in texts {
         p.data_label(si, point, &label, x, y, anchor);

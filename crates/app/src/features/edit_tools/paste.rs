@@ -37,7 +37,11 @@ pub(super) fn source(app: &ExcelApp, cx: &mut Cx) -> Source {
 }
 
 fn cells(state: &ClipState) -> Source {
-    if state.cut { Source::CutCells } else { Source::Cells }
+    if state.cut {
+        Source::CutCells
+    } else {
+        Source::Cells
+    }
 }
 
 /// Paste the copied cells on the selection as `spec` says, in one undo
@@ -52,7 +56,9 @@ pub(super) fn paste(app: &mut ExcelApp, spec: PasteSpecial, cx: &mut Cx) {
         return;
     };
     let dest = app.sel().current();
-    let target = app.wb.paste_special_area(app.sheet, dest, &state.clip, &spec);
+    let target = app
+        .wb
+        .paste_special_area(app.sheet, dest, &state.clip, &spec);
     let intent = match spec.what.mode() {
         PasteMode::Formats => Intent::FormatCells(target),
         PasteMode::Comments => Intent::EditComment,
@@ -105,7 +111,12 @@ pub(super) fn paste_link(app: &mut ExcelApp, cx: &mut Cx) {
         cut: false,
         mode: PasteMode::Formulas,
     };
-    app.commit_cells(t("Paste Link", "Coller avec liaison"), &[written], cause, cx);
+    app.commit_cells(
+        t("Paste Link", "Coller avec liaison"),
+        &[written],
+        cause,
+        cx,
+    );
 }
 
 // ------------------------------------------------------------------- dialog
@@ -120,7 +131,10 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
             });
         }
         Source::Text => {
-            app.open_modal(window, cx, |modal, _, _| PasteTextDialog { modal, choice: 0 });
+            app.open_modal(window, cx, |modal, _, _| PasteTextDialog {
+                modal,
+                choice: 0,
+            });
         }
         // Cut cells move, whatever is asked; nothing to choose.
         Source::CutCells => app.paste(PasteMode::All, cx),
@@ -156,19 +170,33 @@ fn choice_label(what: PasteWhat) -> &'static str {
         PasteWhat::AllUsingSourceTheme => t("All using Source theme", "Tout, avec le thème source"),
         PasteWhat::AllExceptBorders => t("All except borders", "Tout sauf la bordure"),
         PasteWhat::ColumnWidths => t("Column widths", "Largeurs de colonne"),
-        PasteWhat::FormulasAndNumberFormats => t("Formula and number formats", "Formats de nombre et formule"),
-        PasteWhat::ValuesAndNumberFormats => t("Values and number formats", "Valeurs et formats de nombre"),
-        PasteWhat::AllMergingConditionalFormats => {
-            t("All, merge conditional formats", "Tout, fusionner la mise en forme conditionnelle")
+        PasteWhat::FormulasAndNumberFormats => {
+            t("Formula and number formats", "Formats de nombre et formule")
         }
-        PasteWhat::ValuesAndSourceFormats => t("Values & Source Formatting", "Valeurs et format source"),
-        PasteWhat::KeepSourceColumnWidths => {
-            t("Keep Source Column Widths", "Conserver les largeurs de colonnes sources")
+        PasteWhat::ValuesAndNumberFormats => {
+            t("Values and number formats", "Valeurs et formats de nombre")
         }
+        PasteWhat::AllMergingConditionalFormats => t(
+            "All, merge conditional formats",
+            "Tout, fusionner la mise en forme conditionnelle",
+        ),
+        PasteWhat::ValuesAndSourceFormats => {
+            t("Values & Source Formatting", "Valeurs et format source")
+        }
+        PasteWhat::KeepSourceColumnWidths => t(
+            "Keep Source Column Widths",
+            "Conserver les largeurs de colonnes sources",
+        ),
     }
 }
 
-const OPERATIONS: [PasteOp; 5] = [PasteOp::None, PasteOp::Add, PasteOp::Subtract, PasteOp::Multiply, PasteOp::Divide];
+const OPERATIONS: [PasteOp; 5] = [
+    PasteOp::None,
+    PasteOp::Add,
+    PasteOp::Subtract,
+    PasteOp::Multiply,
+    PasteOp::Divide,
+];
 
 fn operation_label(op: PasteOp) -> &'static str {
     match op {
@@ -207,60 +235,96 @@ impl PasteSpecialDialog {
 
     /// One column of the "Paste" choices: `CHOICES[from..from + 6]`.
     fn column(&self, id: &'static str, from: usize, cx: &mut Context<Self>) -> RadioGroup {
-        let labels: Vec<SharedString> = CHOICES[from..from + 6].iter().map(|what| choice_label(*what).into()).collect();
+        let labels: Vec<SharedString> = CHOICES[from..from + 6]
+            .iter()
+            .map(|what| choice_label(*what).into())
+            .collect();
         let at = CHOICES.iter().position(|what| *what == self.spec.what);
-        let selected = at.and_then(|at| at.checked_sub(from)).filter(|index| *index < 6);
-        RadioGroup::new(id, labels, selected).on_change(cx.listener(move |this, index: &usize, _, cx| {
-            this.spec.what = CHOICES[from + *index];
-            cx.notify();
-        }))
+        let selected = at
+            .and_then(|at| at.checked_sub(from))
+            .filter(|index| *index < 6);
+        RadioGroup::new(id, labels, selected).on_change(cx.listener(
+            move |this, index: &usize, _, cx| {
+                this.spec.what = CHOICES[from + *index];
+                cx.notify();
+            },
+        ))
     }
 
     /// One column of the "Operation" choices.
-    fn operations(&self, id: &'static str, from: usize, count: usize, cx: &mut Context<Self>) -> RadioGroup {
-        let labels: Vec<SharedString> = OPERATIONS[from..from + count].iter().map(|op| operation_label(*op).into()).collect();
+    fn operations(
+        &self,
+        id: &'static str,
+        from: usize,
+        count: usize,
+        cx: &mut Context<Self>,
+    ) -> RadioGroup {
+        let labels: Vec<SharedString> = OPERATIONS[from..from + count]
+            .iter()
+            .map(|op| operation_label(*op).into())
+            .collect();
         let at = OPERATIONS.iter().position(|op| *op == self.spec.operation);
-        let selected = at.and_then(|at| at.checked_sub(from)).filter(|index| *index < count);
-        RadioGroup::new(id, labels, selected).on_change(cx.listener(move |this, index: &usize, _, cx| {
-            this.spec.operation = OPERATIONS[from + *index];
-            cx.notify();
-        }))
+        let selected = at
+            .and_then(|at| at.checked_sub(from))
+            .filter(|index| *index < count);
+        RadioGroup::new(id, labels, selected).on_change(cx.listener(
+            move |this, index: &usize, _, cx| {
+                this.spec.operation = OPERATIONS[from + *index];
+                cx.notify();
+            },
+        ))
     }
 }
 
 impl Render for PasteSpecialDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let columns = |left: RadioGroup, right: RadioGroup| {
-            div().flex().gap(px(24.)).child(div().w(px(200.)).child(left)).child(div().flex_1().child(right))
+            div()
+                .flex()
+                .gap(px(24.))
+                .child(div().w(px(200.)).child(left))
+                .child(div().flex_1().child(right))
         };
         let modal = self.modal.clone();
         dialog(&self.modal, t("Paste Special", "Collage spécial"))
             .width(520.0)
             .on_ok(cx.listener(Self::ok))
-            .child(
-                GroupBox::new(t("Paste", "Coller"))
-                    .child(columns(self.column("paste-left", 0, cx), self.column("paste-right", 6, cx))),
-            )
-            .child(
-                GroupBox::new(t("Operation", "Opération"))
-                    .child(columns(self.operations("op-left", 0, 3, cx), self.operations("op-right", 3, 2, cx))),
-            )
+            .child(GroupBox::new(t("Paste", "Coller")).child(columns(
+                self.column("paste-left", 0, cx),
+                self.column("paste-right", 6, cx),
+            )))
+            .child(GroupBox::new(t("Operation", "Opération")).child(columns(
+                self.operations("op-left", 0, 3, cx),
+                self.operations("op-right", 3, 2, cx),
+            )))
             .child(
                 div()
                     .flex()
                     .gap(px(24.))
-                    .child(div().w(px(200.)).child(named(
-                        "paste-skip-blanks",
-                        Checkbox::new("skip-blanks", t("Skip Blanks", "Blancs non compris"), self.spec.skip_blanks).on_change(
-                            cx.listener(|this, on: &bool, _, cx| {
-                                this.spec.skip_blanks = *on;
-                                cx.notify();
-                            }),
-                        ),
-                    )))
+                    .child(
+                        div().w(px(200.)).child(named(
+                            "paste-skip-blanks",
+                            Checkbox::new(
+                                "skip-blanks",
+                                t("Skip Blanks", "Blancs non compris"),
+                                self.spec.skip_blanks,
+                            )
+                            .on_change(cx.listener(
+                                |this, on: &bool, _, cx| {
+                                    this.spec.skip_blanks = *on;
+                                    cx.notify();
+                                },
+                            )),
+                        )),
+                    )
                     .child(named(
                         "paste-transpose",
-                        Checkbox::new("transpose", t("Transpose", "Transposer"), self.spec.transpose).on_change(cx.listener(
+                        Checkbox::new(
+                            "transpose",
+                            t("Transpose", "Transposer"),
+                            self.spec.transpose,
+                        )
+                        .on_change(cx.listener(
                             |this, on: &bool, _, cx| {
                                 this.spec.transpose = *on;
                                 cx.notify();
@@ -281,8 +345,16 @@ impl Render for PasteSpecialDialog {
                             .on_click(cx.listener(|this, _, window, cx| this.link(window, cx))),
                     ))
                     .child(div().flex_1())
-                    .child(Button::new("cancel", t("Cancel", "Annuler")).on_click(move |_, window, cx| modal.close(window, cx)))
-                    .child(named("paste-ok", Button::new("ok", t("OK", "OK")).primary().on_click(cx.listener(Self::ok)))),
+                    .child(
+                        Button::new("cancel", t("Cancel", "Annuler"))
+                            .on_click(move |_, window, cx| modal.close(window, cx)),
+                    )
+                    .child(named(
+                        "paste-ok",
+                        Button::new("ok", t("OK", "OK"))
+                            .primary()
+                            .on_click(cx.listener(Self::ok)),
+                    )),
             )
     }
 }
@@ -297,13 +369,17 @@ struct PasteTextDialog {
 impl PasteTextDialog {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| app.paste(PasteMode::All, cx));
+        self.modal
+            .update_app(cx, |app, cx| app.paste(PasteMode::All, cx));
     }
 }
 
 impl Render for PasteTextDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let formats: Vec<SharedString> = vec![t("Unicode Text", "Texte Unicode").into(), t("Text", "Texte").into()];
+        let formats: Vec<SharedString> = vec![
+            t("Unicode Text", "Texte Unicode").into(),
+            t("Text", "Texte").into(),
+        ];
         let modal = self.modal.clone();
         dialog(&self.modal, t("Paste Special", "Collage spécial"))
             .width(360.0)
@@ -317,15 +393,24 @@ impl Render for PasteTextDialog {
                             this.choice = *index;
                             cx.notify();
                         }))
-                        .on_activate(cx.listener(|this, _: &usize, window, cx| this.ok(&(), window, cx))),
+                        .on_activate(
+                            cx.listener(|this, _: &usize, window, cx| this.ok(&(), window, cx)),
+                        ),
                 ),
             )
             .footer(
                 div()
                     .flex()
                     .gap(px(8.))
-                    .child(Button::new("cancel", t("Cancel", "Annuler")).on_click(move |_, window, cx| modal.close(window, cx)))
-                    .child(Button::new("ok", t("OK", "OK")).primary().on_click(cx.listener(Self::ok))),
+                    .child(
+                        Button::new("cancel", t("Cancel", "Annuler"))
+                            .on_click(move |_, window, cx| modal.close(window, cx)),
+                    )
+                    .child(
+                        Button::new("ok", t("OK", "OK"))
+                            .primary()
+                            .on_click(cx.listener(Self::ok)),
+                    ),
             )
     }
 }

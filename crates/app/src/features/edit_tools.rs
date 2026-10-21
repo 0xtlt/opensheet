@@ -14,14 +14,15 @@ mod ui_tests;
 
 use super::misc::{self, Kinds, Special};
 use super::{
-    CellEdit, Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, Painter, Zone, ZoneEvent, ZoneResponse,
+    CellEdit, Command, ContextMenu, Cx, Feature, MenuSection, MenuTarget, Painter, Zone, ZoneEvent,
+    ZoneResponse,
 };
-use crate::grid::GridLayout;
 use crate::app::{EditMode, EditSource, ExcelApp, MenuEntry};
+use crate::grid::GridLayout;
 use crate::i18n::t;
+use gpui::{AnyElement, App, Context, KeyBinding, Stateful, Window, actions, div, prelude::*};
 use opensheet_engine::ops::PasteMode;
 use opensheet_engine::paste_special::{PasteSpecial, PasteWhat};
-use gpui::{AnyElement, App, Context, KeyBinding, Stateful, Window, actions, div, prelude::*};
 
 pub use find::find_bar_next;
 
@@ -94,13 +95,19 @@ impl Command for Cmd {
             Cmd::Replace => find::open(app, true, window, cx),
             Cmd::SelectFormulas => misc::select_special(app, Special::Formulas(Kinds::ALL), cx),
             Cmd::SelectNotes => misc::select_special(app, Special::Notes, cx),
-            Cmd::SelectCondFormats => misc::select_special(app, Special::ConditionalFormats { same: false }, cx),
+            Cmd::SelectCondFormats => {
+                misc::select_special(app, Special::ConditionalFormats { same: false }, cx)
+            }
             Cmd::SelectConstants => misc::select_special(app, Special::Constants(Kinds::ALL), cx),
-            Cmd::SelectValidation => misc::select_special(app, Special::DataValidation { same: false }, cx),
+            Cmd::SelectValidation => {
+                misc::select_special(app, Special::DataValidation { same: false }, cx)
+            }
             Cmd::SelectObjects => app.toggle_object_pointer(cx),
             Cmd::PasteMenu => {
                 let mut entries = vec![
-                    MenuEntry::new(t("Paste", "Coller"), |a, _, cx| a.paste(PasteMode::All, cx)).icon("paste").shortcut("⌘V"),
+                    MenuEntry::new(t("Paste", "Coller"), |a, _, cx| a.paste(PasteMode::All, cx))
+                        .icon("paste")
+                        .shortcut("⌘V"),
                     MenuEntry::separator(),
                 ];
                 entries.extend(PASTE_MENU.iter().map(|cmd| MenuEntry::command(*cmd, app)));
@@ -123,7 +130,9 @@ impl Command for Cmd {
             Cmd::PasteLinkedPicture => picture::paste(app, true, cx),
             Cmd::CopyMenu => {
                 let entries = vec![
-                    MenuEntry::new(t("Copy", "Copier"), |a, _, cx| a.copy(false, cx)).icon("copy").shortcut("⌘C"),
+                    MenuEntry::new(t("Copy", "Copier"), |a, _, cx| a.copy(false, cx))
+                        .icon("copy")
+                        .shortcut("⌘C"),
                     MenuEntry::command(Cmd::CopyAsPicture, app),
                 ];
                 app.open_command_menu(entries, 240.0, window, cx);
@@ -158,7 +167,10 @@ impl Command for Cmd {
             _ if self.paste_spec().is_some() => app.clip.as_ref().is_some_and(|state| !state.cut),
             Cmd::ClearHyperlinks | Cmd::RemoveHyperlinks => {
                 let links = &app.wb.sheets[app.sheet].hyperlinks;
-                app.sel().ranges.iter().any(|range| links.iter().any(|link| link.range.intersects(range)))
+                app.sel()
+                    .ranges
+                    .iter()
+                    .any(|range| links.iter().any(|link| link.range.intersects(range)))
             }
             _ => true,
         }
@@ -172,12 +184,17 @@ impl Command for Cmd {
 /// comment, a field) keeps it; a selected shape is opened for typing; and
 /// otherwise the active cell is.
 fn insert_symbol(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
-    let in_a_text = window.focused(cx).is_some_and(|focused| focused != app.grid_focus);
+    let in_a_text = window
+        .focused(cx)
+        .is_some_and(|focused| focused != app.grid_focus);
     if !in_a_text || app.is_editing() {
         if let (Some(id), false) = (app.object_sel, app.is_editing()) {
             // An empty text: the shape is only opened, after what it holds.
             crate::features::all()[id.owner].object_typed(app, id.id, "", window, cx);
-            if window.focused(cx).is_none_or(|focused| focused == app.grid_focus) {
+            if window
+                .focused(cx)
+                .is_none_or(|focused| focused == app.grid_focus)
+            {
                 // A chart or a picture has no text to put a symbol in.
                 return;
             }
@@ -243,17 +260,29 @@ impl Feature for EditTools {
     }
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
-        if matches!(target, MenuTarget::Cell(..) | MenuTarget::RowHeader(_) | MenuTarget::ColHeader(_)) {
-            menu.add(MenuSection::Clipboard, MenuEntry::command(Cmd::PasteSpecial, app).shortcut("⌃⌘V"));
+        if matches!(
+            target,
+            MenuTarget::Cell(..) | MenuTarget::RowHeader(_) | MenuTarget::ColHeader(_)
+        ) {
+            menu.add(
+                MenuSection::Clipboard,
+                MenuEntry::command(Cmd::PasteSpecial, app).shortcut("⌃⌘V"),
+            );
         }
         if let MenuTarget::Cell(row, col) = target {
             if app.wb.link_action_at(app.sheet, *row, *col).is_none() {
-                menu.add(MenuSection::Extra, MenuEntry::command(Cmd::Link, app).shortcut("⌘K"));
+                menu.add(
+                    MenuSection::Extra,
+                    MenuEntry::command(Cmd::Link, app).shortcut("⌘K"),
+                );
                 return;
             }
             // A link made by HYPERLINK() is followed, not edited here.
             if app.wb.hyperlink_at(app.sheet, *row, *col).is_some() {
-                menu.add(MenuSection::Extra, MenuEntry::command(Cmd::EditLink, app).shortcut("⌘K"));
+                menu.add(
+                    MenuSection::Extra,
+                    MenuEntry::command(Cmd::EditLink, app).shortcut("⌘K"),
+                );
             }
             menu.add(MenuSection::Extra, MenuEntry::command(Cmd::OpenLink, app));
             if app.wb.hyperlink_at(app.sheet, *row, *col).is_some() {
@@ -268,16 +297,36 @@ impl Feature for EditTools {
 
     /// Nothing is laid over the grid: this is where a feature is told of
     /// each repaint, and linked pictures follow their cells then.
-    fn overlay_elements(&self, app: &mut ExcelApp, _: &GridLayout, _: &mut Window, cx: &mut Cx) -> Vec<AnyElement> {
+    fn overlay_elements(
+        &self,
+        app: &mut ExcelApp,
+        _: &GridLayout,
+        _: &mut Window,
+        cx: &mut Cx,
+    ) -> Vec<AnyElement> {
         picture::follow_links(app, cx);
         Vec::new()
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        _: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         links::zone_mouse_down(app, zone, ev, cx)
     }
 
-    fn zone_mouse_up(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, window: &mut Window, cx: &mut Cx) {
+    fn zone_mouse_up(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        window: &mut Window,
+        cx: &mut Cx,
+    ) {
         links::zone_mouse_up(app, zone, ev, window, cx);
     }
 
@@ -288,7 +337,10 @@ impl Feature for EditTools {
 
 /// An element the headless tests find by name (`debug_bounds`).
 fn named(name: &'static str, element: impl IntoElement) -> gpui::Div {
-    div().flex_none().debug_selector(|| name.to_string()).child(element)
+    div()
+        .flex_none()
+        .debug_selector(|| name.to_string())
+        .child(element)
 }
 
 // ---------------------------------------------------------------- shortcuts
@@ -307,7 +359,13 @@ pub fn bind_keys(cx: &mut App) {
 
 /// Make the window answer the shortcuts of `bind_keys`.
 pub fn key_actions(root: Stateful<gpui::Div>, cx: &Context<ExcelApp>) -> Stateful<gpui::Div> {
-    root.on_action(cx.listener(|app, _: &FindDialog, window, cx| app.run_command(Cmd::Find, window, cx)))
-        .on_action(cx.listener(|app, _: &Replace, window, cx| app.run_command(Cmd::Replace, window, cx)))
-        .on_action(cx.listener(|app, _: &PasteSpecialDialog, window, cx| app.run_command(Cmd::PasteSpecial, window, cx)))
+    root.on_action(
+        cx.listener(|app, _: &FindDialog, window, cx| app.run_command(Cmd::Find, window, cx)),
+    )
+    .on_action(
+        cx.listener(|app, _: &Replace, window, cx| app.run_command(Cmd::Replace, window, cx)),
+    )
+    .on_action(cx.listener(|app, _: &PasteSpecialDialog, window, cx| {
+        app.run_command(Cmd::PasteSpecial, window, cx)
+    }))
 }

@@ -19,8 +19,14 @@ fn redraw(cx: &mut VisualTestContext) {
 }
 
 /// Open the window on a pane.
-fn pane(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, pane: Pane) -> Entity<PreferencesWindow> {
-    let view = app.update_in(cx, |app, window, cx| window::open_on(app, Some(pane), window, cx));
+fn pane(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    pane: Pane,
+) -> Entity<PreferencesWindow> {
+    let view = app.update_in(cx, |app, window, cx| {
+        window::open_on(app, Some(pane), window, cx)
+    });
     redraw(cx);
     view
 }
@@ -58,8 +64,10 @@ fn iterative_calculation_is_turned_on_in_the_calculation_pane(cx: &mut TestAppCo
     assert!(app.update(cx, |app, _| app.wb.circular));
     let view = pane(&app, cx, Pane::Calculation);
     view.update(cx, |view, cx| {
-        view.max_iterations.update(cx, |field, cx| field.set_text("25", cx));
-        view.max_change.update(cx, |field, cx| field.set_text("0", cx));
+        view.max_iterations
+            .update(cx, |field, cx| field.set_text("25", cx));
+        view.max_change
+            .update(cx, |field, cx| field.set_text("0", cx));
         view.set_iteration(true, cx);
     });
     redraw(cx);
@@ -77,7 +85,8 @@ fn iterative_calculation_is_turned_on_in_the_calculation_pane(cx: &mut TestAppCo
     // A value that makes no sense is refused and the field shows the
     // stored one again.
     view.update(cx, |view, cx| {
-        view.max_iterations.update(cx, |field, cx| field.set_text("0", cx));
+        view.max_iterations
+            .update(cx, |field, cx| field.set_text("0", cx));
         view.go(None, cx);
         assert_eq!(view.max_iterations.read(cx).text(), "25");
         assert_eq!(view.pane, None);
@@ -107,7 +116,10 @@ fn the_edit_pane_changes_what_return_does(cx: &mut TestAppContext) {
     assert_eq!(app.update(cx, |app, _| app.active()), (0, 0));
     settings::update(|settings| settings.move_after_return = false);
     type_in(&app, cx, (0, 0), "3");
-    assert_eq!(app.update(cx, |app, _| (app.active(), app.is_editing())), ((0, 0), false));
+    assert_eq!(
+        app.update(cx, |app, _| (app.active(), app.is_editing())),
+        ((0, 0), false)
+    );
     assert_eq!(value(&app, cx, (0, 0)), Value::Number(3.0));
     // A fixed decimal point, set from the pane.
     let view = pane(&app, cx, Pane::Edit);
@@ -136,15 +148,24 @@ fn the_general_pane_names_the_user_and_shapes_new_workbooks(cx: &mut TestAppCont
     let (app, cx) = open(cx);
     let view = pane(&app, cx, Pane::General);
     view.update(cx, |view, cx| {
-        view.user_name.update(cx, |field, cx| field.set_text("  Ada Lovelace ", cx));
+        view.user_name
+            .update(cx, |field, cx| field.set_text("  Ada Lovelace ", cx));
         view.sheets.update(cx, |field, cx| field.set_text("4", cx));
-        view.font_size.update(cx, |field, cx| field.set_text("500", cx));
+        view.font_size
+            .update(cx, |field, cx| field.set_text("500", cx));
         view.commit_fields(cx);
         // 500 points is no font size.
         assert_eq!(view.font_size.read(cx).text(), "11");
     });
     let stored = settings::get();
-    assert_eq!((stored.user_name.as_str(), stored.sheets_in_new_workbook, stored.default_font_size), ("Ada Lovelace", 4, 11.0));
+    assert_eq!(
+        (
+            stored.user_name.as_str(),
+            stored.sheets_in_new_workbook,
+            stored.default_font_size
+        ),
+        ("Ada Lovelace", 4, 11.0)
+    );
     assert_eq!(user_name().as_deref(), Some("Ada Lovelace"));
     let mut wb = Workbook::new(opensheet_engine::Locale::en());
     prepare_new_workbook(&mut wb);
@@ -156,7 +177,8 @@ fn sheet_tabs_and_error_corners_follow_their_boxes(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
     type_in(&app, cx, (0, 0), "=1/0");
     // The rule can be switched off: Error Checking then finds nothing.
-    let errors = |app: &ExcelApp| crate::features::misc::error_cells(&app.wb, 0, &Default::default());
+    let errors =
+        |app: &ExcelApp| crate::features::misc::error_cells(&app.wb, 0, &Default::default());
     assert_eq!(app.update(cx, |app, _| errors(app)), vec![(0, 0)]);
     settings::update(|settings| settings.check_error_values = false);
     assert!(app.update(cx, |app, _| errors(app)).is_empty());
@@ -186,7 +208,9 @@ fn the_general_pane_names_the_folder_of_the_scripts(cx: &mut TestAppContext) {
     let view = pane(&app, cx, Pane::General);
     // Another folder is chosen: the scripts are looked for there.
     let other = usual.join("elsewhere");
-    view.update(cx, |view, cx| view.set_scripts_folder(Some(other.clone()), cx));
+    view.update(cx, |view, cx| {
+        view.set_scripts_folder(Some(other.clone()), cx)
+    });
     redraw(cx);
     assert_eq!(crate::features::automate::scripts_folder(), other);
     assert_eq!(settings::get().scripts_folder, other.to_string_lossy());
@@ -221,13 +245,20 @@ fn what_is_typed_is_corrected_at_the_end_of_each_word(cx: &mut TestAppContext) {
     begin(&app, cx, (0, 0), "teh cat (c) THe end. it");
     assert_eq!(editor_text(&app, cx), "the cat © The end. it");
     // The formula bar shows the same text.
-    assert_eq!(app.update(cx, |app, cx| app.formula_input.read(cx).text().to_string()), "the cat © The end. it");
+    assert_eq!(
+        app.update(cx, |app, cx| app.formula_input.read(cx).text().to_string()),
+        "the cat © The end. it"
+    );
     cx.simulate_keystrokes("enter");
     redraw(cx);
     // The last word is corrected when the entry is confirmed, as a step
     // of its own: one Undo gives back what was typed.
     assert_eq!(text(&app, cx, (0, 0)), "the cat © The end. It");
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("AutoCorrect"));
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.undo_label().map(str::to_string))
+            .as_deref(),
+        Some("AutoCorrect")
+    );
     cx.simulate_keystrokes("cmd-z");
     assert_eq!(text(&app, cx, (0, 0)), "the cat © The end. it");
     cx.simulate_keystrokes("cmd-z");
@@ -270,25 +301,43 @@ fn the_autocorrect_pane_switches_each_correction(cx: &mut TestAppContext) {
     let view = pane(&app, cx, Pane::AutoCorrect);
     // A word of the user's joins the list, in alphabetical order.
     view.update(cx, |view, cx| {
-        view.replace_from.update(cx, |field, cx| field.set_text("osht", cx));
-        view.replace_with.update(cx, |field, cx| field.set_text("OpenSheet", cx));
+        view.replace_from
+            .update(cx, |field, cx| field.set_text("osht", cx));
+        view.replace_with
+            .update(cx, |field, cx| field.set_text("OpenSheet", cx));
         view.add_replacement(cx);
         let list = view.replacements();
         let at = list.iter().position(|(from, _)| from == "osht").unwrap();
-        assert!(list[at - 1].0.to_lowercase() < "osht".to_string() && list.iter().any(|(from, _)| from == "teh"));
+        assert!(
+            list[at - 1].0.to_lowercase() < "osht".to_string()
+                && list.iter().any(|(from, _)| from == "teh")
+        );
         // "Replace" gives a listed word another replacement.
-        view.replace_with.update(cx, |field, cx| field.set_text("Open Sheet", cx));
+        view.replace_with
+            .update(cx, |field, cx| field.set_text("Open Sheet", cx));
         view.add_replacement(cx);
-        assert_eq!(view.replacements().iter().filter(|(from, _)| from == "osht").count(), 1);
+        assert_eq!(
+            view.replacements()
+                .iter()
+                .filter(|(from, _)| from == "osht")
+                .count(),
+            1
+        );
         // A line of the list fills the two boxes; Delete takes it away.
-        let teh = view.replacements().iter().position(|(from, _)| from == "teh").unwrap();
+        let teh = view
+            .replacements()
+            .iter()
+            .position(|(from, _)| from == "teh")
+            .unwrap();
         view.show_replacement(teh, cx);
         assert_eq!(view.replace_with.read(cx).text(), "the");
         view.delete_replacement(cx);
         assert!(!view.replacements().iter().any(|(from, _)| from == "teh"));
     });
     redraw(cx);
-    let stored = settings::get().replacements.expect("the list is now the user's");
+    let stored = settings::get()
+        .replacements
+        .expect("the list is now the user's");
     assert!(stored.contains(&("osht".to_string(), "Open Sheet".to_string())));
     cx.simulate_keystrokes("escape");
     redraw(cx);
@@ -315,11 +364,18 @@ fn the_autocorrect_pane_switches_each_correction(cx: &mut TestAppContext) {
 #[gpui::test]
 fn a_corrected_header_renames_its_table_column(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    for (cell, typed) in [((0, 0), "Name"), ((0, 1), "Qty"), ((1, 0), "Pen"), ((1, 1), "3")] {
+    for (cell, typed) in [
+        ((0, 0), "Name"),
+        ((0, 1), "Qty"),
+        ((1, 0), "Pen"),
+        ((1, 1), "3"),
+    ] {
         type_in(&app, cx, cell, typed);
     }
     app.update(cx, |app, cx| {
-        app.wb.add_table(0, opensheet_engine::Rect::new(0, 0, 1, 1), true).unwrap();
+        app.wb
+            .add_table(0, opensheet_engine::Rect::new(0, 0, 1, 1), true)
+            .unwrap();
         app.commit("table", cx);
     });
     type_in(&app, cx, (0, 1), "recieve");
@@ -342,20 +398,31 @@ fn the_lists_of_the_user_drive_the_fill_handle_and_the_sort_dialog(cx: &mut Test
     view.update(cx, |view, cx| {
         // The built-in lists show their entries and cannot be replaced.
         view.choose_list(1, cx);
-        assert_eq!(view.list_entries.read(cx).text(), "Sun\nMon\nTue\nWed\nThu\nFri\nSat");
+        assert_eq!(
+            view.list_entries.read(cx).text(),
+            "Sun\nMon\nTue\nWed\nThu\nFri\nSat"
+        );
         assert_eq!(view.own_list_at(), None);
         // NEW LIST: what is typed becomes a list, one entry per line.
         view.choose_list(0, cx);
-        view.list_entries.update(cx, |area, cx| area.set_text("North\n East \n\nSouth\nnorth\nWest", cx));
+        view.list_entries.update(cx, |area, cx| {
+            area.set_text("North\n East \n\nSouth\nnorth\nWest", cx)
+        });
         assert!(view.add_list(cx));
         assert_eq!(view.own_list_at(), Some(0));
         // The same list again is not a second list.
         view.choose_list(0, cx);
-        view.list_entries.update(cx, |area, cx| area.set_text("North, East, South, West", cx));
+        view.list_entries
+            .update(cx, |area, cx| area.set_text("North, East, South, West", cx));
         assert!(view.add_list(cx));
     });
     redraw(cx);
-    let wanted = vec![vec!["North".to_string(), "East".to_string(), "South".to_string(), "West".to_string()]];
+    let wanted = vec![vec![
+        "North".to_string(),
+        "East".to_string(),
+        "South".to_string(),
+        "West".to_string(),
+    ]];
     assert_eq!(settings::get().custom_lists, wanted);
     cx.simulate_keystrokes("escape");
     redraw(cx);
@@ -363,7 +430,11 @@ fn the_lists_of_the_user_drive_the_fill_handle_and_the_sort_dialog(cx: &mut Test
     // read the lists of the workbook.
     type_in(&app, cx, (0, 0), "South");
     app.update(cx, |app, cx| {
-        app.wb.autofill(0, opensheet_engine::Rect::cell(0, 0), opensheet_engine::Rect::new(0, 0, 3, 0));
+        app.wb.autofill(
+            0,
+            opensheet_engine::Rect::cell(0, 0),
+            opensheet_engine::Rect::new(0, 0, 3, 0),
+        );
         app.commit("fill", cx);
         assert_eq!(app.wb.custom_lists().last(), wanted.last());
     });
@@ -372,12 +443,18 @@ fn the_lists_of_the_user_drive_the_fill_handle_and_the_sort_dialog(cx: &mut Test
     let view = pane(&app, cx, Pane::CustomLists);
     view.update(cx, |view, cx| {
         view.choose_list(5, cx);
-        assert_eq!(view.list_entries.read(cx).text(), "North\nEast\nSouth\nWest");
-        view.list_entries.update(cx, |area, cx| area.set_text("North\nEast\nSouth\nWest\nCentre", cx));
+        assert_eq!(
+            view.list_entries.read(cx).text(),
+            "North\nEast\nSouth\nWest"
+        );
+        view.list_entries.update(cx, |area, cx| {
+            area.set_text("North\nEast\nSouth\nWest\nCentre", cx)
+        });
         assert!(view.add_list(cx));
         // An entry that starts with a digit is refused, with a message.
         view.choose_list(0, cx);
-        view.list_entries.update(cx, |area, cx| area.set_text("1st\n2nd", cx));
+        view.list_entries
+            .update(cx, |area, cx| area.set_text("1st\n2nd", cx));
         assert!(!view.add_list(cx));
     });
     redraw(cx);
@@ -404,44 +481,71 @@ fn lists_are_imported_from_cells(cx: &mut TestAppContext) {
     }
     let view = pane(&app, cx, Pane::CustomLists);
     view.update(cx, |view, cx| {
-        view.import_range.update(cx, |field, cx| field.set_text("$C$1:$C$5", cx));
+        view.import_range
+            .update(cx, |field, cx| field.set_text("$C$1:$C$5", cx));
         view.import_lists(cx);
         assert_eq!(view.list_entries.read(cx).text(), "Low\nMedium\nHigh");
     });
     redraw(cx);
-    assert_eq!(settings::get().custom_lists, vec![vec!["Low".to_string(), "Medium".to_string(), "High".to_string()]]);
+    assert_eq!(
+        settings::get().custom_lists,
+        vec![vec![
+            "Low".to_string(),
+            "Medium".to_string(),
+            "High".to_string()
+        ]]
+    );
     // The number was skipped, and Excel says so.
-    let alert = app.update(cx, |app, cx| app.front_alert(cx)).expect("a message");
+    let alert = app
+        .update(cx, |app, cx| app.front_alert(cx))
+        .expect("a message");
     assert_eq!(alert.1, "Cells without simple text were ignored.");
     cx.simulate_keystrokes("enter");
     redraw(cx);
     // A range that is none is refused.
     view.update(cx, |view, cx| {
-        view.import_range.update(cx, |field, cx| field.set_text("nowhere", cx));
+        view.import_range
+            .update(cx, |field, cx| field.set_text("nowhere", cx));
         view.import_lists(cx);
     });
     redraw(cx);
-    assert_eq!(app.update(cx, |app, cx| app.front_alert(cx)).map(|alert| alert.1).as_deref(), Some("Reference isn't valid."));
+    assert_eq!(
+        app.update(cx, |app, cx| app.front_alert(cx))
+            .map(|alert| alert.1)
+            .as_deref(),
+        Some("Reference isn't valid.")
+    );
     assert_eq!(settings::get().custom_lists.len(), 1);
 }
 
 #[gpui::test]
 fn the_tables_pane_stops_tables_from_growing_and_filling(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    for (cell, typed) in [((0, 0), "Name"), ((0, 1), "Qty"), ((1, 0), "Pen"), ((1, 1), "3")] {
+    for (cell, typed) in [
+        ((0, 0), "Name"),
+        ((0, 1), "Qty"),
+        ((1, 0), "Pen"),
+        ((1, 1), "3"),
+    ] {
         type_in(&app, cx, cell, typed);
     }
     app.update(cx, |app, cx| {
-        app.wb.add_table(0, opensheet_engine::Rect::new(0, 0, 1, 1), true).unwrap();
+        app.wb
+            .add_table(0, opensheet_engine::Rect::new(0, 0, 1, 1), true)
+            .unwrap();
         app.commit("table", cx);
     });
-    let range = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| app.wb.sheets[0].tables[0].range);
+    let range = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+        app.update(cx, |app, _| app.wb.sheets[0].tables[0].range)
+    };
     type_in(&app, cx, (2, 0), "Ink");
     assert_eq!(range(&app, cx).r1, 2);
     // The window opens on the page; the pane is rendered, its boxes
     // change the settings and the workbook follows at once.
     let view = pane(&app, cx, Pane::Tables);
-    view.update(cx, |view, cx| view.set(cx, |settings| settings.tables_expand = false));
+    view.update(cx, |view, cx| {
+        view.set(cx, |settings| settings.tables_expand = false)
+    });
     cx.simulate_keystrokes("escape");
     redraw(cx);
     assert!(!settings::get().tables_expand);

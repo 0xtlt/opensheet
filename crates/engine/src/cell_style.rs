@@ -12,7 +12,9 @@
 
 use crate::ast::same_name;
 use crate::refs::Rect;
-use crate::style::{Border, BorderStyle, Borders, Color, Style, StyleId, ThemeFont, ThemeSlot, Underline};
+use crate::style::{
+    Border, BorderStyle, Borders, Color, Style, StyleId, ThemeFont, ThemeSlot, Underline,
+};
 use crate::theme::Theme;
 use crate::workbook::Workbook;
 use std::collections::HashMap;
@@ -70,7 +72,14 @@ enum Part {
     Protection,
 }
 
-const PARTS: [Part; 6] = [Part::Number, Part::Alignment, Part::Font, Part::Border, Part::Fill, Part::Protection];
+const PARTS: [Part; 6] = [
+    Part::Number,
+    Part::Alignment,
+    Part::Font,
+    Part::Border,
+    Part::Fill,
+    Part::Protection,
+];
 
 impl StyleParts {
     fn has(&self, part: Part) -> bool {
@@ -89,8 +98,21 @@ fn same_part(a: &Style, b: &Style, part: Part) -> bool {
     match part {
         Part::Number => a.num_fmt == b.num_fmt,
         Part::Alignment => {
-            (a.h_align, a.v_align, a.wrap, a.shrink_to_fit, a.indent, a.rotation)
-                == (b.h_align, b.v_align, b.wrap, b.shrink_to_fit, b.indent, b.rotation)
+            (
+                a.h_align,
+                a.v_align,
+                a.wrap,
+                a.shrink_to_fit,
+                a.indent,
+                a.rotation,
+            ) == (
+                b.h_align,
+                b.v_align,
+                b.wrap,
+                b.shrink_to_fit,
+                b.indent,
+                b.rotation,
+            )
         }
         Part::Font => a.font == b.font,
         Part::Border => a.borders == b.borders,
@@ -189,7 +211,10 @@ fn rgb(hex: u32) -> Option<Color> {
 }
 
 fn all_sides(style: BorderStyle, color: u32) -> Borders {
-    let side = Border { style, color: rgb(color) };
+    let side = Border {
+        style,
+        color: rgb(color),
+    };
     Borders {
         left: side,
         right: side,
@@ -200,7 +225,10 @@ fn all_sides(style: BorderStyle, color: u32) -> Borders {
 
 fn bottom(style: BorderStyle, color: Color) -> Borders {
     Borders {
-        bottom: Border { style, color: Some(color) },
+        bottom: Border {
+            style,
+            color: Some(color),
+        },
         ..Borders::default()
     }
 }
@@ -245,8 +273,14 @@ pub fn builtin_styles_in(theme: &Theme, normal: &Style) -> Vec<CellStyle> {
         ..StyleParts::NONE
     };
     let font_fill = StyleParts { fill: true, ..font };
-    let font_border = StyleParts { border: true, ..font };
-    let boxed = StyleParts { border: true, ..font_fill };
+    let font_border = StyleParts {
+        border: true,
+        ..font
+    };
+    let boxed = StyleParts {
+        border: true,
+        ..font_fill
+    };
     let number = StyleParts {
         number: true,
         ..StyleParts::NONE
@@ -254,9 +288,15 @@ pub fn builtin_styles_in(theme: &Theme, normal: &Style) -> Vec<CellStyle> {
 
     // Good, Bad and Neutral
     add(NORMAL, 0, StyleParts::ALL, &|_| {});
-    add("Bad", 27, font_fill, &|s| (s.font.color, s.fill) = (rgb(0x9C0006), rgb(0xFFC7CE)));
-    add("Good", 26, font_fill, &|s| (s.font.color, s.fill) = (rgb(0x006100), rgb(0xC6EFCE)));
-    add("Neutral", 28, font_fill, &|s| (s.font.color, s.fill) = (rgb(0x9C5700), rgb(0xFFEB9C)));
+    add("Bad", 27, font_fill, &|s| {
+        (s.font.color, s.fill) = (rgb(0x9C0006), rgb(0xFFC7CE))
+    });
+    add("Good", 26, font_fill, &|s| {
+        (s.font.color, s.fill) = (rgb(0x006100), rgb(0xC6EFCE))
+    });
+    add("Neutral", 28, font_fill, &|s| {
+        (s.font.color, s.fill) = (rgb(0x9C5700), rgb(0xFFEB9C))
+    });
     // Data and Model
     add("Calculation", 22, boxed, &|s| {
         s.font.bold = true;
@@ -318,9 +358,24 @@ pub fn builtin_styles_in(theme: &Theme, normal: &Style) -> Vec<CellStyle> {
             }
         }
     };
-    add("Heading 1", 16, font_border, &heading(15.0, Some((BorderStyle::Thick, 0.0))));
-    add("Heading 2", 17, font_border, &heading(13.0, Some((BorderStyle::Thick, 0.5))));
-    add("Heading 3", 18, font_border, &heading(11.0, Some((BorderStyle::Medium, 0.4))));
+    add(
+        "Heading 1",
+        16,
+        font_border,
+        &heading(15.0, Some((BorderStyle::Thick, 0.0))),
+    );
+    add(
+        "Heading 2",
+        17,
+        font_border,
+        &heading(13.0, Some((BorderStyle::Thick, 0.5))),
+    );
+    add(
+        "Heading 3",
+        18,
+        font_border,
+        &heading(11.0, Some((BorderStyle::Medium, 0.4))),
+    );
     add("Heading 4", 19, font, &heading(11.0, None));
     add("Title", 15, font, &|s| {
         s.font.name = theme.font(ThemeFont::Major).clone();
@@ -343,22 +398,34 @@ pub fn builtin_styles_in(theme: &Theme, normal: &Style) -> Vec<CellStyle> {
         };
     });
     // Themed Cell Styles: a row of six accents for each strength.
-    for (label, lighter, first_id) in [("20% - ", 0.8, 30), ("40% - ", 0.6, 31), ("60% - ", 0.4, 32), ("", 0.0, 29)] {
+    for (label, lighter, first_id) in [
+        ("20% - ", 0.8, 30),
+        ("40% - ", 0.6, 31),
+        ("60% - ", 0.4, 32),
+        ("", 0.0, 29),
+    ] {
         for n in 1..=6u32 {
             let fill = accent(n as usize, lighter);
             // Only the full accent is dark enough for white text.
             let text = if lighter == 0.0 { rgb(0xFFFFFF) } else { None };
-            add(&format!("{label}Accent{n}"), first_id + 4 * (n - 1), font_fill, &|s| {
-                s.fill = Some(fill);
-                s.font.color = text;
-            });
+            add(
+                &format!("{label}Accent{n}"),
+                first_id + 4 * (n - 1),
+                font_fill,
+                &|s| {
+                    s.fill = Some(fill);
+                    s.font.color = text;
+                },
+            );
         }
     }
     // Number Format
     add("Comma", 3, number, &|s| s.num_fmt = Arc::from(COMMA));
     add("Comma [0]", 6, number, &|s| s.num_fmt = Arc::from(COMMA_0));
     add("Currency", 4, number, &|s| s.num_fmt = Arc::from(CURRENCY));
-    add("Currency [0]", 7, number, &|s| s.num_fmt = Arc::from(CURRENCY_0));
+    add("Currency [0]", 7, number, &|s| {
+        s.num_fmt = Arc::from(CURRENCY_0)
+    });
     add("Percent", 5, number, &|s| s.num_fmt = Arc::from("0%"));
     out
 }
@@ -369,30 +436,54 @@ impl Workbook {
     /// Every style of the workbook in the order of the gallery: those the
     /// user made (by name), then Excel's, as changed here.
     pub fn all_cell_styles(&self) -> Vec<CellStyle> {
-        let mut custom: Vec<CellStyle> = self.cell_styles.iter().filter(|style| style.builtin.is_none()).cloned().collect();
+        let mut custom: Vec<CellStyle> = self
+            .cell_styles
+            .iter()
+            .filter(|style| style.builtin.is_none())
+            .cloned()
+            .collect();
         custom.sort_by_key(|style| style.name.to_lowercase());
-        let builtin = builtin_styles_in(self.theme(), self.styles.default_style()).into_iter().map(|style| {
-            let changed = self.cell_styles.iter().find(|own| own.builtin == style.builtin);
-            changed.cloned().unwrap_or(style)
-        });
+        let builtin = builtin_styles_in(self.theme(), self.styles.default_style())
+            .into_iter()
+            .map(|style| {
+                let changed = self
+                    .cell_styles
+                    .iter()
+                    .find(|own| own.builtin == style.builtin);
+                changed.cloned().unwrap_or(style)
+            });
         custom.into_iter().chain(builtin).collect()
     }
 
     /// The style of a name (names are compared without case).
     pub fn cell_style(&self, name: &str) -> Option<CellStyle> {
-        if let Some(own) = self.cell_styles.iter().find(|style| same_name(&style.name, name)) {
+        if let Some(own) = self
+            .cell_styles
+            .iter()
+            .find(|style| same_name(&style.name, name))
+        {
             return Some(own.clone());
         }
-        builtin_styles_in(self.theme(), self.styles.default_style()).into_iter().find(|style| same_name(&style.name, name))
+        builtin_styles_in(self.theme(), self.styles.default_style())
+            .into_iter()
+            .find(|style| same_name(&style.name, name))
     }
 
     /// The name of the style of a cell.
     pub fn cell_style_at(&self, sheet: usize, row: u32, col: u32) -> &str {
-        self.style_at(sheet, row, col).cell_style.as_deref().unwrap_or(NORMAL)
+        self.style_at(sheet, row, col)
+            .cell_style
+            .as_deref()
+            .unwrap_or(NORMAL)
     }
 
     /// Give cells a style: the parts it includes replace theirs.
-    pub fn apply_cell_style(&mut self, sheet: usize, ranges: &[Rect], name: &str) -> Result<(), StyleError> {
+    pub fn apply_cell_style(
+        &mut self,
+        sheet: usize,
+        ranges: &[Rect],
+        name: &str,
+    ) -> Result<(), StyleError> {
         let style = self.cell_style(name).ok_or(StyleError::Unknown)?;
         for range in ranges {
             self.update_style(sheet, *range, &|cell| *cell = style.applied(cell));
@@ -419,7 +510,11 @@ impl Workbook {
                     cell.style = *new;
                 }
             }
-            for id in sheet.col_styles.values_mut().chain(sheet.row_styles.values_mut()) {
+            for id in sheet
+                .col_styles
+                .values_mut()
+                .chain(sheet.row_styles.values_mut())
+            {
                 if let Some(new) = map.get(id) {
                     *id = *new;
                 }
@@ -428,7 +523,12 @@ impl Workbook {
     }
 
     /// Add a style of the user's ("New Cell Style").
-    pub fn add_cell_style(&mut self, name: &str, style: Style, includes: StyleParts) -> Result<(), StyleError> {
+    pub fn add_cell_style(
+        &mut self,
+        name: &str,
+        style: Style,
+        includes: StyleParts,
+    ) -> Result<(), StyleError> {
         let name = name.trim();
         if name.is_empty() {
             return Err(StyleError::EmptyName);
@@ -440,7 +540,10 @@ impl Workbook {
         self.cell_styles.push(CellStyle {
             name: name.to_string(),
             builtin: None,
-            style: Style { cell_style: None, ..style },
+            style: Style {
+                cell_style: None,
+                ..style
+            },
             includes,
         });
         Ok(())
@@ -448,13 +551,21 @@ impl Workbook {
 
     /// Change a style ("Modify"): the cells that have it follow, part by
     /// part, wherever they still have what the style gave them.
-    pub fn modify_cell_style(&mut self, name: &str, style: Style, includes: StyleParts) -> Result<(), StyleError> {
+    pub fn modify_cell_style(
+        &mut self,
+        name: &str,
+        style: Style,
+        includes: StyleParts,
+    ) -> Result<(), StyleError> {
         let old = self.cell_style(name).ok_or(StyleError::Unknown)?;
         if old.builtin == Some(0) {
             return Err(StyleError::Normal);
         }
         let new = CellStyle {
-            style: Style { cell_style: None, ..style },
+            style: Style {
+                cell_style: None,
+                ..style
+            },
             includes,
             ..old.clone()
         };
@@ -463,7 +574,11 @@ impl Workbook {
         }
         self.snapshot();
         self.remap_styles(&|cell| {
-            if !cell.cell_style.as_deref().is_some_and(|own| same_name(own, &old.name)) {
+            if !cell
+                .cell_style
+                .as_deref()
+                .is_some_and(|own| same_name(own, &old.name))
+            {
                 return None;
             }
             let mut out = cell.clone();
@@ -475,7 +590,11 @@ impl Workbook {
             }
             Some(out)
         });
-        match self.cell_styles.iter_mut().find(|own| same_name(&own.name, &old.name)) {
+        match self
+            .cell_styles
+            .iter_mut()
+            .find(|own| same_name(&own.name, &old.name))
+        {
             Some(own) => *own = new,
             None => self.cell_styles.push(new),
         }
@@ -493,7 +612,11 @@ impl Workbook {
         let normal = self.styles.default_style().clone();
         self.snapshot();
         self.remap_styles(&|cell| {
-            if !cell.cell_style.as_deref().is_some_and(|own| same_name(own, &old.name)) {
+            if !cell
+                .cell_style
+                .as_deref()
+                .is_some_and(|own| same_name(own, &old.name))
+            {
                 return None;
             }
             let mut out = cell.clone();
@@ -505,13 +628,17 @@ impl Workbook {
             out.cell_style = None;
             Some(out)
         });
-        self.cell_styles.retain(|own| !same_name(&own.name, &old.name));
+        self.cell_styles
+            .retain(|own| !same_name(&own.name, &old.name));
         Ok(())
     }
 
     /// A free name for a copy of a style ("Duplicate"): `Good 2`.
     pub fn duplicate_style_name(&self, name: &str) -> String {
-        (2..).map(|n| format!("{name} {n}")).find(|candidate| self.cell_style(candidate).is_none()).unwrap_or_default()
+        (2..)
+            .map(|n| format!("{name} {n}"))
+            .find(|candidate| self.cell_style(candidate).is_none())
+            .unwrap_or_default()
     }
 }
 
@@ -530,17 +657,68 @@ mod tests {
         assert_eq!(styles.len(), 49);
         let names: Vec<&str> = styles.iter().map(|style| style.name.as_str()).collect();
         assert_eq!(&names[..4], ["Normal", "Bad", "Good", "Neutral"]);
-        assert_eq!(&names[20..26], ["20% - Accent1", "20% - Accent2", "20% - Accent3", "20% - Accent4", "20% - Accent5", "20% - Accent6"]);
-        assert_eq!(&names[38..], ["Accent1", "Accent2", "Accent3", "Accent4", "Accent5", "Accent6", "Comma", "Comma [0]", "Currency", "Currency [0]", "Percent"]);
+        assert_eq!(
+            &names[20..26],
+            [
+                "20% - Accent1",
+                "20% - Accent2",
+                "20% - Accent3",
+                "20% - Accent4",
+                "20% - Accent5",
+                "20% - Accent6"
+            ]
+        );
+        assert_eq!(
+            &names[38..],
+            [
+                "Accent1",
+                "Accent2",
+                "Accent3",
+                "Accent4",
+                "Accent5",
+                "Accent6",
+                "Comma",
+                "Comma [0]",
+                "Currency",
+                "Currency [0]",
+                "Percent"
+            ]
+        );
         // Excel's numbers, each once.
         let mut ids: Vec<u32> = styles.iter().filter_map(|style| style.builtin).collect();
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), 49);
-        let id = |name: &str| styles.iter().find(|style| style.name == name).and_then(|style| style.builtin);
-        assert_eq!((id("Accent1"), id("60% - Accent1"), id("Accent6"), id("60% - Accent6")), (Some(29), Some(32), Some(49), Some(52)));
-        assert_eq!((id("Good"), id("Heading 4"), id("Percent"), id("Explanatory Text")), (Some(26), Some(19), Some(5), Some(53)));
-        let group = |name: &str| styles.iter().find(|style| style.name == name).map(CellStyle::group);
+        let id = |name: &str| {
+            styles
+                .iter()
+                .find(|style| style.name == name)
+                .and_then(|style| style.builtin)
+        };
+        assert_eq!(
+            (
+                id("Accent1"),
+                id("60% - Accent1"),
+                id("Accent6"),
+                id("60% - Accent6")
+            ),
+            (Some(29), Some(32), Some(49), Some(52))
+        );
+        assert_eq!(
+            (
+                id("Good"),
+                id("Heading 4"),
+                id("Percent"),
+                id("Explanatory Text")
+            ),
+            (Some(26), Some(19), Some(5), Some(53))
+        );
+        let group = |name: &str| {
+            styles
+                .iter()
+                .find(|style| style.name == name)
+                .map(CellStyle::group)
+        };
         assert_eq!(group("Normal"), Some(StyleGroup::GoodBadNeutral));
         assert_eq!(group("Hyperlink"), Some(StyleGroup::DataModel));
         assert_eq!(group("Total"), Some(StyleGroup::TitlesHeadings));
@@ -558,7 +736,10 @@ mod tests {
         w.apply_cell_style(0, &[rect("A1:A2")], "good").unwrap();
         w.commit("style");
         let cell = w.style_at(0, 0, 0);
-        assert_eq!((cell.fill, cell.font.color), (Some(Color(0xC6EFCE)), Some(Color(0x006100))));
+        assert_eq!(
+            (cell.fill, cell.font.color),
+            (Some(Color(0xC6EFCE)), Some(Color(0x006100)))
+        );
         // The font is the style's, the number format is the cell's.
         assert!(!cell.font.italic);
         assert_eq!(&*cell.num_fmt, "0%");
@@ -572,7 +753,10 @@ mod tests {
         w.apply_cell_style(0, &[rect("A1")], "Normal").unwrap();
         w.commit("normal");
         assert_eq!(w.style_at(0, 0, 0), w.styles.default_style());
-        assert_eq!(w.apply_cell_style(0, &[rect("A1")], "No such style"), Err(StyleError::Unknown));
+        assert_eq!(
+            w.apply_cell_style(0, &[rect("A1")], "No such style"),
+            Err(StyleError::Unknown)
+        );
     }
 
     #[test]
@@ -585,7 +769,8 @@ mod tests {
         let mut changed = w.cell_style("Good").unwrap();
         changed.style.fill = Some(Color(0x00FF00));
         changed.style.font.bold = true;
-        w.modify_cell_style("Good", changed.style.clone(), changed.includes).unwrap();
+        w.modify_cell_style("Good", changed.style.clone(), changed.includes)
+            .unwrap();
         w.commit("modify");
         assert_eq!(w.style_at(0, 0, 0).fill, Some(Color(0x00FF00)));
         assert!(w.style_at(0, 0, 0).font.bold);
@@ -600,9 +785,15 @@ mod tests {
         // Undo brings back both the cells and the style.
         assert!(w.undo());
         assert_eq!(w.style_at(0, 0, 0).fill, Some(Color(0xC6EFCE)));
-        assert_eq!(w.cell_style("Good").unwrap().style.fill, Some(Color(0xC6EFCE)));
+        assert_eq!(
+            w.cell_style("Good").unwrap().style.fill,
+            Some(Color(0xC6EFCE))
+        );
         assert!(w.cell_styles.is_empty());
-        assert_eq!(w.modify_cell_style("Normal", Style::default(), StyleParts::ALL), Err(StyleError::Normal));
+        assert_eq!(
+            w.modify_cell_style("Normal", Style::default(), StyleParts::ALL),
+            Err(StyleError::Normal)
+        );
     }
 
     #[test]
@@ -617,9 +808,18 @@ mod tests {
         };
         w.add_cell_style(" Mine ", look.clone(), fill_only).unwrap();
         w.commit("new style");
-        assert_eq!(w.add_cell_style("mine", look.clone(), fill_only), Err(StyleError::NameTaken));
-        assert_eq!(w.add_cell_style("GOOD", look.clone(), fill_only), Err(StyleError::NameTaken));
-        assert_eq!(w.add_cell_style("  ", look.clone(), fill_only), Err(StyleError::EmptyName));
+        assert_eq!(
+            w.add_cell_style("mine", look.clone(), fill_only),
+            Err(StyleError::NameTaken)
+        );
+        assert_eq!(
+            w.add_cell_style("GOOD", look.clone(), fill_only),
+            Err(StyleError::NameTaken)
+        );
+        assert_eq!(
+            w.add_cell_style("  ", look.clone(), fill_only),
+            Err(StyleError::EmptyName)
+        );
         assert_eq!(w.all_cell_styles()[0].name, "Mine");
         assert_eq!(w.all_cell_styles()[0].group(), StyleGroup::Custom);
         assert_eq!(w.duplicate_style_name("Mine"), "Mine 2");
@@ -639,9 +839,13 @@ mod tests {
         // Deleting a built-in style that was changed puts Excel's back.
         let mut good = w.cell_style("Good").unwrap();
         good.style.fill = None;
-        w.modify_cell_style("Good", good.style, good.includes).unwrap();
+        w.modify_cell_style("Good", good.style, good.includes)
+            .unwrap();
         w.delete_cell_style("Good").unwrap();
         w.commit("reset");
-        assert_eq!(w.cell_style("Good").unwrap().style.fill, Some(Color(0xC6EFCE)));
+        assert_eq!(
+            w.cell_style("Good").unwrap().style.fill,
+            Some(Color(0xC6EFCE))
+        );
     }
 }

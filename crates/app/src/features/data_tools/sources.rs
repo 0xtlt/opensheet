@@ -9,7 +9,9 @@
 //! blocks: callers run [`fetch`] off the window thread for anything
 //! remote, and only when the user asked (an address typed, a refresh).
 
-use opensheet_engine::external::{Datum, QueryItem, SourceFormat, SourceTable, html_tables, json_tables, sniff, xml_tables};
+use opensheet_engine::external::{
+    Datum, QueryItem, SourceFormat, SourceTable, html_tables, json_tables, sniff, xml_tables,
+};
 use opensheet_engine::{Locale, Value, Workbook};
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -60,7 +62,10 @@ pub(super) fn local_path(address: &str) -> Option<PathBuf> {
         let mut i = 0;
         while i < raw.len() {
             let escaped = (raw[i] == b'%').then(|| raw.get(i + 1..i + 3)).flatten();
-            match escaped.and_then(|hex| std::str::from_utf8(hex).ok()).and_then(|hex| u8::from_str_radix(hex, 16).ok()) {
+            match escaped
+                .and_then(|hex| std::str::from_utf8(hex).ok())
+                .and_then(|hex| u8::from_str_radix(hex, 16).ok())
+            {
                 Some(byte) => {
                     bytes.push(byte);
                     i += 3;
@@ -81,7 +86,9 @@ pub(super) fn file_url(path: &Path) -> String {
     let mut url = String::from("file://");
     for byte in path.to_string_lossy().bytes() {
         match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => url.push(byte as char),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => {
+                url.push(byte as char)
+            }
             other => url.push_str(&format!("%{other:02X}")),
         }
     }
@@ -108,22 +115,46 @@ fn curl() -> PathBuf {
 /// [`TIMEOUT`] seconds for the web.
 pub(super) fn fetch(address: &str) -> Result<Fetched, FetchError> {
     if let Some(path) = local_path(address) {
-        let size = std::fs::metadata(&path).map_err(|_| FetchError::Missing)?.len();
+        let size = std::fs::metadata(&path)
+            .map_err(|_| FetchError::Missing)?
+            .len();
         if size > SIZE_LIMIT {
             return Err(FetchError::TooLarge);
         }
         let bytes = std::fs::read(&path).map_err(|_| FetchError::Missing)?;
-        return Ok(Fetched { bytes, content_type: None });
+        return Ok(Fetched {
+            bytes,
+            content_type: None,
+        });
     }
     if !is_remote(address) || address.chars().any(|ch| ch.is_control() || ch == ' ') {
         return Err(FetchError::BadAddress);
     }
     let mut child = Command::new(curl())
-        .args(["--silent", "--show-error", "--location", "--max-redirs", "10", "--compressed"])
+        .args([
+            "--silent",
+            "--show-error",
+            "--location",
+            "--max-redirs",
+            "10",
+            "--compressed",
+        ])
         .args(["--proto", "=http,https", "--proto-redir", "=http,https"])
-        .args(["--connect-timeout", "10", "--max-time", &TIMEOUT.to_string(), "--max-filesize", &SIZE_LIMIT.to_string()])
+        .args([
+            "--connect-timeout",
+            "10",
+            "--max-time",
+            &TIMEOUT.to_string(),
+            "--max-filesize",
+            &SIZE_LIMIT.to_string(),
+        ])
         // The status and the type of the answer, apart from its body.
-        .args(["--write-out", "%{stderr}\n%{http_code}\t%{content_type}", "--", address.trim()])
+        .args([
+            "--write-out",
+            "%{stderr}\n%{http_code}\t%{content_type}",
+            "--",
+            address.trim(),
+        ])
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -132,7 +163,10 @@ pub(super) fn fetch(address: &str) -> Result<Fetched, FetchError> {
     // A server that does not say how much it sends is stopped at the
     // limit all the same.
     let mut bytes = Vec::new();
-    let read = child.stdout.take().map(|out| out.take(SIZE_LIMIT + 1).read_to_end(&mut bytes));
+    let read = child
+        .stdout
+        .take()
+        .map(|out| out.take(SIZE_LIMIT + 1).read_to_end(&mut bytes));
     if bytes.len() as u64 > SIZE_LIMIT {
         child.kill().ok();
         child.wait().ok();
@@ -153,7 +187,11 @@ pub(super) fn fetch(address: &str) -> Result<Fetched, FetchError> {
         Some(63) => return Err(FetchError::TooLarge),
         _ => return Err(FetchError::NoConnection),
     }
-    let (code, kind) = report.lines().last().and_then(|line| line.split_once('\t')).unwrap_or(("", ""));
+    let (code, kind) = report
+        .lines()
+        .last()
+        .and_then(|line| line.split_once('\t'))
+        .unwrap_or(("", ""));
     match code.trim().parse::<u32>() {
         Ok(code) if code >= 400 => Err(FetchError::Status(code)),
         _ => Ok(Fetched {
@@ -175,15 +213,27 @@ pub(super) fn document_name(address: &str) -> String {
     if let Some(stem) = local_path(address).as_deref().and_then(Path::file_stem) {
         return stem.to_string_lossy().into_owned();
     }
-    let path = address.split(['?', '#']).next().unwrap_or(address).trim_end_matches('/');
+    let path = address
+        .split(['?', '#'])
+        .next()
+        .unwrap_or(address)
+        .trim_end_matches('/');
     let last = path.rsplit('/').next().unwrap_or(path);
     let stem = last.rsplit_once('.').map_or(last, |(stem, _)| stem);
-    if stem.is_empty() { last.to_string() } else { stem.to_string() }
+    if stem.is_empty() {
+        last.to_string()
+    } else {
+        stem.to_string()
+    }
 }
 
 /// Read what was fetched. `None` when it holds no table: a page without
 /// one, or a document that cannot be read.
-pub(super) fn read_document(fetched: &Fetched, address: &str, locale: &'static Locale) -> Option<Document> {
+pub(super) fn read_document(
+    fetched: &Fetched,
+    address: &str,
+    locale: &'static Locale,
+) -> Option<Document> {
     let text = || opensheet_io::decode_text(&fetched.bytes);
     let tables = match sniff(&fetched.bytes, fetched.content_type.as_deref()) {
         SourceFormat::Text => {
@@ -207,7 +257,11 @@ fn range_rows(wb: &Workbook, sheet: usize, range: opensheet_engine::Rect) -> Vec
                     Value::Empty => Datum::Empty,
                     Value::Number(n) => {
                         let style = wb.style_at(sheet, row, col);
-                        if style.is_general() { Datum::Exact(Value::Number(n)) } else { Datum::Formatted(n, style.num_fmt.to_string()) }
+                        if style.is_general() {
+                            Datum::Exact(Value::Number(n))
+                        } else {
+                            Datum::Formatted(n, style.num_fmt.to_string())
+                        }
                     }
                     Value::Text(text) if text.is_empty() => Datum::Empty,
                     other => Datum::Exact(other),
@@ -304,13 +358,23 @@ pub(super) mod test_server {
                     }
                     let request = String::from_utf8_lossy(&request).into_owned();
                     let path = request.split_whitespace().nth(1).unwrap_or("/").to_string();
-                    let answer = answers.lock().unwrap().get(&path).cloned().unwrap_or(Answer {
-                        status: 404,
-                        content_type: "text/html",
-                        body: b"<html><body>Not Found</body></html>".to_vec(),
-                        location: None,
-                    });
-                    let mut head = format!("HTTP/1.1 {} X\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n", answer.status, answer.content_type, answer.body.len());
+                    let answer = answers
+                        .lock()
+                        .unwrap()
+                        .get(&path)
+                        .cloned()
+                        .unwrap_or(Answer {
+                            status: 404,
+                            content_type: "text/html",
+                            body: b"<html><body>Not Found</body></html>".to_vec(),
+                            location: None,
+                        });
+                    let mut head = format!(
+                        "HTTP/1.1 {} X\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n",
+                        answer.status,
+                        answer.content_type,
+                        answer.body.len()
+                    );
                     if let Some(location) = &answer.location {
                         head.push_str(&format!("Location: {location}\r\n"));
                     }
@@ -323,7 +387,10 @@ pub(super) mod test_server {
         }
 
         pub fn set(&self, path: &str, answer: Answer) {
-            self.answers.lock().unwrap().insert(path.to_string(), answer);
+            self.answers
+                .lock()
+                .unwrap()
+                .insert(path.to_string(), answer);
         }
 
         pub fn url(&self, path: &str) -> String {
@@ -343,22 +410,43 @@ mod tests {
         assert!(!is_remote("file:///tmp/x") && !is_remote("/tmp/http://x"));
         let path = Path::new("/Users/ann/Mes données/été 100%.json");
         let url = file_url(path);
-        assert_eq!(url, "file:///Users/ann/Mes%20donn%C3%A9es/%C3%A9t%C3%A9%20100%25.json");
+        assert_eq!(
+            url,
+            "file:///Users/ann/Mes%20donn%C3%A9es/%C3%A9t%C3%A9%20100%25.json"
+        );
         assert_eq!(local_path(&url).as_deref(), Some(path));
-        assert_eq!(local_path("file://localhost/tmp/a.csv"), Some(PathBuf::from("/tmp/a.csv")));
-        assert_eq!(local_path("/tmp/a b.csv"), Some(PathBuf::from("/tmp/a b.csv")));
+        assert_eq!(
+            local_path("file://localhost/tmp/a.csv"),
+            Some(PathBuf::from("/tmp/a.csv"))
+        );
+        assert_eq!(
+            local_path("/tmp/a b.csv"),
+            Some(PathBuf::from("/tmp/a b.csv"))
+        );
         assert_eq!(local_path("http://127.0.0.1/a"), None);
-        assert_eq!(normalize(" 127.0.0.1:8080/page "), "http://127.0.0.1:8080/page");
+        assert_eq!(
+            normalize(" 127.0.0.1:8080/page "),
+            "http://127.0.0.1:8080/page"
+        );
         assert_eq!(normalize("https://x.test/a"), "https://x.test/a");
         assert_eq!(normalize("/tmp/a.json"), "/tmp/a.json");
-        assert_eq!(document_name("http://x.test/data/people.json?all=1"), "people");
+        assert_eq!(
+            document_name("http://x.test/data/people.json?all=1"),
+            "people"
+        );
         assert_eq!(document_name("http://x.test/"), "x");
     }
 
     #[test]
     fn fetching_from_a_server_on_this_machine() {
         let server = Server::start();
-        server.set("/page", page("text/html; charset=utf-8", "<table><tr><td>é</td></tr></table>"));
+        server.set(
+            "/page",
+            page(
+                "text/html; charset=utf-8",
+                "<table><tr><td>é</td></tr></table>",
+            ),
+        );
         server.set(
             "/old",
             Answer {
@@ -378,20 +466,50 @@ mod tests {
             },
         );
         let got = fetch(&server.url("/page")).ok().expect("the page");
-        assert_eq!(got.content_type.as_deref(), Some("text/html; charset=utf-8"));
-        assert_eq!(String::from_utf8_lossy(&got.bytes), "<table><tr><td>é</td></tr></table>");
+        assert_eq!(
+            got.content_type.as_deref(),
+            Some("text/html; charset=utf-8")
+        );
+        assert_eq!(
+            String::from_utf8_lossy(&got.bytes),
+            "<table><tr><td>é</td></tr></table>"
+        );
         // A redirection is followed.
-        let moved = fetch(&server.url("/old")).ok().expect("the page it moved to");
+        let moved = fetch(&server.url("/old"))
+            .ok()
+            .expect("the page it moved to");
         assert_eq!(moved.bytes, got.bytes);
-        assert_eq!(fetch(&server.url("/nothing")).err(), Some(FetchError::Status(404)));
-        assert_eq!(fetch(&server.url("/broken")).err(), Some(FetchError::Status(500)));
+        assert_eq!(
+            fetch(&server.url("/nothing")).err(),
+            Some(FetchError::Status(404))
+        );
+        assert_eq!(
+            fetch(&server.url("/broken")).err(),
+            Some(FetchError::Status(500))
+        );
         // Nobody listens on a port that was just given back.
-        let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
-        assert_eq!(fetch(&format!("http://127.0.0.1:{free}/")).err(), Some(FetchError::NoConnection));
+        let free = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        assert_eq!(
+            fetch(&format!("http://127.0.0.1:{free}/")).err(),
+            Some(FetchError::NoConnection)
+        );
         // Only the web and files; nothing that could be read as an option.
-        assert_eq!(fetch("ftp://127.0.0.1/x").err(), Some(FetchError::BadAddress));
-        assert_eq!(fetch("http://127.0.0.1/a b").err(), Some(FetchError::BadAddress));
-        assert_eq!(fetch("/nowhere/at/all.csv").err(), Some(FetchError::Missing));
+        assert_eq!(
+            fetch("ftp://127.0.0.1/x").err(),
+            Some(FetchError::BadAddress)
+        );
+        assert_eq!(
+            fetch("http://127.0.0.1/a b").err(),
+            Some(FetchError::BadAddress)
+        );
+        assert_eq!(
+            fetch("/nowhere/at/all.csv").err(),
+            Some(FetchError::Missing)
+        );
     }
 
     #[test]
@@ -401,34 +519,92 @@ mod tests {
             content_type: kind.map(str::to_string),
         };
         let names = |document: Option<Document>| match document {
-            Some(Document::Tables(tables)) => tables.into_iter().map(|table| table.name).collect::<Vec<_>>(),
+            Some(Document::Tables(tables)) => tables
+                .into_iter()
+                .map(|table| table.name)
+                .collect::<Vec<_>>(),
             Some(Document::Text(_)) => vec!["(text)".to_string()],
             None => Vec::new(),
         };
         let en = Locale::en();
-        assert_eq!(names(read_document(&fetched("<html><table><tr><td>1</td></tr></table></html>", None), "http://h/p", en)), ["Table 0"]);
-        assert!(names(read_document(&fetched("<html><p>nothing</p></html>", None), "http://h/p", en)).is_empty());
-        assert_eq!(names(read_document(&fetched("{\"rows\":[{\"a\":1}]}", None), "file:///tmp/stock.json", en)), ["stock", "rows"]);
-        assert_eq!(names(read_document(&fetched("a;b\n1;2\n", Some("text/csv")), "http://h/x.csv", en)), ["(text)"]);
-        assert_eq!(names(read_document(&fetched("<list><item><a>1</a></item></list>", None), "/tmp/x.xml", en)), ["item"]);
+        assert_eq!(
+            names(read_document(
+                &fetched("<html><table><tr><td>1</td></tr></table></html>", None),
+                "http://h/p",
+                en
+            )),
+            ["Table 0"]
+        );
+        assert!(
+            names(read_document(
+                &fetched("<html><p>nothing</p></html>", None),
+                "http://h/p",
+                en
+            ))
+            .is_empty()
+        );
+        assert_eq!(
+            names(read_document(
+                &fetched("{\"rows\":[{\"a\":1}]}", None),
+                "file:///tmp/stock.json",
+                en
+            )),
+            ["stock", "rows"]
+        );
+        assert_eq!(
+            names(read_document(
+                &fetched("a;b\n1;2\n", Some("text/csv")),
+                "http://h/x.csv",
+                en
+            )),
+            ["(text)"]
+        );
+        assert_eq!(
+            names(read_document(
+                &fetched("<list><item><a>1</a></item></list>", None),
+                "/tmp/x.xml",
+                en
+            )),
+            ["item"]
+        );
 
         // A workbook: its tables first, then its sheets.
         let mut wb = Workbook::new(en);
         wb.sheets[0].name = "Stock".into();
-        for (row, cells) in [["Item", "Day"], ["Nut", "2024-03-05"], ["Bolt", "2024-03-06"]].iter().enumerate() {
+        for (row, cells) in [
+            ["Item", "Day"],
+            ["Nut", "2024-03-05"],
+            ["Bolt", "2024-03-06"],
+        ]
+        .iter()
+        .enumerate()
+        {
             for (col, text) in cells.iter().enumerate() {
                 wb.set_cell_text(0, row as u32, col as u32, text).unwrap();
             }
         }
         wb.commit("setup");
-        let bytes = opensheet_io::write_xlsx(&wb, std::io::Cursor::new(Vec::new())).unwrap().into_inner();
-        let Some(Document::Tables(tables)) = read_document(&Fetched { bytes, content_type: None }, "/tmp/stock.xlsx", en) else {
+        let bytes = opensheet_io::write_xlsx(&wb, std::io::Cursor::new(Vec::new()))
+            .unwrap()
+            .into_inner();
+        let Some(Document::Tables(tables)) = read_document(
+            &Fetched {
+                bytes,
+                content_type: None,
+            },
+            "/tmp/stock.xlsx",
+            en,
+        ) else {
             panic!("a workbook");
         };
         let listed: Vec<&str> = tables.iter().map(|table| table.name.as_str()).collect();
         assert_eq!(listed, ["Stock"]);
         assert_eq!(tables[0].rows[1][0], Datum::Exact(Value::text("Nut")));
         // A date keeps the format that shows it as one.
-        assert!(matches!(&tables[0].rows[1][1], Datum::Formatted(n, format) if *n > 45000.0 && format.contains('y')), "{:?}", tables[0].rows[1][1]);
+        assert!(
+            matches!(&tables[0].rows[1][1], Datum::Formatted(n, format) if *n > 45000.0 && format.contains('y')),
+            "{:?}",
+            tables[0].rows[1][1]
+        );
     }
 }

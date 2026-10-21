@@ -7,12 +7,15 @@
 //! painting on the grid and registering a zone (see `features/mod.rs`).
 
 use super::{
-    Button, CheckItem, CheckList, Checkbox, ColorButton, ColorGrid, ComboBox, GroupBox, ListBox, NumberField, RadioGroup,
-    RefEdit, ScrollArea, Select, Sketch, TabStrip, TextField, Tree, TreeNode, Tri, dialog, input, label, labeled,
-    number_input, ok_cancel, preview, separator, ui_font,
+    Button, CheckItem, CheckList, Checkbox, ColorButton, ColorGrid, ComboBox, GroupBox, ListBox,
+    NumberField, RadioGroup, RefEdit, ScrollArea, Select, Sketch, TabStrip, TextField, Tree,
+    TreeNode, Tri, dialog, input, label, labeled, number_input, ok_cancel, preview, separator,
+    ui_font,
 };
 use crate::app::ExcelApp;
-use crate::features::{Cx, Feature, PaintLayer, Painter, StatusItem, Zone, ZoneEvent, ZoneResponse};
+use crate::features::{
+    Cx, Feature, PaintLayer, Painter, StatusItem, Zone, ZoneEvent, ZoneResponse,
+};
 use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
@@ -33,19 +36,42 @@ fn names(items: &[&'static str]) -> Vec<SharedString> {
 
 fn sample_tree() -> Vec<TreeNode> {
     let month = |name: &'static str, days: &[u32]| {
-        TreeNode::branch(name, days.iter().map(|day| TreeNode::leaf(day.to_string(), day % 2 == 0)).collect())
+        TreeNode::branch(
+            name,
+            days.iter()
+                .map(|day| TreeNode::leaf(day.to_string(), day % 2 == 0))
+                .collect(),
+        )
     };
-    let mut year = TreeNode::branch("2026", vec![month("January", &[5, 12, 19]), month("February", &[2, 18])]);
+    let mut year = TreeNode::branch(
+        "2026",
+        vec![month("January", &[5, 12, 19]), month("February", &[2, 18])],
+    );
     year.expanded = true;
-    vec![year, TreeNode::branch("2025", vec![month("December", &[1, 24, 31])])]
+    vec![
+        year,
+        TreeNode::branch("2025", vec![month("December", &[1, 24, 31])]),
+    ]
 }
 
 fn sample_checks() -> Vec<CheckItem> {
-    ["North", "South", "East", "West", "Centre", "Islands", "Overseas", "Online", "Wholesale", "Retail", "Export"]
-        .iter()
-        .enumerate()
-        .map(|(i, name)| CheckItem::new(*name, i % 3 != 1))
-        .collect()
+    [
+        "North",
+        "South",
+        "East",
+        "West",
+        "Centre",
+        "Islands",
+        "Overseas",
+        "Online",
+        "Wholesale",
+        "Retail",
+        "Export",
+    ]
+    .iter()
+    .enumerate()
+    .map(|(i, name)| CheckItem::new(*name, i % 3 != 1))
+    .collect()
 }
 
 struct Gallery {
@@ -110,28 +136,36 @@ impl Gallery {
                     .gap(px(10.))
                     .child(
                         GroupBox::new("Check boxes")
-                            .child(Checkbox::new("check", "Wrap text", self.check).on_change(cx.listener(
-                                |this, on: &bool, _, cx| {
+                            .child(Checkbox::new("check", "Wrap text", self.check).on_change(
+                                cx.listener(|this, on: &bool, _, cx| {
                                     this.check = *on;
                                     cx.notify();
-                                },
-                            )))
-                            .child(Checkbox::new("tri", "Three states", self.tri).on_change_tri(cx.listener(
-                                |this, state: &Tri, _, cx| {
-                                    this.tri = *state;
-                                    cx.notify();
-                                },
-                            )))
+                                }),
+                            ))
+                            .child(
+                                Checkbox::new("tri", "Three states", self.tri).on_change_tri(
+                                    cx.listener(|this, state: &Tri, _, cx| {
+                                        this.tri = *state;
+                                        cx.notify();
+                                    }),
+                                ),
+                            )
                             .child(Checkbox::new("off", "Disabled", true).disabled(true)),
                     )
                     .child(
                         GroupBox::new("Radio groups")
                             .child(
-                                RadioGroup::new("radio", names(&["Shift cells right", "Shift cells down"]), self.radio)
-                                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                                RadioGroup::new(
+                                    "radio",
+                                    names(&["Shift cells right", "Shift cells down"]),
+                                    self.radio,
+                                )
+                                .on_change(cx.listener(
+                                    |this, ix: &usize, _, cx| {
                                         this.radio = Some(*ix);
                                         cx.notify();
-                                    })),
+                                    },
+                                )),
                             )
                             .child(
                                 RadioGroup::new("layout", names(&["Rows", "Columns"]), self.layout)
@@ -141,7 +175,10 @@ impl Gallery {
                                         cx.notify();
                                     })),
                             )
-                            .child(RadioGroup::new("radio-off", names(&["Disabled"]), None).disabled(true)),
+                            .child(
+                                RadioGroup::new("radio-off", names(&["Disabled"]), None)
+                                    .disabled(true),
+                            ),
                     ),
             )
             .child(
@@ -151,18 +188,31 @@ impl Gallery {
                     .gap(px(8.))
                     .child(labeled(
                         "Select:",
-                        Select::new("select", names(&["None", "Single", "Double", "Single Accounting"]), self.select)
-                            .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                        Select::new(
+                            "select",
+                            names(&["None", "Single", "Double", "Single Accounting"]),
+                            self.select,
+                        )
+                        .on_change(cx.listener(
+                            |this, ix: &usize, _, cx| {
                                 this.select = Some(*ix);
                                 cx.notify();
-                            })),
+                            },
+                        )),
                     ))
-                    .child(labeled("Disabled:", Select::new("select-off", names(&["Automatic"]), Some(0)).disabled(true)))
+                    .child(labeled(
+                        "Disabled:",
+                        Select::new("select-off", names(&["Automatic"]), Some(0)).disabled(true),
+                    ))
                     .child(labeled(
                         "Combo box:",
-                        ComboBox::new("combo", &self.combo, names(&["8", "9", "10", "11", "12", "14", "16", "18"]))
-                            .width(70.0)
-                            .on_pick(cx.listener(|_, _: &usize, _, cx| cx.notify())),
+                        ComboBox::new(
+                            "combo",
+                            &self.combo,
+                            names(&["8", "9", "10", "11", "12", "14", "16", "18"]),
+                        )
+                        .width(70.0)
+                        .on_pick(cx.listener(|_, _: &usize, _, cx| cx.notify())),
                     ))
                     .child(labeled("Text:", TextField::new(&self.text).width(140.0)))
                     .child(labeled("Number:", NumberField::new("number", &self.number)))
@@ -191,8 +241,19 @@ impl Gallery {
 
     fn lists(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let fonts = names(&[
-            "Aptos", "Arial", "Calibri", "Cambria", "Courier New", "Georgia", "Helvetica", "Menlo", "Optima", "Palatino",
-            "Tahoma", "Times New Roman", "Verdana",
+            "Aptos",
+            "Arial",
+            "Calibri",
+            "Cambria",
+            "Courier New",
+            "Georgia",
+            "Helvetica",
+            "Menlo",
+            "Optima",
+            "Palatino",
+            "Tahoma",
+            "Times New Roman",
+            "Verdana",
         ]);
         div()
             .flex()
@@ -228,41 +289,53 @@ impl Gallery {
                     .child(label(self.activated.clone()).text_color(c(theme::TEXT_MUTED))),
             )
             .child(
-                div().flex().flex_col().gap(px(3.)).child(label("Check-list with search:")).child(
-                    CheckList::new("checks", self.checks.clone())
-                        .search(&self.search)
-                        .width(170.0)
-                        .height(180.0)
-                        .on_toggle(cx.listener(|this, (ix, on): &(usize, bool), _, cx| {
-                            this.checks[*ix].checked = *on;
-                            cx.notify();
-                        }))
-                        .on_toggle_all(cx.listener(|this, (shown, on): &(Vec<usize>, bool), _, cx| {
-                            for ix in shown {
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(3.))
+                    .child(label("Check-list with search:"))
+                    .child(
+                        CheckList::new("checks", self.checks.clone())
+                            .search(&self.search)
+                            .width(170.0)
+                            .height(180.0)
+                            .on_toggle(cx.listener(|this, (ix, on): &(usize, bool), _, cx| {
                                 this.checks[*ix].checked = *on;
-                            }
-                            cx.notify();
-                        })),
-                ),
+                                cx.notify();
+                            }))
+                            .on_toggle_all(cx.listener(
+                                |this, (shown, on): &(Vec<usize>, bool), _, cx| {
+                                    for ix in shown {
+                                        this.checks[*ix].checked = *on;
+                                    }
+                                    cx.notify();
+                                },
+                            )),
+                    ),
             )
             .child(
-                div().flex().flex_col().gap(px(3.)).child(label("Tree:")).child(
-                    Tree::new("tree", &self.tree)
-                        .width(170.0)
-                        .height(208.0)
-                        .on_toggle(cx.listener(|this, path: &Vec<usize>, _, cx| {
-                            TreeNode::toggle(&mut this.tree, path);
-                            cx.notify();
-                        }))
-                        .on_expand(cx.listener(|this, path: &Vec<usize>, _, cx| {
-                            TreeNode::toggle_expanded(&mut this.tree, path);
-                            cx.notify();
-                        }))
-                        .on_select(cx.listener(|this, path: &Vec<usize>, _, cx| {
-                            this.activated = format!("node {path:?}").into();
-                            cx.notify();
-                        })),
-                ),
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(3.))
+                    .child(label("Tree:"))
+                    .child(
+                        Tree::new("tree", &self.tree)
+                            .width(170.0)
+                            .height(208.0)
+                            .on_toggle(cx.listener(|this, path: &Vec<usize>, _, cx| {
+                                TreeNode::toggle(&mut this.tree, path);
+                                cx.notify();
+                            }))
+                            .on_expand(cx.listener(|this, path: &Vec<usize>, _, cx| {
+                                TreeNode::toggle_expanded(&mut this.tree, path);
+                                cx.notify();
+                            }))
+                            .on_select(cx.listener(|this, path: &Vec<usize>, _, cx| {
+                                this.activated = format!("node {path:?}").into();
+                                cx.notify();
+                            })),
+                    ),
             )
             .into_any_element()
     }
@@ -272,7 +345,11 @@ impl Gallery {
             .modal
             .read_app(cx, |app| app.sel().current().name())
             .unwrap_or_default();
-        let fill = self.fill.flatten().map(|color| color.value()).unwrap_or(0xFFFFFF);
+        let fill = self
+            .fill
+            .flatten()
+            .map(|color| color.value())
+            .unwrap_or(0xFFFFFF);
         div()
             .flex()
             .gap(px(20.))
@@ -350,12 +427,12 @@ impl Render for Gallery {
             .width(580.0)
             .on_ok(move |_, window, cx| modal.close(window, cx))
             .child(
-                TabStrip::new("tabs", names(&["Basics", "Lists", "More"]), self.tab).on_change(cx.listener(
-                    |this, ix: &usize, _, cx| {
+                TabStrip::new("tabs", names(&["Basics", "Lists", "More"]), self.tab).on_change(
+                    cx.listener(|this, ix: &usize, _, cx| {
                         this.tab = *ix;
                         cx.notify();
-                    },
-                )),
+                    }),
+                ),
             )
             .child(div().h(px(270.)).child(body))
             .footer(ok_cancel(&self.modal, {
@@ -430,7 +507,10 @@ struct DropDown {
 
 impl Render for DropDown {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
-        div().w(px(220.)).text_size(px(12.)).child(self.pane.clone())
+        div()
+            .w(px(220.))
+            .text_size(px(12.))
+            .child(self.pane.clone())
     }
 }
 
@@ -455,18 +535,31 @@ impl Feature for GalleryMarks {
         }
         let (_, y0, x1, _) = p.cell_box(Rect::cell(row, col));
         let size = (7.0 * p.zoom()).max(5.0);
-        p.polygon(&[(x1 - size - 1.0, y0), (x1 - 1.0, y0), (x1 - 1.0, y0 + size)], c(0xC00000));
+        p.polygon(
+            &[(x1 - size - 1.0, y0), (x1 - 1.0, y0), (x1 - 1.0, y0 + size)],
+            c(0xC00000),
+        );
         p.zone((x1 - size - 2.0, y0, x1, y0 + size + 1.0), Corner)
             .cursor(CursorStyle::PointingHand)
             .tooltip("A zone of the widget gallery: click it");
     }
 
-    fn zone_mouse_down(&self, app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, _window: &mut Window, cx: &mut Cx) -> ZoneResponse {
+    fn zone_mouse_down(
+        &self,
+        app: &mut ExcelApp,
+        zone: &Zone,
+        ev: &ZoneEvent,
+        _window: &mut Window,
+        cx: &mut Cx,
+    ) -> ZoneResponse {
         if zone.payload::<Corner>().is_none() {
             return ZoneResponse::Ignored;
         }
         let (row, col) = ev.cell;
-        app.set_status(format!("Zone clicked on {}", Rect::cell(row, col).name()), cx);
+        app.set_status(
+            format!("Zone clicked on {}", Rect::cell(row, col).name()),
+            cx,
+        );
         ZoneResponse::Handled
     }
 

@@ -63,7 +63,9 @@ impl PasteWhat {
         match self {
             PasteWhat::ValuesAndSourceFormats => &[PasteMode::Formats, PasteMode::Values],
             PasteWhat::KeepSourceColumnWidths => &[PasteMode::All, PasteMode::ColumnWidths],
-            PasteWhat::All | PasteWhat::AllUsingSourceTheme | PasteWhat::AllMergingConditionalFormats => &[PasteMode::All],
+            PasteWhat::All
+            | PasteWhat::AllUsingSourceTheme
+            | PasteWhat::AllMergingConditionalFormats => &[PasteMode::All],
             PasteWhat::Formulas => &[PasteMode::Formulas],
             PasteWhat::Values => &[PasteMode::Values],
             PasteWhat::Formats => &[PasteMode::Formats],
@@ -79,8 +81,13 @@ impl PasteWhat {
     /// What of the copied contents is written.
     fn contents(self) -> Contents {
         match self {
-            PasteWhat::Formats | PasteWhat::Comments | PasteWhat::Validation | PasteWhat::ColumnWidths => Contents::Kept,
-            PasteWhat::Values | PasteWhat::ValuesAndNumberFormats | PasteWhat::ValuesAndSourceFormats => Contents::Values,
+            PasteWhat::Formats
+            | PasteWhat::Comments
+            | PasteWhat::Validation
+            | PasteWhat::ColumnWidths => Contents::Kept,
+            PasteWhat::Values
+            | PasteWhat::ValuesAndNumberFormats
+            | PasteWhat::ValuesAndSourceFormats => Contents::Values,
             _ => Contents::Formulas,
         }
     }
@@ -95,7 +102,9 @@ impl PasteWhat {
             | PasteWhat::Formats
             | PasteWhat::ValuesAndSourceFormats => Formats::All,
             PasteWhat::AllExceptBorders => Formats::AllButBorders,
-            PasteWhat::FormulasAndNumberFormats | PasteWhat::ValuesAndNumberFormats => Formats::Number,
+            PasteWhat::FormulasAndNumberFormats | PasteWhat::ValuesAndNumberFormats => {
+                Formats::Number
+            }
             _ => Formats::Kept,
         }
     }
@@ -206,7 +215,11 @@ fn combine(existing: &Content, pasted: &Content, op: BinaryOp) -> Option<Content
             _ if b == 0.0 => Value::Error(ErrorKind::Div0),
             _ => Value::Number(a / b),
         })),
-        (a, b) => Some(Content::Formula(Arc::new(Expr::Binary(op, Box::new(a.term()), Box::new(b.term()))))),
+        (a, b) => Some(Content::Formula(Arc::new(Expr::Binary(
+            op,
+            Box::new(a.term()),
+            Box::new(b.term()),
+        )))),
     }
 }
 
@@ -223,11 +236,13 @@ fn transposed_corner(corner: &CellRef, from: (u32, u32), to: (u32, u32)) -> Opti
         (true, false) => (corner.row as i64, to.1 as i64 + d_col),
         (false, true) => (to.0 as i64 + d_row, corner.col as i64),
     };
-    ((0..MAX_ROWS as i64).contains(&row) && (0..MAX_COLS as i64).contains(&col)).then_some(CellRef {
-        row: row as u32,
-        col: col as u32,
-        ..*corner
-    })
+    ((0..MAX_ROWS as i64).contains(&row) && (0..MAX_COLS as i64).contains(&col)).then_some(
+        CellRef {
+            row: row as u32,
+            col: col as u32,
+            ..*corner
+        },
+    )
 }
 
 /// Where a block of cells lands when the block `src` is pasted with its
@@ -252,14 +267,26 @@ pub(crate) fn transposed(e: &Expr, from: (u32, u32), to: (u32, u32)) -> Expr {
             let start = transposed_corner(&r.start, from, to);
             let end = r.end.as_ref().map(|end| transposed_corner(end, from, to));
             match (start, end) {
-                (Some(start), None) => Expr::Ref(RefExpr { start, end: None, ..r }),
+                (Some(start), None) => Expr::Ref(RefExpr {
+                    start,
+                    end: None,
+                    ..r
+                }),
                 (Some(start), Some(Some(end))) => {
                     // Corners named top-left first, as they are written.
                     let (r0, r1) = (start.row.min(end.row), start.row.max(end.row));
                     let (c0, c1) = (start.col.min(end.col), start.col.max(end.col));
                     Expr::Ref(RefExpr {
-                        start: CellRef { row: r0, col: c0, ..start },
-                        end: Some(CellRef { row: r1, col: c1, ..end }),
+                        start: CellRef {
+                            row: r0,
+                            col: c0,
+                            ..start
+                        },
+                        end: Some(CellRef {
+                            row: r1,
+                            col: c1,
+                            ..end
+                        }),
                         ..r
                     })
                 }
@@ -301,7 +328,13 @@ impl Workbook {
     }
 
     /// The rectangle `paste_special` would write for these arguments.
-    pub fn paste_special_area(&self, sheet: usize, dest: Rect, clip: &Clip, spec: &PasteSpecial) -> Rect {
+    pub fn paste_special_area(
+        &self,
+        sheet: usize,
+        dest: Rect,
+        clip: &Clip,
+        spec: &PasteSpecial,
+    ) -> Rect {
         if sheet >= self.sheets.len() || clip.rows.is_empty() {
             return dest;
         }
@@ -322,7 +355,13 @@ impl Workbook {
     /// of the formulas are transposed with them, in the cells and in the
     /// conditional formats and validation rules that travel with them;
     /// comments are then left behind.
-    pub fn paste_special(&mut self, sheet: usize, dest: Rect, clip: &Clip, spec: &PasteSpecial) -> Rect {
+    pub fn paste_special(
+        &mut self,
+        sheet: usize,
+        dest: Rect,
+        clip: &Clip,
+        spec: &PasteSpecial,
+    ) -> Rect {
         if sheet >= self.sheets.len() || clip.rows.is_empty() {
             return dest;
         }
@@ -340,7 +379,10 @@ impl Workbook {
         let out = layout.out;
         let (contents, formats) = (spec.what.contents(), spec.what.formats());
         let cw = clip.rect.cols();
-        let op = spec.operation.binary().filter(|_| contents != Contents::Kept);
+        let op = spec
+            .operation
+            .binary()
+            .filter(|_| contents != Contents::Kept);
 
         // What is kept beside the cells travels when the cells keep their
         // places.
@@ -378,8 +420,17 @@ impl Workbook {
                 for top in (0..out.rows()).step_by(layout.height as usize) {
                     for left in (0..out.cols()).step_by(layout.width as usize) {
                         for m in &clip.merges {
-                            let m = if spec.transpose { Rect::new(m.c0, m.r0, m.c1, m.r1) } else { *m };
-                            let placed = Rect::new(out.r0 + top + m.r0, out.c0 + left + m.c0, out.r0 + top + m.r1, out.c0 + left + m.c1);
+                            let m = if spec.transpose {
+                                Rect::new(m.c0, m.r0, m.c1, m.r1)
+                            } else {
+                                *m
+                            };
+                            let placed = Rect::new(
+                                out.r0 + top + m.r0,
+                                out.c0 + left + m.c0,
+                                out.r0 + top + m.r1,
+                                out.c0 + left + m.c1,
+                            );
                             if placed.r1 <= out.r1 && placed.c1 <= out.c1 {
                                 self.sheets[sheet].merges.push(placed);
                             }
@@ -400,22 +451,30 @@ impl Workbook {
                     (dr % layout.height, dc % layout.width)
                 };
                 let src: Option<&ClipCell> = clip.cells[(i * cw + j) as usize].as_ref();
-                let blank = src.is_none_or(|s| matches!(s.content, Content::Empty) && s.value.is_empty());
+                let blank =
+                    src.is_none_or(|s| matches!(s.content, Content::Empty) && s.value.is_empty());
                 if blank && spec.skip_blanks {
                     continue;
                 }
                 let from = (clip.rows[i as usize], clip.rect.c0 + j);
                 let existing = self.sheets[sheet].cells.get(&(row, col)).cloned();
                 let cur_style = self.sheets[sheet].style_id_at(row, col);
-                let kept = || existing.as_ref().map(|c| c.content.clone()).unwrap_or(Content::Empty);
+                let kept = || {
+                    existing
+                        .as_ref()
+                        .map(|c| c.content.clone())
+                        .unwrap_or(Content::Empty)
+                };
                 let value = src.map(|s| s.value.clone()).unwrap_or_default();
                 let pasted = match (contents, src.map(|s| &s.content)) {
                     (Contents::Kept, _) => kept(),
-                    (Contents::Formulas, Some(Content::Formula(e))) => Content::Formula(Arc::new(if spec.transpose {
-                        transposed(e, from, (row, col))
-                    } else {
-                        e.shifted(row as i64 - from.0 as i64, col as i64 - from.1 as i64)
-                    })),
+                    (Contents::Formulas, Some(Content::Formula(e))) => {
+                        Content::Formula(Arc::new(if spec.transpose {
+                            transposed(e, from, (row, col))
+                        } else {
+                            e.shifted(row as i64 - from.0 as i64, col as i64 - from.1 as i64)
+                        }))
+                    }
                     (Contents::Formulas, Some(content)) => content.clone(),
                     (Contents::Values, _) if !value.is_empty() => Content::Value(value),
                     _ => Content::Empty,
@@ -428,27 +487,41 @@ impl Workbook {
                 let style = match formats {
                     Formats::Kept => cur_style,
                     Formats::All => from_style,
-                    Formats::AllButBorders | Formats::Number => *mixed.entry((from_style, cur_style)).or_insert_with(|| {
-                        let (from, onto) = (self.styles.get(from_style).clone(), self.styles.get(cur_style).clone());
-                        let style = if formats == Formats::AllButBorders {
-                            Style {
-                                borders: onto.borders,
-                                ..from
-                            }
-                        } else {
-                            Style {
-                                num_fmt: from.num_fmt,
-                                ..onto
-                            }
-                        };
-                        self.styles.intern(style)
-                    }),
+                    Formats::AllButBorders | Formats::Number => {
+                        *mixed.entry((from_style, cur_style)).or_insert_with(|| {
+                            let (from, onto) = (
+                                self.styles.get(from_style).clone(),
+                                self.styles.get(cur_style).clone(),
+                            );
+                            let style = if formats == Formats::AllButBorders {
+                                Style {
+                                    borders: onto.borders,
+                                    ..from
+                                }
+                            } else {
+                                Style {
+                                    num_fmt: from.num_fmt,
+                                    ..onto
+                                }
+                            };
+                            self.styles.intern(style)
+                        })
+                    }
                 };
                 let value = match &content {
                     Content::Value(v) => v.clone(),
                     _ => Value::Empty,
                 };
-                self.put_cell(sheet, row, col, Some(Cell { content, value, style }));
+                self.put_cell(
+                    sheet,
+                    row,
+                    col,
+                    Some(Cell {
+                        content,
+                        value,
+                        style,
+                    }),
+                );
             }
         }
         out
@@ -462,7 +535,8 @@ impl Workbook {
         if sheet >= self.sheets.len() || clip.rows.is_empty() || clip.sheet >= self.sheets.len() {
             return dest;
         }
-        let source: Option<Arc<str>> = (clip.sheet != sheet).then(|| Arc::from(self.sheets[clip.sheet].name.as_str()));
+        let source: Option<Arc<str>> =
+            (clip.sheet != sheet).then(|| Arc::from(self.sheets[clip.sheet].name.as_str()));
         let single = clip.rows.len() == 1 && clip.rect.cols() == 1;
         let mut out = Rect::cell(dest.r0, dest.c0);
         for (i, &from_row) in clip.rows.iter().enumerate() {
@@ -519,7 +593,10 @@ mod tests {
         ]);
         let ten = w.copy(0, rect("A1"));
         // A number onto numbers, a formula, text and a blank cell.
-        assert_eq!(w.paste_special(0, rect("C1:C4"), &ten, &spec(PasteWhat::All, PasteOp::Add)), rect("C1:C4"));
+        assert_eq!(
+            w.paste_special(0, rect("C1:C4"), &ten, &spec(PasteWhat::All, PasteOp::Add)),
+            rect("C1:C4")
+        );
         w.commit("add");
         assert_eq!(val(&w, "C1"), Value::Number(15.0));
         assert_eq!(text(&w, "C2"), "=(A1*2)+10");
@@ -528,16 +605,31 @@ mod tests {
         assert_eq!(val(&w, "C4"), Value::Number(10.0));
         // A copied formula is wrapped too, moved as any copy.
         let formula = w.copy(0, rect("E1"));
-        w.paste_special(0, rect("G1"), &formula, &spec(PasteWhat::Formulas, PasteOp::Multiply));
+        w.paste_special(
+            0,
+            rect("G1"),
+            &formula,
+            &spec(PasteWhat::Formulas, PasteOp::Multiply),
+        );
         w.commit("multiply");
         assert_eq!(text(&w, "G1"), "=4*(C1+1)");
         // Its value alone when values are pasted.
-        w.paste_special(0, rect("C5"), &formula, &spec(PasteWhat::Values, PasteOp::Subtract));
+        w.paste_special(
+            0,
+            rect("C5"),
+            &formula,
+            &spec(PasteWhat::Values, PasteOp::Subtract),
+        );
         w.commit("subtract");
         assert_eq!(val(&w, "C5"), Value::Number(-4.0));
         // Dividing by a blank cell is a division by zero.
         let blank = w.copy(0, rect("Z50"));
-        w.paste_special(0, rect("C5"), &blank, &spec(PasteWhat::All, PasteOp::Divide));
+        w.paste_special(
+            0,
+            rect("C5"),
+            &blank,
+            &spec(PasteWhat::All, PasteOp::Divide),
+        );
         w.commit("divide");
         assert_eq!(val(&w, "C5"), Value::Error(ErrorKind::Div0));
         assert!(w.undo());
@@ -546,7 +638,13 @@ mod tests {
 
     #[test]
     fn skip_blanks_leaves_what_blank_cells_land_on() {
-        let mut w = wb(&[("A1", "1"), ("A3", "3"), ("C1", "x"), ("C2", "y"), ("C3", "z")]);
+        let mut w = wb(&[
+            ("A1", "1"),
+            ("A3", "3"),
+            ("C1", "x"),
+            ("C2", "y"),
+            ("C3", "z"),
+        ]);
         let clip = w.copy(0, rect("A1:A3"));
         let skip = PasteSpecial {
             skip_blanks: true,
@@ -574,7 +672,10 @@ mod tests {
             transpose: true,
             ..Default::default()
         };
-        assert_eq!(w.paste_special_area(0, rect("E5"), &clip, &turn), rect("E5:F7"));
+        assert_eq!(
+            w.paste_special_area(0, rect("E5"), &clip, &turn),
+            rect("E5:F7")
+        );
         assert_eq!(w.paste_special(0, rect("E5"), &clip, &turn), rect("E5:F7"));
         w.commit("transpose");
         assert_eq!(val(&w, "E6"), Value::Number(2.0));
@@ -602,7 +703,14 @@ mod tests {
         // A1:C2: numbers; a rule on the row A1:C1 comparing each cell
         // with the one under it; a list on A2:B2 reading three cells of
         // the same row, four columns further.
-        let mut w = wb(&[("A1", "5"), ("B1", "1"), ("C1", "9"), ("A2", "3"), ("B2", "3"), ("C2", "3")]);
+        let mut w = wb(&[
+            ("A1", "5"),
+            ("B1", "1"),
+            ("C1", "9"),
+            ("A2", "3"),
+            ("B2", "3"),
+            ("C2", "3"),
+        ]);
         let rule = Rule::CellIs {
             op: CellOp::Greater,
             first: formula("A2"),
@@ -627,7 +735,10 @@ mod tests {
         // The rule now runs down A5:A7 and compares with the cell on the
         // right; the copied cells keep theirs.
         let rules = w.cond_formats(0);
-        let turned_rule = rules.iter().find(|cf| cf.ranges == vec![rect("A5:A7")]).expect("the rule of the turned cells");
+        let turned_rule = rules
+            .iter()
+            .find(|cf| cf.ranges == vec![rect("A5:A7")])
+            .expect("the rule of the turned cells");
         match &turned_rule.rule {
             Rule::CellIs { first, .. } => assert_eq!(first.to_text(Locale::en()), "B5"),
             other => panic!("{other:?}"),
@@ -638,8 +749,18 @@ mod tests {
         let listed = w.validation_at(0, 5, 1).expect("a rule on B6");
         assert_eq!(listed.ranges, vec![rect("B5:B6")]);
         assert_eq!(listed.kind, ValidationKind::List);
-        assert_eq!(listed.formula1.as_ref().map(|source| source.to_text(Locale::en())).as_deref(), Some("B9:B11"));
-        assert_eq!(w.validation_at(0, 1, 0).map(|rule| rule.ranges.clone()), Some(vec![rect("A2:B2")]));
+        assert_eq!(
+            listed
+                .formula1
+                .as_ref()
+                .map(|source| source.to_text(Locale::en()))
+                .as_deref(),
+            Some("B9:B11")
+        );
+        assert_eq!(
+            w.validation_at(0, 1, 0).map(|rule| rule.ranges.clone()),
+            Some(vec![rect("A2:B2")])
+        );
         assert!(w.validation_at(0, 6, 1).is_none() && w.validation_at(0, 4, 0).is_none());
         // One step of undo takes cells and rules away together.
         w.undo();
@@ -674,9 +795,24 @@ mod tests {
         w.set_col_width(0, 0, Some(140.0));
         w.commit("setup");
         let clip = w.copy(0, rect("A1"));
-        w.paste_special(0, rect("C1"), &clip, &PasteSpecial::of(PasteWhat::ValuesAndSourceFormats));
-        w.paste_special(0, rect("D1"), &clip, &PasteSpecial::of(PasteWhat::KeepSourceColumnWidths));
-        w.paste_special(0, rect("E1"), &clip, &PasteSpecial::of(PasteWhat::ValuesAndNumberFormats));
+        w.paste_special(
+            0,
+            rect("C1"),
+            &clip,
+            &PasteSpecial::of(PasteWhat::ValuesAndSourceFormats),
+        );
+        w.paste_special(
+            0,
+            rect("D1"),
+            &clip,
+            &PasteSpecial::of(PasteWhat::KeepSourceColumnWidths),
+        );
+        w.paste_special(
+            0,
+            rect("E1"),
+            &clip,
+            &PasteSpecial::of(PasteWhat::ValuesAndNumberFormats),
+        );
         w.commit("paste");
         assert_eq!(text(&w, "C1"), "25%");
         assert!(w.style_at(0, 0, 2).font.bold);

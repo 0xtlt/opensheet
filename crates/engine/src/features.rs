@@ -19,7 +19,9 @@ use crate::table::Table;
 use crate::validation::Validation;
 use crate::value::ErrorKind;
 use crate::workbook::{ClearMode, Sheet, Workbook};
-use crate::{comment, condfmt, drawing, filter, hyperlink, page, pivot, protect, table, validation};
+use crate::{
+    comment, condfmt, drawing, filter, hyperlink, page, pivot, protect, table, validation,
+};
 
 /// Per-feature caches of things derived from the cells. Compare against
 /// `Workbook::generation` to know when they are stale. The workbook is
@@ -202,11 +204,22 @@ impl CellShift {
     /// before the move and where they are after it; `None` when none is.
     pub(crate) fn carried(&self) -> Option<(Rect, Rect)> {
         let last = self.limit() - 1;
-        let first = if self.insert { self.at } else { self.at + self.count };
-        let end = if self.insert { last.checked_sub(self.count)? } else { last };
+        let first = if self.insert {
+            self.at
+        } else {
+            self.at + self.count
+        };
+        let end = if self.insert {
+            last.checked_sub(self.count)?
+        } else {
+            last
+        };
         (first <= end).then(|| {
             let landing = self.moved(first).unwrap_or(first);
-            (self.band(first, end), self.band(landing, landing + (end - first)))
+            (
+                self.band(first, end),
+                self.band(landing, landing + (end - first)),
+            )
         })
     }
 
@@ -247,14 +260,19 @@ impl CellShift {
             return Expr::Ref(r.clone());
         }
         let (lo, hi) = (along.0.min(along.1), along.0.max(along.1));
-        let Some((lo, hi)) = shift_interval(lo, hi, self.insert, self.at, self.count, self.limit()) else {
+        let Some((lo, hi)) = shift_interval(lo, hi, self.insert, self.at, self.count, self.limit())
+        else {
             // The sheet is still there, its cells are not: `Sheet2!#REF!`.
             return match &r.sheet {
                 Some(sheet) => Expr::RefError(sheet.clone()),
                 None => Expr::Error(ErrorKind::Ref),
             };
         };
-        let (start, end) = if along.0 > along.1 { (hi, lo) } else { (lo, hi) };
+        let (start, end) = if along.0 > along.1 {
+            (hi, lo)
+        } else {
+            (lo, hi)
+        };
         let mut out = r.clone();
         if self.down {
             out.start.row = start;
@@ -300,7 +318,9 @@ pub(crate) fn tiled(part: Rect, src: &Rect, dest: &Rect) -> Vec<Rect> {
         let list: Vec<(u32, u32)> = if p0 == s0 && p1 == s1 {
             vec![(d0, d1 - d0 + 1)]
         } else {
-            (0..copies).map(|i| (d0 + i * size + (p0 - s0), p1 - p0 + 1)).collect()
+            (0..copies)
+                .map(|i| (d0 + i * size + (p0 - s0), p1 - p0 + 1))
+                .collect()
         };
         list.into_iter()
             .filter(|(at, _)| *at <= d1)
@@ -369,7 +389,11 @@ pub(crate) const TIDY_LIMIT: usize = 64;
 /// out in reading order, whatever order it had.
 pub(crate) fn join_sorted(mut ranges: Vec<Rect>) -> Vec<Rect> {
     // Lines `a` and columns `b`, or the other way round.
-    fn pass(ranges: &mut Vec<Rect>, key: fn(&Rect) -> (u32, u32, u32, u32), back: fn((u32, u32, u32, u32)) -> Rect) {
+    fn pass(
+        ranges: &mut Vec<Rect>,
+        key: fn(&Rect) -> (u32, u32, u32, u32),
+        back: fn((u32, u32, u32, u32)) -> Rect,
+    ) {
         ranges.sort_by_key(key);
         let mut out: Vec<(u32, u32, u32, u32)> = Vec::with_capacity(ranges.len());
         for (b0, b1, a0, a1) in ranges.iter().map(key) {
@@ -384,8 +408,16 @@ pub(crate) fn join_sorted(mut ranges: Vec<Rect>) -> Vec<Rect> {
     }
     loop {
         let before = ranges.len();
-        pass(&mut ranges, |r| (r.c0, r.c1, r.r0, r.r1), |(c0, c1, r0, r1)| Rect::new(r0, c0, r1, c1));
-        pass(&mut ranges, |r| (r.r0, r.r1, r.c0, r.c1), |(r0, r1, c0, c1)| Rect::new(r0, c0, r1, c1));
+        pass(
+            &mut ranges,
+            |r| (r.c0, r.c1, r.r0, r.r1),
+            |(c0, c1, r0, r1)| Rect::new(r0, c0, r1, c1),
+        );
+        pass(
+            &mut ranges,
+            |r| (r.r0, r.r1, r.c0, r.c1),
+            |(r0, r1, c0, c1)| Rect::new(r0, c0, r1, c1),
+        );
         if ranges.len() == before {
             ranges.sort_by_key(|r| (r.r0, r.c0));
             return ranges;
@@ -408,7 +440,10 @@ fn map_kept(
         cf.rule.map_exprs(f);
     }
     for rule in validations {
-        for formula in [&mut rule.formula1, &mut rule.formula2].into_iter().flatten() {
+        for formula in [&mut rule.formula1, &mut rule.formula2]
+            .into_iter()
+            .flatten()
+        {
             let mapped = f(formula);
             if mapped != **formula {
                 *formula = Arc::new(mapped);
@@ -424,7 +459,12 @@ fn map_kept(
 /// caller has taken the undo snapshot, and refreshes the cache of the
 /// conditional formats.
 pub(crate) fn map_formulas(sheet: &mut Sheet, f: &mut dyn FnMut(&Expr) -> Expr) {
-    map_kept(&mut sheet.cond_formats, &mut sheet.validations, &mut sheet.tables, f);
+    map_kept(
+        &mut sheet.cond_formats,
+        &mut sheet.validations,
+        &mut sheet.tables,
+        f,
+    );
 }
 
 /// The formulas kept by the features of a sheet after a rewrite that was
@@ -440,7 +480,8 @@ impl Rewritten {
     /// What `f` makes of the formulas kept by the features of `sheet`
     /// (`None` leaves a formula alone); `None` when nothing changes.
     pub(crate) fn of(sheet: &Sheet, f: &mut dyn FnMut(&Expr) -> Option<Expr>) -> Option<Rewritten> {
-        if sheet.cond_formats.is_empty() && sheet.validations.is_empty() && sheet.tables.is_empty() {
+        if sheet.cond_formats.is_empty() && sheet.validations.is_empty() && sheet.tables.is_empty()
+        {
             return None;
         }
         let mut out = Rewritten {
@@ -449,13 +490,18 @@ impl Rewritten {
             tables: sheet.tables.clone(),
         };
         let mut changed = false;
-        map_kept(&mut out.cond_formats, &mut out.validations, &mut out.tables, &mut |e| match f(e) {
-            Some(new) if new != *e => {
-                changed = true;
-                new
-            }
-            _ => e.clone(),
-        });
+        map_kept(
+            &mut out.cond_formats,
+            &mut out.validations,
+            &mut out.tables,
+            &mut |e| match f(e) {
+                Some(new) if new != *e => {
+                    changed = true;
+                    new
+                }
+                _ => e.clone(),
+            },
+        );
         changed.then_some(out)
     }
 
@@ -548,7 +594,11 @@ impl Workbook {
     pub fn permits_edit(&self, edit: &Edit) -> Result<(), Denied> {
         match *edit {
             Edit::Enter { sheet, ranges } => self.permits(&Action::EditCells { sheet, ranges }),
-            Edit::Clear { sheet, ranges, mode } => match mode {
+            Edit::Clear {
+                sheet,
+                ranges,
+                mode,
+            } => match mode {
                 ClearMode::Contents => self.permits(&Action::EditCells { sheet, ranges }),
                 ClearMode::Formats => self.permits(&Action::FormatCells { sheet }),
                 ClearMode::Comments => self.permits(&Action::EditComment { sheet }),
@@ -557,7 +607,12 @@ impl Workbook {
                     self.permits(&Action::FormatCells { sheet })
                 }
             },
-            Edit::Paste { sheet, dest, clip, mode } => match mode {
+            Edit::Paste {
+                sheet,
+                dest,
+                clip,
+                mode,
+            } => match mode {
                 PasteMode::Formats => self.permits(&Action::FormatCells { sheet }),
                 PasteMode::Comments => self.permits(&Action::EditComment { sheet }),
                 PasteMode::Validation => self.permits(&Action::ChangeSheet { sheet }),
@@ -571,7 +626,10 @@ impl Workbook {
                 | PasteMode::FormulasAndNumberFormats
                 | PasteMode::ValuesAndNumberFormats => {
                     let ranges = self.paste_blocks(sheet, dest, clip);
-                    self.permits(&Action::EditCells { sheet, ranges: &ranges })
+                    self.permits(&Action::EditCells {
+                        sheet,
+                        ranges: &ranges,
+                    })
                 }
             },
             Edit::Move {
@@ -597,9 +655,14 @@ impl Workbook {
                     ranges: &[landed],
                 })
             }
-            Edit::Fill { sheet, dest } => self.permits(&Action::EditCells { sheet, ranges: &[dest] }),
+            Edit::Fill { sheet, dest } => self.permits(&Action::EditCells {
+                sheet,
+                ranges: &[dest],
+            }),
             Edit::Format { sheet } => self.permits(&Action::FormatCells { sheet }),
-            Edit::Merge { sheet } | Edit::RemoveDuplicates { sheet } => self.permits(&Action::ChangeSheet { sheet }),
+            Edit::Merge { sheet } | Edit::RemoveDuplicates { sheet } => {
+                self.permits(&Action::ChangeSheet { sheet })
+            }
             Edit::InsertRows { sheet } => self.permits(&Action::InsertRows { sheet }),
             Edit::InsertCols { sheet } => self.permits(&Action::InsertColumns { sheet }),
             Edit::DeleteRows { sheet, at, count } => self.permits(&Action::DeleteRows {
@@ -615,7 +678,11 @@ impl Workbook {
             Edit::SizeRows { sheet } => self.permits(&Action::FormatRows { sheet }),
             Edit::SizeCols { sheet } => self.permits(&Action::FormatColumns { sheet }),
             Edit::Sort { sheet, range } => self.permits(&Action::Sort { sheet, range }),
-            Edit::Replace { sheet, needle, options } => {
+            Edit::Replace {
+                sheet,
+                needle,
+                options,
+            } => {
                 if !self.is_sheet_protected(sheet) {
                     return Ok(());
                 }
@@ -629,7 +696,10 @@ impl Workbook {
                     .into_iter()
                     .map(|(row, col)| Rect::cell(row, col))
                     .collect();
-                self.permits(&Action::EditCells { sheet, ranges: &hits })
+                self.permits(&Action::EditCells {
+                    sheet,
+                    ranges: &hits,
+                })
             }
         }
     }
@@ -735,9 +805,9 @@ mod tests {
 
     /// The cells of a list of ranges, and how many times ranges overlap.
     fn cells(ranges: &[Rect]) -> (BTreeSet<(u32, u32)>, usize) {
-        let all = ranges
-            .iter()
-            .flat_map(|r| (r.r0..=r.r1).flat_map(move |row| (r.c0..=r.c1).map(move |col| (row, col))));
+        let all = ranges.iter().flat_map(|r| {
+            (r.r0..=r.r1).flat_map(move |row| (r.c0..=r.c1).map(move |col| (row, col)))
+        });
         let set: BTreeSet<(u32, u32)> = all.clone().collect();
         let overlaps = all.count() - set.len();
         (set, overlaps)
@@ -759,14 +829,23 @@ mod tests {
         let src = rect("B2:C3");
         // Two copies down, two across; a piece as wide as the source is
         // one range across them.
-        assert_eq!(tiled(rect("B2"), &src, &rect("E5:H8")), ["E5", "G5", "E7", "G7"].map(rect));
-        assert_eq!(tiled(rect("B3:C3"), &src, &rect("E5:H8")), [rect("E6:H6"), rect("E8:H8")]);
+        assert_eq!(
+            tiled(rect("B2"), &src, &rect("E5:H8")),
+            ["E5", "G5", "E7", "G7"].map(rect)
+        );
+        assert_eq!(
+            tiled(rect("B3:C3"), &src, &rect("E5:H8")),
+            [rect("E6:H6"), rect("E8:H8")]
+        );
         assert_eq!(tiled(src, &src, &rect("E5:H8")), [rect("E5:H8")]);
         // One copy cut short by the destination.
         assert_eq!(tiled(rect("C2:C3"), &src, &rect("E5:E6")), []);
         assert_eq!(tiled(rect("B2:B3"), &src, &rect("E5:E5")), [rect("E5")]);
         // One row filled down.
-        assert_eq!(tiled(rect("C2"), &rect("B2:C2"), &rect("B3:C9")), [rect("C3:C9")]);
+        assert_eq!(
+            tiled(rect("C2"), &rect("B2:C2"), &rect("B3:C9")),
+            [rect("C3:C9")]
+        );
     }
 
     #[test]
@@ -774,10 +853,21 @@ mod tests {
         let bands = [rect("C2:D3"), rect("C6:D6"), rect("C9:D12")];
         assert_eq!(
             without_bands(&[rect("A1:E7")], &bands),
-            [rect("A1:B7"), rect("E1:E7"), rect("C1:D1"), rect("C4:D5"), rect("C7:D7")]
+            [
+                rect("A1:B7"),
+                rect("E1:E7"),
+                rect("C1:D1"),
+                rect("C4:D5"),
+                rect("C7:D7")
+            ]
         );
         // Ranges that meet no band are left whole.
-        let apart = [rect("A1:B20"), rect("C4:D5"), rect("C13:F15"), rect("C7:C8")];
+        let apart = [
+            rect("A1:B20"),
+            rect("C4:D5"),
+            rect("C13:F15"),
+            rect("C7:C8"),
+        ];
         assert_eq!(without_bands(&apart, &bands), apart);
         assert_eq!(without_bands(&[rect("C9:D12"), rect("D2")], &bands), []);
         assert_eq!(without_bands(&apart, &[]), apart);
@@ -807,8 +897,14 @@ mod tests {
     fn ranges_joined_by_sorting() {
         // A column in pieces, then two columns side by side.
         let pieces = ["B5:B6", "B1:B2", "C1:C6", "B3:B4", "E1", "E3"].map(rect);
-        assert_eq!(join_sorted(pieces.to_vec()), [rect("B1:C6"), rect("E1"), rect("E3")]);
-        assert_eq!(join_sorted(vec![rect("A1:B2"), rect("A2:B5")]), [rect("A1:B5")]);
+        assert_eq!(
+            join_sorted(pieces.to_vec()),
+            [rect("B1:C6"), rect("E1"), rect("E3")]
+        );
+        assert_eq!(
+            join_sorted(vec![rect("A1:B2"), rect("A2:B5")]),
+            [rect("A1:B5")]
+        );
         assert_eq!(join_sorted(Vec::new()), []);
         // The cells stay the same, and a list that did not overlap still
         // does not.
@@ -838,11 +934,26 @@ mod tests {
             insert: true,
         };
         assert_eq!(down.area(), Rect::new(4, 1, MAX_ROWS - 1, 2));
-        assert_eq!(down.carried(), Some((Rect::new(4, 1, MAX_ROWS - 3, 2), Rect::new(6, 1, MAX_ROWS - 1, 2))));
+        assert_eq!(
+            down.carried(),
+            Some((
+                Rect::new(4, 1, MAX_ROWS - 3, 2),
+                Rect::new(6, 1, MAX_ROWS - 1, 2)
+            ))
+        );
         assert_eq!(down.inserted(), Some((rect("B5:C6"), Some(rect("B4:C4")))));
         assert_eq!(down.removed(), Rect::new(MAX_ROWS - 2, 1, MAX_ROWS - 1, 2));
-        let up = CellShift { insert: false, ..down };
-        assert_eq!(up.carried(), Some((Rect::new(6, 1, MAX_ROWS - 1, 2), Rect::new(4, 1, MAX_ROWS - 3, 2))));
+        let up = CellShift {
+            insert: false,
+            ..down
+        };
+        assert_eq!(
+            up.carried(),
+            Some((
+                Rect::new(6, 1, MAX_ROWS - 1, 2),
+                Rect::new(4, 1, MAX_ROWS - 3, 2)
+            ))
+        );
         assert_eq!((up.inserted(), up.removed()), (None, rect("B5:C6")));
         let left = CellShift {
             down: false,
@@ -852,8 +963,17 @@ mod tests {
             count: 1,
             insert: false,
         };
-        assert_eq!(left.carried(), Some((Rect::new(0, 1, 3, MAX_COLS - 1), Rect::new(0, 0, 3, MAX_COLS - 2))));
-        let right = CellShift { insert: true, ..left };
+        assert_eq!(
+            left.carried(),
+            Some((
+                Rect::new(0, 1, 3, MAX_COLS - 1),
+                Rect::new(0, 0, 3, MAX_COLS - 2)
+            ))
+        );
+        let right = CellShift {
+            insert: true,
+            ..left
+        };
         assert_eq!(right.inserted(), Some((rect("A1:A4"), None)));
 
         // References into the band follow the cells; the others stay.
@@ -862,10 +982,17 @@ mod tests {
             let moved = formula.map_refs(&mut |r| shift.fix(r, "Sheet1", "Sheet1"));
             moved.to_text(crate::locale::Locale::en())
         };
-        assert_eq!(fixed(&down, "B5+B4+A5+D9+SUM(B2:C8)+SUM(A5:C5)"), "B7+B4+A5+D9+SUM(B2:C10)+SUM(A5:C5)");
-        assert_eq!(fixed(&up, "B7+B5+SUM(B5:C6)+Sheet1!C6+Sheet2!B7"), "B5+#REF!+SUM(#REF!)+Sheet1!#REF!+Sheet2!B7");
+        assert_eq!(
+            fixed(&down, "B5+B4+A5+D9+SUM(B2:C8)+SUM(A5:C5)"),
+            "B7+B4+A5+D9+SUM(B2:C10)+SUM(A5:C5)"
+        );
+        assert_eq!(
+            fixed(&up, "B7+B5+SUM(B5:C6)+Sheet1!C6+Sheet2!B7"),
+            "B5+#REF!+SUM(#REF!)+Sheet1!#REF!+Sheet2!B7"
+        );
         // In a rule only the fixed references name cells.
-        let rule = crate::parser::parse_formula("$B$5+B5+$B5", crate::locale::Locale::en()).unwrap();
+        let rule =
+            crate::parser::parse_formula("$B$5+B5+$B5", crate::locale::Locale::en()).unwrap();
         let moved = down.fix_rule(&rule, "Sheet1", "Sheet1");
         assert_eq!(moved.to_text(crate::locale::Locale::en()), "$B$7+B5+$B5");
     }

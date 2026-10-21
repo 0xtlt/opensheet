@@ -339,7 +339,10 @@ fn page_setup_from_excel() {
         (page.title_rows, page.title_cols),
         (Some((0, 2)), Some((0, 1)))
     );
-    assert_eq!(wb.sheets[0].tab_color.map(Color::plain), Some(Color(0xED7D31)));
+    assert_eq!(
+        wb.sheets[0].tab_color.map(Color::plain),
+        Some(Color(0xED7D31))
+    );
 
     // The names say which sheet they are for by its place in the file,
     // chart sheets included.

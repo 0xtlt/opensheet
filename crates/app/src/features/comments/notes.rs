@@ -7,8 +7,8 @@ use crate::grid::{Draw, FontResolver, GridLayout, pt_to_px};
 use crate::objects::handle_points;
 use crate::theme::{self, c};
 use gpui::{
-    CursorStyle, Font, FontStyle, FontWeight, PathBuilder, SharedString, StrikethroughStyle, TextAlign, TextRun,
-    UnderlineStyle, px,
+    CursorStyle, Font, FontStyle, FontWeight, PathBuilder, SharedString, StrikethroughStyle,
+    TextAlign, TextRun, UnderlineStyle, px,
 };
 use opensheet_engine::comment::Note;
 use opensheet_engine::drawing::Frame;
@@ -115,13 +115,25 @@ pub(super) fn connector(rect: Px, cell: Px) -> Option<((f32, f32), (f32, f32))> 
     if tip.0 >= rect.0 && tip.0 <= rect.2 && tip.1 >= rect.1 && tip.1 <= rect.3 {
         return None;
     }
-    let x = if (tip.0 - rect.0).abs() <= (tip.0 - rect.2).abs() { rect.0 } else { rect.2 };
-    let y = if (tip.1 - rect.1).abs() <= (tip.1 - rect.3).abs() { rect.1 } else { rect.3 };
+    let x = if (tip.0 - rect.0).abs() <= (tip.0 - rect.2).abs() {
+        rect.0
+    } else {
+        rect.2
+    };
+    let y = if (tip.1 - rect.1).abs() <= (tip.1 - rect.3).abs() {
+        rect.1
+    } else {
+        rect.3
+    };
     Some(((x, y), tip))
 }
 
 /// The part of a segment inside a box (Liang–Barsky).
-pub(super) fn clip_segment(a: (f32, f32), b: (f32, f32), clip: Px) -> Option<((f32, f32), (f32, f32))> {
+pub(super) fn clip_segment(
+    a: (f32, f32),
+    b: (f32, f32),
+    clip: Px,
+) -> Option<((f32, f32), (f32, f32))> {
     let (dx, dy) = (b.0 - a.0, b.1 - a.1);
     let (mut t0, mut t1) = (0.0f32, 1.0f32);
     for (p, q) in [
@@ -146,7 +158,10 @@ pub(super) fn clip_segment(a: (f32, f32), b: (f32, f32), clip: Px) -> Option<((f
             return None;
         }
     }
-    Some(((a.0 + t0 * dx, a.1 + t0 * dy), (a.0 + t1 * dx, a.1 + t1 * dy)))
+    Some((
+        (a.0 + t0 * dx, a.1 + t0 * dy),
+        (a.0 + t1 * dx, a.1 + t1 * dy),
+    ))
 }
 
 pub(super) fn intersect(a: Px, b: Px) -> Option<Px> {
@@ -189,8 +204,18 @@ fn pane_area(layout: &GridLayout, anchor: Option<(u32, u32)>) -> Px {
     let scrolls = |index: u32, frozen: u32| anchor.is_some() && index >= frozen;
     let (row, col) = anchor.unwrap_or((0, 0));
     (
-        layout.header_w + if scrolls(col, layout.frozen_cols) { layout.frozen_w } else { 0.0 },
-        layout.header_h + if scrolls(row, layout.frozen_rows) { layout.frozen_h } else { 0.0 },
+        layout.header_w
+            + if scrolls(col, layout.frozen_cols) {
+                layout.frozen_w
+            } else {
+                0.0
+            },
+        layout.header_h
+            + if scrolls(row, layout.frozen_rows) {
+                layout.frozen_h
+            } else {
+                0.0
+            },
         layout.width(),
         layout.height(),
     )
@@ -198,15 +223,31 @@ fn pane_area(layout: &GridLayout, anchor: Option<(u32, u32)>) -> Px {
 
 /// The pixel box of the cell a note belongs to (its merged area).
 pub(super) fn cell_px(layout: &GridLayout, sheet: &Sheet, cell: (u32, u32)) -> Px {
-    layout.rect_px(sheet.merge_at(cell.0, cell.1).unwrap_or(Rect::cell(cell.0, cell.1)))
+    layout.rect_px(
+        sheet
+            .merge_at(cell.0, cell.1)
+            .unwrap_or(Rect::cell(cell.0, cell.1)),
+    )
 }
 
-fn shown(layout: &GridLayout, sheet: &Sheet, cell: (u32, u32), frame: Frame, stays: bool, state: BoxState) -> ShownBox {
+fn shown(
+    layout: &GridLayout,
+    sheet: &Sheet,
+    cell: (u32, u32),
+    frame: Frame,
+    stays: bool,
+    state: BoxState,
+) -> ShownBox {
     let z = layout.zoom;
     let place = sheet.note_box(frame);
     let x0 = (layout.col_x(place.anchor.1) + place.offset.0 * z).round();
     let y0 = (layout.row_y(place.anchor.0) + place.offset.1 * z).round();
-    let rect = (x0, y0, x0 + (place.size.0 * z).round(), y0 + (place.size.1 * z).round());
+    let rect = (
+        x0,
+        y0,
+        x0 + (place.size.0 * z).round(),
+        y0 + (place.size.1 * z).round(),
+    );
     if stays {
         // A box left showing scrolls with the sheet, under the frozen panes.
         return ShownBox {
@@ -279,7 +320,10 @@ pub(super) fn shown_boxes(sheet: &Sheet, layout: &GridLayout, view: &BoxView) ->
         }
     }
     // A note being written that the workbook does not hold yet.
-    if let Some(cell) = view.editing.filter(|cell| !sheet.comments.contains_key(cell)) {
+    if let Some(cell) = view
+        .editing
+        .filter(|cell| !sheet.comments.contains_key(cell))
+    {
         let frame = sheet.default_note_frame(cell.0, cell.1);
         out.push(shown(layout, sheet, cell, frame, false, BoxState::Editing));
     }
@@ -307,8 +351,16 @@ pub(super) fn note_font(font: &opensheet_engine::style::Font, fonts: &FontResolv
         family: fonts.resolve(&font.name),
         features: Default::default(),
         fallbacks: None,
-        weight: if font.bold { FontWeight::BOLD } else { FontWeight::NORMAL },
-        style: if font.italic { FontStyle::Italic } else { FontStyle::Normal },
+        weight: if font.bold {
+            FontWeight::BOLD
+        } else {
+            FontWeight::NORMAL
+        },
+        style: if font.italic {
+            FontStyle::Italic
+        } else {
+            FontStyle::Normal
+        },
     }
 }
 
@@ -316,7 +368,11 @@ pub(super) fn note_text(note: &Note, fonts: &FontResolver) -> NoteText {
     let mut text = String::new();
     let mut runs = Vec::new();
     for run in &note.runs {
-        let color = run.font.color.map(theme::engine_color).unwrap_or(c(0x000000));
+        let color = run
+            .font
+            .color
+            .map(theme::engine_color)
+            .unwrap_or(c(0x000000));
         // Lines end with a line feed, whatever the file used.
         let part = run.text.replace("\r\n", "\n").replace('\r', "\n");
         text.push_str(&part);
@@ -337,7 +393,11 @@ pub(super) fn note_text(note: &Note, fonts: &FontResolver) -> NoteText {
         });
     }
     // One size for the whole box: that of the body of the note.
-    let size = pt_to_px(note.runs.last().map_or(Note::font().size_pt(), |run| run.font.size_pt()));
+    let size = pt_to_px(
+        note.runs
+            .last()
+            .map_or(Note::font().size_pt(), |run| run.font.size_pt()),
+    );
     NoteText {
         text: text.into(),
         runs,
@@ -424,7 +484,11 @@ pub(super) fn paint_box(p: &mut Painter, shown: &ShownBox, cell: Px, text: Optio
             let back = (tip.0 - ux * size, tip.1 - uy * size);
             let half = size * 0.35;
             p.polygon(
-                &[tip, (back.0 - uy * half, back.1 + ux * half), (back.0 + uy * half, back.1 - ux * half)],
+                &[
+                    tip,
+                    (back.0 - uy * half, back.1 + ux * half),
+                    (back.0 + uy * half, back.1 - ux * half),
+                ],
                 c(0x000000),
             );
         }
@@ -432,7 +496,12 @@ pub(super) fn paint_box(p: &mut Painter, shown: &ShownBox, cell: Px, text: Optio
 
     // The shadow, the paper and the border.
     let shadow = (2.0 * z).round().max(1.0);
-    rect(p, clip, (x1, y0 + shadow, x1 + shadow, y1 + shadow), 0x000000);
+    rect(
+        p,
+        clip,
+        (x1, y0 + shadow, x1 + shadow, y1 + shadow),
+        0x000000,
+    );
     rect(p, clip, (x0 + shadow, y1, x1, y1 + shadow), 0x000000);
     if shown.state != BoxState::Plain {
         band(
@@ -457,7 +526,13 @@ pub(super) fn paint_box(p: &mut Painter, shown: &ShownBox, cell: Px, text: Optio
         let inner = (x0 + pad_x, y0 + pad_y, x1 - pad_x, y1 - 1.0);
         if let Some(bounds) = intersect(inner, clip) {
             let width = (inner.2 - inner.0).max(8.0);
-            if let Ok(lines) = p.ts.shape_text(text.text, px(text.size * z), &text.runs, Some(px(width)), None) {
+            if let Ok(lines) = p.ts.shape_text(
+                text.text,
+                px(text.size * z),
+                &text.runs,
+                Some(px(width)),
+                None,
+            ) {
                 p.push(Draw::Wrapped {
                     lines: lines.into_iter().collect(),
                     origin: p.layout.to_window(inner.0, inner.1),
@@ -498,7 +573,11 @@ pub(super) fn box_zones(shown: &ShownBox) -> Vec<(Px, Spot, CursorStyle)> {
             CursorStyle::IBeam,
         );
     }
-    let out_by = if shown.state == BoxState::Plain { REACH } else { BAND };
+    let out_by = if shown.state == BoxState::Plain {
+        REACH
+    } else {
+        BAND
+    };
     for strip in [
         (x0 - out_by, y0 - out_by, x1 + out_by, y0 + REACH),
         (x0 - out_by, y1 - REACH, x1 + out_by, y1 + out_by),
@@ -508,9 +587,16 @@ pub(super) fn box_zones(shown: &ShownBox) -> Vec<(Px, Spot, CursorStyle)> {
         zone(strip, Spot::Grip(row, col, Grip::Move), Grip::Move.cursor());
     }
     if shown.state != BoxState::Plain {
-        for (index, (hx, hy)) in handle_points(handle_frame(shown.rect)).into_iter().enumerate() {
+        for (index, (hx, hy)) in handle_points(handle_frame(shown.rect))
+            .into_iter()
+            .enumerate()
+        {
             let grip = Grip::Handle(index as u8);
-            zone((hx - 5.0, hy - 5.0, hx + 5.0, hy + 5.0), Spot::Grip(row, col, grip), grip.cursor());
+            zone(
+                (hx - 5.0, hy - 5.0, hx + 5.0, hy + 5.0),
+                Spot::Grip(row, col, grip),
+                grip.cursor(),
+            );
         }
     }
     out
@@ -518,7 +604,12 @@ pub(super) fn box_zones(shown: &ShownBox) -> Vec<(Px, Spot, CursorStyle)> {
 
 /// Where the handles of a selected box sit: in the middle of its band.
 fn handle_frame(rect: Px) -> Px {
-    (rect.0 - BAND / 2.0, rect.1 - BAND / 2.0, rect.2 + BAND / 2.0, rect.3 + BAND / 2.0)
+    (
+        rect.0 - BAND / 2.0,
+        rect.1 - BAND / 2.0,
+        rect.2 + BAND / 2.0,
+        rect.3 + BAND / 2.0,
+    )
 }
 
 /// Register the zones of a box with the grid.
@@ -533,7 +624,10 @@ pub(super) fn zones(p: &mut Painter, shown: &ShownBox) {
 pub(super) fn mark(thread: bool, cell: Px, zoom: f32) -> Vec<(f32, f32)> {
     let (_, y0, x1, y1) = cell;
     let right = x1 - 1.0;
-    let size = ((if thread { 8.0 } else { 6.0 }) * zoom).round().clamp(4.0, 18.0).min(y1 - y0);
+    let size = ((if thread { 8.0 } else { 6.0 }) * zoom)
+        .round()
+        .clamp(4.0, 18.0)
+        .min(y1 - y0);
     if !thread {
         return vec![(right - size, y0), (right, y0), (right, y0 + size)];
     }
@@ -609,7 +703,10 @@ mod tests {
         // column and the frozen rows.
         assert_eq!(shown.rect.0, l.header_w + 107.0);
         assert_eq!(shown.rect.1, l.header_h + 40.0);
-        assert_eq!(shown.clip, (l.header_w + 64.0, l.header_h + 40.0, 1000.0, 600.0));
+        assert_eq!(
+            shown.clip,
+            (l.header_w + 64.0, l.header_h + 40.0, 1000.0, 600.0)
+        );
         // A box anchored in the frozen column stays put and draws over
         // the whole grid.
         let frozen = shown_at(&l, sheet, Frame::new(10.0, 5.0, 144.0, 79.0));
@@ -629,7 +726,10 @@ mod tests {
         // In view: where the note is, and deaf to the mouse.
         let l = layout(&wb, 1.0, (0.0, 0.0));
         let peek = shown(&l, sheet, (4, 2), frame, false, BoxState::Plain);
-        assert_eq!((peek.rect.0, peek.pushed, peek.solid), (l.header_w + 207.0, (0.0, 0.0), false));
+        assert_eq!(
+            (peek.rect.0, peek.pushed, peek.solid),
+            (l.header_w + 207.0, (0.0, 0.0), false)
+        );
         // Scrolled so that row 5 is the first in view: the box, which
         // starts above its cell, is pushed down under the headers.
         let l = layout(&wb, 1.0, (0.0, 80.0));
@@ -669,34 +769,79 @@ mod tests {
         // The inside starts typing; the border, a few pixels either side
         // of the line, moves the box; beside it the press is for the cells.
         assert_eq!(spot_at(&plain, 370.0, 140.0), Some(Spot::Body(4, 2)));
-        assert_eq!(spot_at(&plain, 301.0, 140.0), Some(Spot::Grip(4, 2, Grip::Move)));
-        assert_eq!(spot_at(&plain, 298.0, 140.0), Some(Spot::Grip(4, 2, Grip::Move)));
-        assert_eq!(spot_at(&plain, 370.0, 180.0), Some(Spot::Grip(4, 2, Grip::Move)));
+        assert_eq!(
+            spot_at(&plain, 301.0, 140.0),
+            Some(Spot::Grip(4, 2, Grip::Move))
+        );
+        assert_eq!(
+            spot_at(&plain, 298.0, 140.0),
+            Some(Spot::Grip(4, 2, Grip::Move))
+        );
+        assert_eq!(
+            spot_at(&plain, 370.0, 180.0),
+            Some(Spot::Grip(4, 2, Grip::Move))
+        );
         assert_eq!(spot_at(&plain, 290.0, 140.0), None);
         assert_eq!(spot_at(&plain, 370.0, 190.0), None);
         // No handles until the box is selected: a corner moves it.
-        assert_eq!(spot_at(&plain, 299.0, 99.0), Some(Spot::Grip(4, 2, Grip::Move)));
+        assert_eq!(
+            spot_at(&plain, 299.0, 99.0),
+            Some(Spot::Grip(4, 2, Grip::Move))
+        );
 
         // Selected: the eight handles, clockwise from the top-left corner,
         // win over the border they sit on.
         let selected = at(rect, everywhere, BoxState::Selected);
-        assert_eq!(spot_at(&selected, 298.0, 98.0), Some(Spot::Grip(4, 2, Grip::Handle(0))));
-        assert_eq!(spot_at(&selected, 372.0, 98.0), Some(Spot::Grip(4, 2, Grip::Handle(1))));
-        assert_eq!(spot_at(&selected, 446.0, 98.0), Some(Spot::Grip(4, 2, Grip::Handle(2))));
-        assert_eq!(spot_at(&selected, 446.0, 139.5), Some(Spot::Grip(4, 2, Grip::Handle(3))));
-        assert_eq!(spot_at(&selected, 446.0, 181.0), Some(Spot::Grip(4, 2, Grip::Handle(4))));
-        assert_eq!(spot_at(&selected, 372.0, 181.0), Some(Spot::Grip(4, 2, Grip::Handle(5))));
-        assert_eq!(spot_at(&selected, 298.0, 181.0), Some(Spot::Grip(4, 2, Grip::Handle(6))));
-        assert_eq!(spot_at(&selected, 298.0, 139.5), Some(Spot::Grip(4, 2, Grip::Handle(7))));
-        assert_eq!(spot_at(&selected, 330.0, 98.0), Some(Spot::Grip(4, 2, Grip::Move)));
+        assert_eq!(
+            spot_at(&selected, 298.0, 98.0),
+            Some(Spot::Grip(4, 2, Grip::Handle(0)))
+        );
+        assert_eq!(
+            spot_at(&selected, 372.0, 98.0),
+            Some(Spot::Grip(4, 2, Grip::Handle(1)))
+        );
+        assert_eq!(
+            spot_at(&selected, 446.0, 98.0),
+            Some(Spot::Grip(4, 2, Grip::Handle(2)))
+        );
+        assert_eq!(
+            spot_at(&selected, 446.0, 139.5),
+            Some(Spot::Grip(4, 2, Grip::Handle(3)))
+        );
+        assert_eq!(
+            spot_at(&selected, 446.0, 181.0),
+            Some(Spot::Grip(4, 2, Grip::Handle(4)))
+        );
+        assert_eq!(
+            spot_at(&selected, 372.0, 181.0),
+            Some(Spot::Grip(4, 2, Grip::Handle(5)))
+        );
+        assert_eq!(
+            spot_at(&selected, 298.0, 181.0),
+            Some(Spot::Grip(4, 2, Grip::Handle(6)))
+        );
+        assert_eq!(
+            spot_at(&selected, 298.0, 139.5),
+            Some(Spot::Grip(4, 2, Grip::Handle(7)))
+        );
+        assert_eq!(
+            spot_at(&selected, 330.0, 98.0),
+            Some(Spot::Grip(4, 2, Grip::Move))
+        );
         assert_eq!(spot_at(&selected, 370.0, 140.0), Some(Spot::Body(4, 2)));
 
         // While its text is typed the inside belongs to the editor laid
         // over it; the band around still moves and resizes the box.
         let editing = at(rect, everywhere, BoxState::Editing);
         assert_eq!(spot_at(&editing, 370.0, 140.0), None);
-        assert_eq!(spot_at(&editing, 330.0, 98.0), Some(Spot::Grip(4, 2, Grip::Move)));
-        assert_eq!(spot_at(&editing, 446.0, 181.0), Some(Spot::Grip(4, 2, Grip::Handle(4))));
+        assert_eq!(
+            spot_at(&editing, 330.0, 98.0),
+            Some(Spot::Grip(4, 2, Grip::Move))
+        );
+        assert_eq!(
+            spot_at(&editing, 446.0, 181.0),
+            Some(Spot::Grip(4, 2, Grip::Handle(4)))
+        );
 
         // A box half under the headers or a frozen pane takes no press there.
         let clipped = at(rect, (350.0, 120.0, 1000.0, 600.0), BoxState::Selected);
@@ -712,15 +857,28 @@ mod tests {
         wb.set_note(0, 1, 0, "Ada", "left showing");
         wb.set_note_visible(0, 1, 0, true);
         wb.set_note(0, 4, 2, "Ada", "hidden");
-        wb.add_comment(0, 6, 1, &opensheet_engine::comment::Person::new("Bob"), 45_000.0, "a thread");
+        wb.add_comment(
+            0,
+            6,
+            1,
+            &opensheet_engine::comment::Person::new("Bob"),
+            45_000.0,
+            "a thread",
+        );
         wb.commit("setup");
         let sheet = &wb.sheets[0];
         let l = layout(&wb, 1.0, (0.0, 0.0));
         let cells = |view: &BoxView| -> Vec<((u32, u32), BoxState, bool)> {
-            shown_boxes(sheet, &l, view).iter().map(|shown| (shown.cell, shown.state, shown.solid)).collect()
+            shown_boxes(sheet, &l, view)
+                .iter()
+                .map(|shown| (shown.cell, shown.state, shown.solid))
+                .collect()
         };
         // Only the notes left showing; a comment has no box.
-        assert_eq!(cells(&BoxView::default()), [((1, 0), BoxState::Plain, true)]);
+        assert_eq!(
+            cells(&BoxView::default()),
+            [((1, 0), BoxState::Plain, true)]
+        );
         // Under the pointer (or where Next Note went) a hidden note shows,
         // deaf to the mouse.
         let mut view = BoxView {
@@ -729,7 +887,10 @@ mod tests {
         };
         assert_eq!(
             cells(&view),
-            [((1, 0), BoxState::Plain, true), ((4, 2), BoxState::Plain, false)]
+            [
+                ((1, 0), BoxState::Plain, true),
+                ((4, 2), BoxState::Plain, false)
+            ]
         );
         // Selected or typed in, it shows whatever the pointer does.
         view.peeked.clear();
@@ -771,33 +932,75 @@ mod tests {
     fn marks_sit_in_the_top_right_corner() {
         let cell = (100.0, 40.0, 164.0, 60.0);
         // A note: a red triangle against the gridline, six pixels a side.
-        assert_eq!(mark(false, cell, 1.0), [(157.0, 40.0), (163.0, 40.0), (163.0, 46.0)]);
+        assert_eq!(
+            mark(false, cell, 1.0),
+            [(157.0, 40.0), (163.0, 40.0), (163.0, 46.0)]
+        );
         // A comment: a larger shape with its lower-left corner cut off.
         let flag = mark(true, cell, 1.0);
         assert_eq!(flag.len(), 5);
-        assert_eq!((flag[0], flag[1], flag[2]), ((155.0, 40.0), (163.0, 40.0), (163.0, 48.0)));
+        assert_eq!(
+            (flag[0], flag[1], flag[2]),
+            ((155.0, 40.0), (163.0, 40.0), (163.0, 48.0))
+        );
         // They grow with the zoom, and never past the height of a low row.
-        assert_eq!(mark(false, (200.0, 80.0, 328.0, 120.0), 2.0)[0], (315.0, 80.0));
-        assert_eq!(mark(true, (100.0, 40.0, 164.0, 45.0), 1.0)[2], (163.0, 45.0));
+        assert_eq!(
+            mark(false, (200.0, 80.0, 328.0, 120.0), 2.0)[0],
+            (315.0, 80.0)
+        );
+        assert_eq!(
+            mark(true, (100.0, 40.0, 164.0, 45.0), 1.0)[2],
+            (163.0, 45.0)
+        );
     }
 
     #[test]
     fn moving_and_resizing() {
-        assert_eq!(dragged(BOX, Grip::Move, 10.0, -5.0), Frame::new(110.0, 45.0, 144.0, 79.0));
+        assert_eq!(
+            dragged(BOX, Grip::Move, 10.0, -5.0),
+            Frame::new(110.0, 45.0, 144.0, 79.0)
+        );
         // A box stops at the top and the left of the sheet.
-        assert_eq!(dragged(BOX, Grip::Move, -500.0, -500.0), Frame::new(0.0, 0.0, 144.0, 79.0));
+        assert_eq!(
+            dragged(BOX, Grip::Move, -500.0, -500.0),
+            Frame::new(0.0, 0.0, 144.0, 79.0)
+        );
         // The bottom-right handle changes the size only.
-        assert_eq!(dragged(BOX, Grip::Handle(4), 20.0, 10.0), Frame::new(100.0, 50.0, 164.0, 89.0));
+        assert_eq!(
+            dragged(BOX, Grip::Handle(4), 20.0, 10.0),
+            Frame::new(100.0, 50.0, 164.0, 89.0)
+        );
         // The top-left one moves the corner and keeps the opposite one.
-        assert_eq!(dragged(BOX, Grip::Handle(0), 20.0, 10.0), Frame::new(120.0, 60.0, 124.0, 69.0));
+        assert_eq!(
+            dragged(BOX, Grip::Handle(0), 20.0, 10.0),
+            Frame::new(120.0, 60.0, 124.0, 69.0)
+        );
         // Edge handles change one dimension.
-        assert_eq!(dragged(BOX, Grip::Handle(1), 20.0, -10.0), Frame::new(100.0, 40.0, 144.0, 89.0));
-        assert_eq!(dragged(BOX, Grip::Handle(3), -20.0, 30.0), Frame::new(100.0, 50.0, 124.0, 79.0));
-        assert_eq!(dragged(BOX, Grip::Handle(7), -20.0, 30.0), Frame::new(80.0, 50.0, 164.0, 79.0));
+        assert_eq!(
+            dragged(BOX, Grip::Handle(1), 20.0, -10.0),
+            Frame::new(100.0, 40.0, 144.0, 89.0)
+        );
+        assert_eq!(
+            dragged(BOX, Grip::Handle(3), -20.0, 30.0),
+            Frame::new(100.0, 50.0, 124.0, 79.0)
+        );
+        assert_eq!(
+            dragged(BOX, Grip::Handle(7), -20.0, 30.0),
+            Frame::new(80.0, 50.0, 164.0, 79.0)
+        );
         // A handle cannot cross the opposite side, nor leave the sheet.
-        assert_eq!(dragged(BOX, Grip::Handle(4), -500.0, -500.0), Frame::new(100.0, 50.0, 24.0, 16.0));
-        assert_eq!(dragged(BOX, Grip::Handle(0), 500.0, 500.0), Frame::new(220.0, 113.0, 24.0, 16.0));
-        assert_eq!(dragged(BOX, Grip::Handle(0), -500.0, -500.0), Frame::new(0.0, 0.0, 244.0, 129.0));
+        assert_eq!(
+            dragged(BOX, Grip::Handle(4), -500.0, -500.0),
+            Frame::new(100.0, 50.0, 24.0, 16.0)
+        );
+        assert_eq!(
+            dragged(BOX, Grip::Handle(0), 500.0, 500.0),
+            Frame::new(220.0, 113.0, 24.0, 16.0)
+        );
+        assert_eq!(
+            dragged(BOX, Grip::Handle(0), -500.0, -500.0),
+            Frame::new(0.0, 0.0, 244.0, 129.0)
+        );
     }
 
     #[test]
@@ -825,7 +1028,10 @@ mod tests {
         let cell = (200.0, 20.0, 264.0, 40.0);
         assert_eq!(kept_in_view((279.0, 10.0, 423.0, 89.0), cell, area).1, 20.0);
         let cell = (200.0, 580.0, 264.0, 600.0);
-        assert_eq!(kept_in_view((279.0, 570.0, 423.0, 649.0), cell, area).3, 600.0);
+        assert_eq!(
+            kept_in_view((279.0, 570.0, 423.0, 649.0), cell, area).3,
+            600.0
+        );
     }
 
     #[test]

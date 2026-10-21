@@ -55,7 +55,12 @@ fn arithmetic() {
 
 #[test]
 fn references_and_recalc() {
-    let mut w = wb(&[("A1", "1"), ("A2", "2"), ("A3", "=A1+A2"), ("B1", "=SUM(A1:A3)")]);
+    let mut w = wb(&[
+        ("A1", "1"),
+        ("A2", "2"),
+        ("A3", "=A1+A2"),
+        ("B1", "=SUM(A1:A3)"),
+    ]);
     assert_eq!(val(&w, "A3"), Value::Number(3.0));
     assert_eq!(val(&w, "B1"), Value::Number(6.0));
     w.set_cell_text(0, 0, 0, "10").unwrap();
@@ -90,7 +95,11 @@ fn deep_chain() {
 
 #[test]
 fn spills() {
-    let w = wb(&[("A1", "={1,2;3,4}"), ("D1", "=A2+B2"), ("E1", "=SUM(A1:B2)")]);
+    let w = wb(&[
+        ("A1", "={1,2;3,4}"),
+        ("D1", "=A2+B2"),
+        ("E1", "=SUM(A1:B2)"),
+    ]);
     assert_eq!(val(&w, "A1"), Value::Number(1.0));
     assert_eq!(val(&w, "B2"), Value::Number(4.0));
     assert_eq!(val(&w, "D1"), Value::Number(7.0));
@@ -115,9 +124,19 @@ fn if_is_lazy() {
 
 #[test]
 fn copy_paste_shifts_references() {
-    let mut w = wb(&[("A1", "1"), ("A2", "2"), ("B1", "=A1*2"), ("C1", "=$A$1+A1")]);
+    let mut w = wb(&[
+        ("A1", "1"),
+        ("A2", "2"),
+        ("B1", "=A1*2"),
+        ("C1", "=$A$1+A1"),
+    ]);
     let clip = w.copy(0, Rect::parse("B1:C1").unwrap());
-    w.paste(0, Rect::parse("B2").unwrap(), &clip, crate::ops::PasteMode::All);
+    w.paste(
+        0,
+        Rect::parse("B2").unwrap(),
+        &clip,
+        crate::ops::PasteMode::All,
+    );
     w.commit("paste");
     assert_eq!(w.formula_text(0, 1, 1).unwrap(), "=A2*2");
     assert_eq!(w.formula_text(0, 1, 2).unwrap(), "=$A$1+A2");
@@ -126,7 +145,12 @@ fn copy_paste_shifts_references() {
 
 #[test]
 fn insert_delete_rows() {
-    let mut w = wb(&[("A1", "1"), ("A2", "2"), ("A3", "=SUM(A1:A2)"), ("B1", "=A2")]);
+    let mut w = wb(&[
+        ("A1", "1"),
+        ("A2", "2"),
+        ("A3", "=SUM(A1:A2)"),
+        ("B1", "=A2"),
+    ]);
     w.insert_rows(0, 1, 1);
     w.commit("insert");
     assert_eq!(w.formula_text(0, 3, 0).unwrap(), "=SUM(A1:A3)");
@@ -144,8 +168,18 @@ fn insert_delete_rows() {
 
 #[test]
 fn autofill_series() {
-    let mut w = wb(&[("A1", "1"), ("A2", "3"), ("B1", "Item 1"), ("C1", "=A1*2"), ("D1", "Monday")]);
-    w.autofill(0, Rect::parse("A1:A2").unwrap(), Rect::parse("A1:A5").unwrap());
+    let mut w = wb(&[
+        ("A1", "1"),
+        ("A2", "3"),
+        ("B1", "Item 1"),
+        ("C1", "=A1*2"),
+        ("D1", "Monday"),
+    ]);
+    w.autofill(
+        0,
+        Rect::parse("A1:A2").unwrap(),
+        Rect::parse("A1:A5").unwrap(),
+    );
     w.autofill(0, Rect::parse("B1").unwrap(), Rect::parse("B1:B3").unwrap());
     w.autofill(0, Rect::parse("C1").unwrap(), Rect::parse("C1:C3").unwrap());
     w.autofill(0, Rect::parse("D1").unwrap(), Rect::parse("D1:D3").unwrap());
@@ -158,7 +192,15 @@ fn autofill_series() {
 
 #[test]
 fn sort() {
-    let mut w = wb(&[("A1", "n"), ("A2", "3"), ("A3", "1"), ("A4", "2"), ("B2", "c"), ("B3", "a"), ("B4", "b")]);
+    let mut w = wb(&[
+        ("A1", "n"),
+        ("A2", "3"),
+        ("A3", "1"),
+        ("A4", "2"),
+        ("B2", "c"),
+        ("B3", "a"),
+        ("B4", "b"),
+    ]);
     w.sort_rows(0, Rect::parse("A1:B4").unwrap(), 0, true, true);
     w.commit("sort");
     assert_eq!(val(&w, "A2"), Value::Number(1.0));
@@ -171,7 +213,8 @@ fn french_locale() {
     let mut w = Workbook::new(Locale::fr());
     w.set_cell_text(0, 0, 0, "1,5").unwrap();
     w.set_cell_text(0, 1, 0, "=SOMME(A1;2,5)").unwrap();
-    w.set_cell_text(0, 2, 0, "=SI(A2>3;\"oui\";\"non\")").unwrap();
+    w.set_cell_text(0, 2, 0, "=SI(A2>3;\"oui\";\"non\")")
+        .unwrap();
     w.commit("fr");
     assert_eq!(w.value_at(0, 1, 0), Value::Number(4.0));
     assert_eq!(w.value_at(0, 2, 0), Value::text("oui"));
@@ -221,7 +264,10 @@ fn german_locale() {
     );
     assert_eq!(val(&w, "A2"), Value::Number(4.0));
     assert_eq!(val(&w, "A3"), Value::Bool(true));
-    assert_eq!(val(&w, "A4"), Value::Number(crate::datetime::date_to_serial(2025, 3, 12).unwrap()));
+    assert_eq!(
+        val(&w, "A4"),
+        Value::Number(crate::datetime::date_to_serial(2025, 3, 12).unwrap())
+    );
     assert_eq!(w.display_text(0, 3, 0).text, "12.03.2025");
     assert_eq!(val(&w, "A5"), Value::Number(1000.0));
     assert_eq!(w.display_text(0, 5, 0).text, "#DIV/0!");
@@ -257,7 +303,12 @@ fn spanish_and_italian_locales() {
 
     let w = wb_in(
         Locale::it(),
-        &[("A1", "2,5"), ("A2", "=SOMMA(A1;1)"), ("A3", "=SE(A2>3;VERO;FALSO)"), ("A4", "=NOPE()")],
+        &[
+            ("A1", "2,5"),
+            ("A2", "=SOMMA(A1;1)"),
+            ("A3", "=SE(A2>3;VERO;FALSO)"),
+            ("A4", "=NOPE()"),
+        ],
     );
     assert_eq!(val(&w, "A2"), Value::Number(3.5));
     assert_eq!(val(&w, "A3"), Value::Bool(true));
@@ -281,7 +332,9 @@ fn formulas_survive_a_locale_change() {
 fn row_format_keeps_column_format() {
     let mut w = wb(&[("A1", "x")]);
     w.update_style(0, Rect::parse("B:B").unwrap(), &|s| s.font.bold = true);
-    w.update_style(0, Rect::parse("3:3").unwrap(), &|s| s.fill = Some(crate::style::Color(0xFFFF00)));
+    w.update_style(0, Rect::parse("3:3").unwrap(), &|s| {
+        s.fill = Some(crate::style::Color(0xFFFF00))
+    });
     w.commit("format");
     let s = w.style_at(0, 2, 1);
     assert!(s.font.bold && s.fill.is_some());
@@ -302,9 +355,15 @@ fn redo_after_cells_were_written_then_moved() {
     assert_eq!(val(&w, "A1"), Value::text("new"));
     assert_eq!(val(&w, "A2"), Value::Empty);
     w.undo();
-    assert_eq!((val(&w, "A1"), val(&w, "A2")), (Value::text("top"), Value::text("old")));
+    assert_eq!(
+        (val(&w, "A1"), val(&w, "A2")),
+        (Value::text("top"), Value::text("old"))
+    );
     w.redo();
-    assert_eq!((val(&w, "A1"), val(&w, "A2")), (Value::text("new"), Value::Empty));
+    assert_eq!(
+        (val(&w, "A1"), val(&w, "A2")),
+        (Value::text("new"), Value::Empty)
+    );
 }
 
 #[test]
@@ -313,13 +372,17 @@ fn hidden_sheets_keep_calculating_and_one_sheet_stays_visible() {
     let mut w = wb(&[("A1", "2")]);
     let data = w.add_sheet(1);
     w.set_cell_text(data, 0, 0, "40").unwrap();
-    w.set_cell_text(0, 0, 1, &format!("=A1+{}!A1", w.sheets[data].name)).unwrap();
+    w.set_cell_text(0, 0, 1, &format!("=A1+{}!A1", w.sheets[data].name))
+        .unwrap();
     w.commit("setup");
     assert_eq!(val(&w, "B1"), Value::Number(42.0));
 
     assert!(w.set_sheet_visibility(data, Hidden));
     w.commit("hide");
-    assert_eq!((w.visible_sheet_count(), w.nearest_visible_sheet(data)), (1, 0));
+    assert_eq!(
+        (w.visible_sheet_count(), w.nearest_visible_sheet(data)),
+        (1, 0)
+    );
     // The last sheet with a tab can be neither hidden nor deleted.
     assert!(!w.set_sheet_visibility(0, Hidden) && !w.set_sheet_visibility(0, VeryHidden));
     assert!(!w.delete_sheet(0));
@@ -337,6 +400,12 @@ fn hidden_sheets_keep_calculating_and_one_sheet_stays_visible() {
     assert_eq!(w.sheets[data].visibility, Visible);
     w.redo();
     assert_eq!(w.sheets[data].visibility, Hidden);
-    assert_eq!((w.next_visible_sheet(0, true), w.next_visible_sheet(1, false)), (None, Some(0)));
+    assert_eq!(
+        (
+            w.next_visible_sheet(0, true),
+            w.next_visible_sheet(1, false)
+        ),
+        (None, Some(0))
+    );
     assert!(w.set_sheet_visibility(data, Visible) && !w.set_sheet_visibility(7, Hidden));
 }

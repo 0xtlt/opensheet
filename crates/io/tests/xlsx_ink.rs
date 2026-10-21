@@ -12,7 +12,9 @@ use opensheet_io::{read_xlsx, write_xlsx};
 use std::io::Cursor;
 
 fn to_bytes(wb: &Workbook) -> Vec<u8> {
-    write_xlsx(wb, Cursor::new(Vec::new())).unwrap().into_inner()
+    write_xlsx(wb, Cursor::new(Vec::new()))
+        .unwrap()
+        .into_inner()
 }
 
 fn load(bytes: &[u8]) -> Workbook {
@@ -20,21 +22,50 @@ fn load(bytes: &[u8]) -> Workbook {
 }
 
 fn wave() -> Vec<(f64, f64)> {
-    (0..=40).map(|i| (120.0 + 5.0 * i as f64, 90.0 + 30.0 * (i as f64 / 4.0).sin())).collect()
+    (0..=40)
+        .map(|i| (120.0 + 5.0 * i as f64, 90.0 + 30.0 * (i as f64 / 4.0).sin()))
+        .collect()
 }
 
 #[test]
 fn strokes_come_back_as_they_were_drawn() {
     let mut wb = Workbook::new(Locale::en());
-    let pen = wb.draw_ink(0, PenKind::Pen, Color(0xE71224), 2.0, &wave()).unwrap();
-    let marker = wb
-        .draw_ink(0, PenKind::Highlighter, Color(0xFFFC00), 14.0, &[(60.0, 200.0), (260.0, 204.0)])
+    let pen = wb
+        .draw_ink(0, PenKind::Pen, Color(0xE71224), 2.0, &wave())
         .unwrap();
-    let pencil = wb.draw_ink(0, PenKind::Pencil, Color(0x333333), 1.0, &[(30.0, 30.0), (40.0, 60.0), (55.0, 30.0)]).unwrap();
-    let dot = wb.draw_ink(0, PenKind::Pen, Color::BLACK, 3.0, &[(300.0, 300.0)]).unwrap();
+    let marker = wb
+        .draw_ink(
+            0,
+            PenKind::Highlighter,
+            Color(0xFFFC00),
+            14.0,
+            &[(60.0, 200.0), (260.0, 204.0)],
+        )
+        .unwrap();
+    let pencil = wb
+        .draw_ink(
+            0,
+            PenKind::Pencil,
+            Color(0x333333),
+            1.0,
+            &[(30.0, 30.0), (40.0, 60.0), (55.0, 30.0)],
+        )
+        .unwrap();
+    let dot = wb
+        .draw_ink(0, PenKind::Pen, Color::BLACK, 3.0, &[(300.0, 300.0)])
+        .unwrap();
     // One was stretched: its line grew with it.
     let frame = wb.ink_frame(0, pencil).unwrap();
-    wb.set_ink_frame(0, pencil, opensheet_engine::drawing::Frame::new(frame.x, frame.y, frame.width * 2.0, frame.height * 2.0));
+    wb.set_ink_frame(
+        0,
+        pencil,
+        opensheet_engine::drawing::Frame::new(
+            frame.x,
+            frame.y,
+            frame.width * 2.0,
+            frame.height * 2.0,
+        ),
+    );
     wb.update_ink(0, marker, |ink| ink.locked = false);
     wb.commit("Ink");
 
@@ -44,10 +75,20 @@ fn strokes_come_back_as_they_were_drawn() {
     assert_well_formed("drawing1.xml", &xml);
     // Freeform shapes behind a choice only this application takes.
     assert_eq!(xml.matches("<mc:AlternateContent").count(), 4);
-    assert_eq!(xml.matches("<mc:Fallback><xdr:twoCellAnchor editAs=\"oneCell\">").count(), 4);
+    assert_eq!(
+        xml.matches("<mc:Fallback><xdr:twoCellAnchor editAs=\"oneCell\">")
+            .count(),
+        4
+    );
     assert_eq!(xml.matches("<a:custGeom>").count(), 4);
-    assert!(xml.contains("<a:srgbClr val=\"FFFC00\"><a:alpha val=\"50000\"/></a:srgbClr>"), "{xml}");
-    assert!(xml.contains("<a:ln w=\"19050\" cap=\"rnd\"><a:solidFill><a:srgbClr val=\"E71224\"/>"), "{xml}");
+    assert!(
+        xml.contains("<a:srgbClr val=\"FFFC00\"><a:alpha val=\"50000\"/></a:srgbClr>"),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("<a:ln w=\"19050\" cap=\"rnd\"><a:solidFill><a:srgbClr val=\"E71224\"/>"),
+        "{xml}"
+    );
     assert!(xml.contains("<xdr:cNvPr id=\"2\" name=\"Ink 1\"/>"));
     assert!(part(&bytes, "xl/worksheets/sheet1.xml").contains("<drawing r:id=\"rId1\"/>"));
 
@@ -57,14 +98,30 @@ fn strokes_come_back_as_they_were_drawn() {
     assert!(sheet.drawings.is_empty(), "the strokes are not shapes too");
     for id in [pen, marker, pencil, dot] {
         let (was, is) = (wb.ink(0, id).unwrap(), back.ink(0, id).unwrap());
-        assert_eq!((is.kind, is.color, &is.name, is.locked), (was.kind, was.color, &was.name, was.locked));
-        assert!((is.width - was.width).abs() < 0.01, "{} against {}", is.width, was.width);
+        assert_eq!(
+            (is.kind, is.color, &is.name, is.locked),
+            (was.kind, was.color, &was.name, was.locked)
+        );
+        assert!(
+            (is.width - was.width).abs() < 0.01,
+            "{} against {}",
+            is.width,
+            was.width
+        );
         assert_eq!(is.points.len(), was.points.len());
         for (a, b) in is.points.iter().zip(was.points.iter()) {
-            assert!((a.0 - b.0).abs() < 0.01 && (a.1 - b.1).abs() < 0.01, "{a:?} against {b:?}");
+            assert!(
+                (a.0 - b.0).abs() < 0.01 && (a.1 - b.1).abs() < 0.01,
+                "{a:?} against {b:?}"
+            );
         }
         let (a, b) = (back.ink_frame(0, id).unwrap(), wb.ink_frame(0, id).unwrap());
-        for (x, y) in [(a.x, b.x), (a.y, b.y), (a.width, b.width), (a.height, b.height)] {
+        for (x, y) in [
+            (a.x, b.x),
+            (a.y, b.y),
+            (a.width, b.width),
+            (a.height, b.height),
+        ] {
             assert!((x - y).abs() < 0.01, "{a:?} against {b:?}");
         }
     }
@@ -72,7 +129,8 @@ fn strokes_come_back_as_they_were_drawn() {
     // and reading change nothing.
     let second = to_bytes(&back);
     let third = to_bytes(&load(&second));
-    let same = part(&second, "xl/drawings/drawing1.xml") == part(&third, "xl/drawings/drawing1.xml");
+    let same =
+        part(&second, "xl/drawings/drawing1.xml") == part(&third, "xl/drawings/drawing1.xml");
     assert!(same, "a second round trip changes the drawing part");
 }
 
@@ -80,8 +138,14 @@ fn strokes_come_back_as_they_were_drawn() {
 fn ink_shares_the_drawing_part_with_shapes() {
     let mut wb = Workbook::new(Locale::en());
     wb.add_sheet(1);
-    wb.add_shape(1, ShapeTool::Ellipse, opensheet_engine::drawing::Frame::new(10.0, 10.0, 80.0, 40.0)).unwrap();
-    wb.draw_ink(1, PenKind::Pen, Color::BLACK, 2.0, &wave()).unwrap();
+    wb.add_shape(
+        1,
+        ShapeTool::Ellipse,
+        opensheet_engine::drawing::Frame::new(10.0, 10.0, 80.0, 40.0),
+    )
+    .unwrap();
+    wb.draw_ink(1, PenKind::Pen, Color::BLACK, 2.0, &wave())
+        .unwrap();
     wb.commit("Ink");
     let bytes = to_bytes(&wb);
     let names = part_names(&bytes);
@@ -90,10 +154,19 @@ fn ink_shares_the_drawing_part_with_shapes() {
     let xml = part(&bytes, "xl/drawings/drawing1.xml");
     assert_well_formed("drawing1.xml", &xml);
     // The shape has the first id, the stroke the next.
-    assert!(xml.contains("<xdr:cNvPr id=\"2\" name=\"Oval 1\"") || xml.contains("id=\"2\""), "{xml}");
-    assert!(xml.contains("<xdr:cNvPr id=\"3\" name=\"Ink 1\"/>"), "{xml}");
+    assert!(
+        xml.contains("<xdr:cNvPr id=\"2\" name=\"Oval 1\"") || xml.contains("id=\"2\""),
+        "{xml}"
+    );
+    assert!(
+        xml.contains("<xdr:cNvPr id=\"3\" name=\"Ink 1\"/>"),
+        "{xml}"
+    );
     let back = load(&bytes);
-    assert_eq!((back.sheets[1].drawings.len(), back.sheets[1].inks.len()), (1, 1));
+    assert_eq!(
+        (back.sheets[1].drawings.len(), back.sheets[1].inks.len()),
+        (1, 1)
+    );
     assert!(back.sheets[0].inks.is_empty());
 }
 
@@ -182,16 +255,25 @@ xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\">\
 fn the_ink_of_excel_is_shown() {
     let wb = load(&excel_ink());
     let sheet = &wb.sheets[0];
-    assert!(sheet.drawings.is_empty(), "the fallback picture is not taken");
+    assert!(
+        sheet.drawings.is_empty(),
+        "the fallback picture is not taken"
+    );
     assert_eq!(sheet.inks.len(), 2);
     let (first, second) = (&sheet.inks[0], &sheet.inks[1]);
     assert_eq!((first.kind, first.color), (PenKind::Pen, Color(0xE71224)));
-    assert_eq!((first.name.as_str(), second.name.as_str()), ("Encre 2", "Encre 2 2"));
+    assert_eq!(
+        (first.name.as_str(), second.name.as_str()),
+        ("Encre 2", "Encre 2 2")
+    );
     // The two strokes fill the frame of the anchor, from (64, 20) to
     // (256, 100), less half the thickness of the line.
     let a = sheet.ink_frame(first);
     let b = sheet.ink_frame(second);
-    assert!((a.x - 64.0).abs() < 1.5 && (a.y - 20.0).abs() < 1.5, "{a:?}");
+    assert!(
+        (a.x - 64.0).abs() < 1.5 && (a.y - 20.0).abs() < 1.5,
+        "{a:?}"
+    );
     assert!((a.x + a.width - 256.0).abs() < 1.5, "{a:?}");
     assert!((b.y + b.height - 100.0).abs() < 2.0, "{b:?}");
     assert_eq!(first.points.len(), 3);

@@ -28,16 +28,17 @@ mod presets;
 
 pub use eval::{Adornment, Bar, Cache, CellIcon, CondResult, result_at};
 pub use formula::{
-    is_relative, ooxml_formulas, operand_text, parse_operand, parse_ranges, parse_text_operand, ranges_text,
-    text_operand_from_ooxml,
+    is_relative, ooxml_formulas, operand_text, parse_operand, parse_ranges, parse_text_operand,
+    ranges_text, text_operand_from_ooxml,
 };
 pub use manage::normalize_ranges;
 pub(crate) use manage::{
-    on_cells_shifted, on_sheet_deleted, on_sheet_duplicated, on_sheet_moved, on_sheet_renamed, on_structural_edit,
+    on_cells_shifted, on_sheet_deleted, on_sheet_duplicated, on_sheet_moved, on_sheet_renamed,
+    on_structural_edit,
 };
 pub use model::{
-    BarAxis, BarDirection, CellOp, Cfvo, ColorScale, ColorStop, CondFormat, DataBar, Icon, IconRule, IconSet,
-    IconThreshold, Rule, TextOp, TimePeriod,
+    BarAxis, BarDirection, CellOp, Cfvo, ColorScale, ColorStop, CondFormat, DataBar, Icon,
+    IconRule, IconSet, IconThreshold, Rule, TextOp, TimePeriod,
 };
 pub use presets::{BarColor, HighlightFormat, ScalePreset, number_span};
 

@@ -1,7 +1,9 @@
 //! Interpreting what the user types into a cell, and producing the text
 //! shown when a cell is edited.
 
-use crate::datetime::{date_to_serial, days_in_month, serial_to_hms, serial_to_ymd, time_to_serial};
+use crate::datetime::{
+    date_to_serial, days_in_month, serial_to_hms, serial_to_ymd, time_to_serial,
+};
 use crate::format;
 use crate::locale::{DateOrder, Locale};
 use crate::parser::{ParseError, parse_formula};
@@ -221,9 +223,15 @@ fn current_year() -> i64 {
 /// fraction and a number format.
 fn parse_time(s: &str) -> Option<(f64, &'static str)> {
     let lower = s.trim().to_lowercase();
-    let (body, ampm) = if let Some(b) = lower.strip_suffix("am").or_else(|| lower.strip_suffix(" a")) {
+    let (body, ampm) = if let Some(b) = lower
+        .strip_suffix("am")
+        .or_else(|| lower.strip_suffix(" a"))
+    {
         (b.trim(), Some(false))
-    } else if let Some(b) = lower.strip_suffix("pm").or_else(|| lower.strip_suffix(" p")) {
+    } else if let Some(b) = lower
+        .strip_suffix("pm")
+        .or_else(|| lower.strip_suffix(" p"))
+    {
         (b.trim(), Some(true))
     } else {
         (lower.as_str(), None)
@@ -359,7 +367,9 @@ pub fn parse_date_time(s: &str, locale: &Locale) -> Option<(f64, String)> {
         }
         // date <space> time
         let lower = s.to_lowercase();
-        let time_start = lower.find(':').and_then(|colon| lower[..colon].rfind(' '))?;
+        let time_start = lower
+            .find(':')
+            .and_then(|colon| lower[..colon].rfind(' '))?;
         let (date_part, time_part) = s.split_at(time_start);
         let (d, _) = parse_date(date_part, locale)?;
         let (t, _) = parse_time(time_part)?;
@@ -381,7 +391,8 @@ pub fn edit_text(content: &Content, num_fmt: &str, locale: &Locale) -> String {
                     let has_time = frac.abs() > 1e-9;
                     let mut out = String::new();
                     if has_date || !has_time {
-                        out = format::format_number(n.floor(), locale.short_date_format, locale).text;
+                        out =
+                            format::format_number(n.floor(), locale.short_date_format, locale).text;
                     }
                     if has_time {
                         let (h, m, s) = serial_to_hms(*n);
@@ -438,11 +449,26 @@ mod tests {
     fn dates() {
         let en = Locale::en();
         let fr = Locale::fr();
-        assert_eq!(num("3/12/2025", en).unwrap().0, date_to_serial(2025, 3, 12).unwrap());
-        assert_eq!(num("12/03/2025", fr).unwrap().0, date_to_serial(2025, 3, 12).unwrap());
-        assert_eq!(num("2025-03-12", fr).unwrap().0, date_to_serial(2025, 3, 12).unwrap());
-        assert_eq!(num("12 mars 2025", fr).unwrap().0, date_to_serial(2025, 3, 12).unwrap());
-        assert_eq!(num("March 12, 2025", en).unwrap().0, date_to_serial(2025, 3, 12).unwrap());
+        assert_eq!(
+            num("3/12/2025", en).unwrap().0,
+            date_to_serial(2025, 3, 12).unwrap()
+        );
+        assert_eq!(
+            num("12/03/2025", fr).unwrap().0,
+            date_to_serial(2025, 3, 12).unwrap()
+        );
+        assert_eq!(
+            num("2025-03-12", fr).unwrap().0,
+            date_to_serial(2025, 3, 12).unwrap()
+        );
+        assert_eq!(
+            num("12 mars 2025", fr).unwrap().0,
+            date_to_serial(2025, 3, 12).unwrap()
+        );
+        assert_eq!(
+            num("March 12, 2025", en).unwrap().0,
+            date_to_serial(2025, 3, 12).unwrap()
+        );
         assert_eq!(num("31/02/2025", fr), None);
         assert_eq!(num("14:30", fr).unwrap().0, 14.5 / 24.0);
         assert_eq!(num("2:30 PM", en).unwrap().0, 14.5 / 24.0);
@@ -519,8 +545,14 @@ mod tests {
         }
         assert_eq!(formula(" -A1 ", en).as_deref(), Some("-A1"));
         let fr = Locale::fr();
-        assert_eq!(formula("-SOMME(A1;B1)", fr).as_deref(), Some("-SOMME(A1;B1)"));
-        assert_eq!(formula("+Ventes[[#Totaux];[Qté]]", fr).as_deref(), Some("+Ventes[[#Totaux];[Qté]]"));
+        assert_eq!(
+            formula("-SOMME(A1;B1)", fr).as_deref(),
+            Some("-SOMME(A1;B1)")
+        );
+        assert_eq!(
+            formula("+Ventes[[#Totaux];[Qté]]", fr).as_deref(),
+            Some("+Ventes[[#Totaux];[Qté]]")
+        );
         // Numbers and dates stay what they are.
         assert_eq!(num("-5", en), Some((-5.0, None)));
         assert_eq!(num("+5", en), Some((5.0, None)));

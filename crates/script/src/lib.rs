@@ -70,7 +70,8 @@ impl Script {
         Script {
             name: name.to_string(),
             description: String::new(),
-            body: "function main(workbook: ExcelScript.Workbook) {\n  // Your code here\n}\n".to_string(),
+            body: "function main(workbook: ExcelScript.Workbook) {\n  // Your code here\n}\n"
+                .to_string(),
         }
     }
 
@@ -86,7 +87,13 @@ impl Script {
         // Files saved by Windows tools may start with a byte order mark.
         let text = text.trim_start_matches('\u{feff}');
         let value: serde_json::Value = serde_json::from_str(text).map_err(|e| e.to_string())?;
-        let field = |key: &str| value.get(key).and_then(|v| v.as_str()).unwrap_or_default().to_string();
+        let field = |key: &str| {
+            value
+                .get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
         if value.get("body").and_then(|v| v.as_str()).is_none() {
             return Err("no script body".to_string());
         }
@@ -103,7 +110,8 @@ impl Script {
         let text = |s: &str| serde_json::Value::from(s).to_string();
         // What Excel records of `main`: the name of its parameter (scripts
         // with more parameters do not run here, see `run`).
-        let workbook = compile::workbook_parameter(&self.body).unwrap_or_else(|| "workbook".to_string());
+        let workbook =
+            compile::workbook_parameter(&self.body).unwrap_or_else(|| "workbook".to_string());
         let parameter_info = format!(
             "{{\"version\":1,\"originalParameterOrder\":[],\"parameterSchema\":{{\"type\":\"object\",\"default\":{{}},\"x-ms-visibility\":\"internal\"}},\"returnSchema\":{{\"type\":\"object\",\"properties\":{{}}}},\"signature\":{{\"comment\":\"\",\"parameters\":[{{\"name\":{},\"comment\":\"\"}}]}}}}",
             text(&workbook)
@@ -316,13 +324,22 @@ mod tests {
         // The strings kept inside are JSON themselves.
         let file: serde_json::Value = serde_json::from_str(&script.to_osts()).unwrap();
         for key in ["parameterInfo", "apiInfo"] {
-            assert!(serde_json::from_str::<serde_json::Value>(file[key].as_str().unwrap()).is_ok(), "{key}");
+            assert!(
+                serde_json::from_str::<serde_json::Value>(file[key].as_str().unwrap()).is_ok(),
+                "{key}"
+            );
         }
         // An older file, with a byte order mark and three keys.
         let old = "\u{feff}{\"version\":\"0.2.0\",\"body\":\"function main(workbook: ExcelScript.Workbook) {}\",\"description\":\"\"}";
-        assert_eq!(Script::from_osts("Old", old).map(|s| s.body), Ok("function main(workbook: ExcelScript.Workbook) {}".to_string()));
+        assert_eq!(
+            Script::from_osts("Old", old).map(|s| s.body),
+            Ok("function main(workbook: ExcelScript.Workbook) {}".to_string())
+        );
         // A text that cannot be read keeps the usual parameter name.
-        let broken = Script { body: "function main(".to_string(), ..Script::default() };
+        let broken = Script {
+            body: "function main(".to_string(),
+            ..Script::default()
+        };
         assert!(broken.to_osts().contains(r#"\"name\":\"workbook\""#));
     }
 }

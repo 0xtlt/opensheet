@@ -21,18 +21,31 @@ struct Frame {
 
 impl Frame {
     fn at(&self, b: Box4) -> Box4 {
-        (self.x + b.0 * self.z, self.y + b.1 * self.z, self.x + b.2 * self.z, self.y + b.3 * self.z)
+        (
+            self.x + b.0 * self.z,
+            self.y + b.1 * self.z,
+            self.x + b.2 * self.z,
+            self.y + b.3 * self.z,
+        )
     }
 }
 
 /// The part of `b` inside `clip`; `None` when nothing of it is.
 fn cut(b: Box4, clip: Box4) -> Option<Box4> {
-    let out = (b.0.max(clip.0), b.1.max(clip.1), b.2.min(clip.2), b.3.min(clip.3));
+    let out = (
+        b.0.max(clip.0),
+        b.1.max(clip.1),
+        b.2.min(clip.2),
+        b.3.min(clip.3),
+    );
     (out.0 < out.2 && out.1 < out.3).then_some(out)
 }
 
 fn bounds(p: &Painter, b: Box4) -> Bounds<Pixels> {
-    Bounds::new(p.layout.to_window(b.0, b.1), size(px(b.2 - b.0), px(b.3 - b.1)))
+    Bounds::new(
+        p.layout.to_window(b.0, b.1),
+        size(px(b.2 - b.0), px(b.3 - b.1)),
+    )
 }
 
 /// How a line of text sits in its box.
@@ -44,7 +57,16 @@ enum Align {
 }
 
 /// One line of text in a box, cut off at `clip`.
-fn text_in(p: &mut Painter, text: &str, b: Box4, clip: Box4, font_px: f32, color: u32, bold: bool, align: Align) {
+fn text_in(
+    p: &mut Painter,
+    text: &str,
+    b: Box4,
+    clip: Box4,
+    font_px: f32,
+    color: u32,
+    bold: bool,
+    align: Align,
+) {
     let Some(clip) = cut(b, clip).and_then(|inner| cut(inner, p.clip)) else {
         return;
     };
@@ -90,8 +112,16 @@ fn clear_icon(p: &mut Painter, b: Box4, z: f32, lit: bool, ink: u32) {
     outline.push(funnel[0]);
     p.polyline(&outline, 1.2 * z.max(0.75), c(grey));
     let cross = if lit { 0xC8102E } else { 0xB0B0B0 };
-    p.polyline(&[(x + 12.5 * u, y + 11.5 * u), (x + 17.5 * u, y + 16.5 * u)], 1.6 * z.max(0.75), c(cross));
-    p.polyline(&[(x + 17.5 * u, y + 11.5 * u), (x + 12.5 * u, y + 16.5 * u)], 1.6 * z.max(0.75), c(cross));
+    p.polyline(
+        &[(x + 12.5 * u, y + 11.5 * u), (x + 17.5 * u, y + 16.5 * u)],
+        1.6 * z.max(0.75),
+        c(cross),
+    );
+    p.polyline(
+        &[(x + 17.5 * u, y + 11.5 * u), (x + 12.5 * u, y + 16.5 * u)],
+        1.6 * z.max(0.75),
+        c(cross),
+    );
 }
 
 /// Three ticked lines: "Multi-Select".
@@ -99,8 +129,22 @@ fn multi_icon(p: &mut Painter, b: Box4, z: f32, ink: u32) {
     let u = (b.2 - b.0) / TOOL;
     for k in 0..3 {
         let y = b.1 + (5.0 + 5.0 * k as f32) * u;
-        p.polyline(&[(b.0 + 3.0 * u, y), (b.0 + 4.5 * u, y + 1.5 * u), (b.0 + 7.0 * u, y - 1.5 * u)], 1.2 * z.max(0.75), c(ink));
-        p.rect(b.0 + 9.0 * u, y - 0.5 * u, b.0 + 17.0 * u, y + 0.5 * u, c(ink));
+        p.polyline(
+            &[
+                (b.0 + 3.0 * u, y),
+                (b.0 + 4.5 * u, y + 1.5 * u),
+                (b.0 + 7.0 * u, y - 1.5 * u),
+            ],
+            1.2 * z.max(0.75),
+            c(ink),
+        );
+        p.rect(
+            b.0 + 9.0 * u,
+            y - 0.5 * u,
+            b.0 + 17.0 * u,
+            y + 0.5 * u,
+            c(ink),
+        );
     }
 }
 
@@ -108,7 +152,15 @@ fn multi_icon(p: &mut Painter, b: Box4, z: f32, ink: u32) {
 fn scroll_bar(p: &mut Painter, frame: Frame, track: Box4, thumb: Box4) {
     let (t, h) = (frame.at(track), frame.at(thumb));
     p.rect(t.0, t.1, t.2, t.3, c(0xF0F0F0));
-    p.rounded(h.0 + 1.0, h.1 + 1.0, h.2 - 1.0, h.3 - 1.0, 3.0, c(0xC1C1C1), None);
+    p.rounded(
+        h.0 + 1.0,
+        h.1 + 1.0,
+        h.2 - 1.0,
+        h.3 - 1.0,
+        3.0,
+        c(0xC1C1C1),
+        None,
+    );
 }
 
 pub(super) fn slicer(p: &mut Painter, id: u32, rect: Box4) {
@@ -116,7 +168,11 @@ pub(super) fn slicer(p: &mut Painter, id: u32, rect: Box4) {
         return;
     };
     let z = p.zoom();
-    let frame = Frame { x: rect.0, y: rect.1, z };
+    let frame = Frame {
+        x: rect.0,
+        y: rect.1,
+        z,
+    };
     let look = logic::slicer_look(p.app.wb.theme(), &slicer.style);
     let items = items_of(p.app, id);
     let layout = logic::slicer_layout(
@@ -128,7 +184,11 @@ pub(super) fn slicer(p: &mut Painter, id: u32, rect: Box4) {
         first_row(p.app, slicer),
     );
     // What a press in progress selects shows before it is applied.
-    let pending = p.app.ext::<SlicerUi>().and_then(|ui| ui.pending_items.as_ref()).filter(|(s, _)| *s == id);
+    let pending = p
+        .app
+        .ext::<SlicerUi>()
+        .and_then(|ui| ui.pending_items.as_ref())
+        .filter(|(s, _)| *s == id);
     let selected = |index: usize| match pending {
         Some((_, chosen)) => chosen.is_empty() || chosen.contains(&items[index].x),
         None => items[index].selected,
@@ -141,14 +201,37 @@ pub(super) fn slicer(p: &mut Painter, id: u32, rect: Box4) {
             p.rect(h.0, h.1, h.2, h.3, c(color));
         }
         let rule = frame.at((logic::PAD, header.3 - 1.0, header.2 - logic::PAD, header.3));
-        p.rect(rule.0, rule.1, rule.2, rule.1 + z.max(1.0), c(look.header_rule));
+        p.rect(
+            rule.0,
+            rule.1,
+            rule.2,
+            rule.1 + z.max(1.0),
+            c(look.header_rule),
+        );
         let tools = layout.multi.map_or(header.2, |b| b.0);
         let caption = frame.at((logic::PAD, header.1, tools - 4.0, header.3));
-        text_in(p, &slicer.caption, caption, rect, font, look.header_text, true, Align::Left);
+        text_in(
+            p,
+            &slicer.caption,
+            caption,
+            rect,
+            font,
+            look.header_text,
+            true,
+            Align::Left,
+        );
         if let Some(b) = layout.multi {
             let b = frame.at(b);
             if multi_select(p.app, id) {
-                p.rounded(b.0, b.1, b.2, b.3, 3.0, crate::theme::ca(look.header_text, 0.18), None);
+                p.rounded(
+                    b.0,
+                    b.1,
+                    b.2,
+                    b.3,
+                    3.0,
+                    crate::theme::ca(look.header_text, 0.18),
+                    None,
+                );
             }
             multi_icon(p, b, z, look.header_text);
         }
@@ -164,9 +247,23 @@ pub(super) fn slicer(p: &mut Painter, id: u32, rect: Box4) {
         let tile = look.tile(selected(*index), item.has_data || !slicer.indicate_no_data);
         let b = frame.at(*button);
         fill(p, b, body, tile.border);
-        fill(p, (b.0 + 1.0, b.1 + 1.0, b.2 - 1.0, b.3 - 1.0), body, tile.fill);
+        fill(
+            p,
+            (b.0 + 1.0, b.1 + 1.0, b.2 - 1.0, b.3 - 1.0),
+            body,
+            tile.fill,
+        );
         let label = (b.0 + 6.0 * z, b.1, b.2 - 4.0 * z, b.3);
-        text_in(p, &item.label, label, body, font, tile.text, false, Align::Left);
+        text_in(
+            p,
+            &item.label,
+            label,
+            body,
+            font,
+            tile.text,
+            false,
+            Align::Left,
+        );
     }
     if let Some((track, thumb)) = layout.scroll {
         scroll_bar(p, frame, track, thumb);
@@ -190,14 +287,23 @@ pub(super) fn timeline(p: &mut Painter, id: u32, rect: Box4) {
         return;
     };
     let z = p.zoom();
-    let frame = Frame { x: rect.0, y: rect.1, z };
+    let frame = Frame {
+        x: rect.0,
+        y: rect.1,
+        z,
+    };
     let look = logic::timeline_look(p.app.wb.theme(), &timeline.style);
     let locale = p.app.wb.locale;
     let bounds = p.app.wb.timeline_bounds(id);
-    let band: Vec<_> = bounds.map(|(start, end)| periods(timeline.level, start, end, locale)).unwrap_or_default();
+    let band: Vec<_> = bounds
+        .map(|(start, end)| periods(timeline.level, start, end, locale))
+        .unwrap_or_default();
     let selection = p.app.wb.timeline_selection(id);
     let ui = p.app.ext::<SlicerUi>();
-    let pending = ui.and_then(|ui| ui.pending_span).filter(|(t, ..)| *t == id).map(|(_, a, b)| (a, b));
+    let pending = ui
+        .and_then(|ui| ui.pending_span)
+        .filter(|(t, ..)| *t == id)
+        .map(|(_, a, b)| (a, b));
     let selected = pending.or_else(|| logic::selected_periods(&band, selection));
     let mut shape = logic::TimelineShape {
         size: timeline.size,
@@ -226,23 +332,57 @@ pub(super) fn timeline(p: &mut Painter, id: u32, rect: Box4) {
     let font = 12.0 * z;
     p.rect(rect.0, rect.1, rect.2, rect.3, c(look.background));
     if let Some(header) = layout.header {
-        let caption = frame.at((logic::TL_PAD, header.1, layout.clear.map_or(header.2, |b| b.0) - 4.0, header.3));
-        text_in(p, &timeline.caption, caption, rect, 13.0 * z, look.header_text, true, Align::Left);
+        let caption = frame.at((
+            logic::TL_PAD,
+            header.1,
+            layout.clear.map_or(header.2, |b| b.0) - 4.0,
+            header.3,
+        ));
+        text_in(
+            p,
+            &timeline.caption,
+            caption,
+            rect,
+            13.0 * z,
+            look.header_text,
+            true,
+            Align::Left,
+        );
         if let Some(b) = layout.clear {
             clear_icon(p, frame.at(b), z, selection.is_some(), look.header_text);
         }
     }
     if let Some(b) = layout.selection_label {
-        let days = pending.and_then(|(a, b)| logic::span_days(&band, a, b)).or(selection);
+        let days = pending
+            .and_then(|(a, b)| logic::span_days(&band, a, b))
+            .or(selection);
         let text = match days {
             Some((start, end)) => span_label(timeline.level, start, end, locale),
             None => all_periods(locale).to_string(),
         };
-        text_in(p, &text, frame.at(b), rect, font, look.label_text, false, Align::Left);
+        text_in(
+            p,
+            &text,
+            frame.at(b),
+            rect,
+            font,
+            look.label_text,
+            false,
+            Align::Left,
+        );
     }
     if let Some(b) = layout.level {
         let text = format!("{} \u{25BE}", timeline.level.label(locale));
-        text_in(p, &text, frame.at(b), rect, 11.0 * z, look.label_text, false, Align::Right);
+        text_in(
+            p,
+            &text,
+            frame.at(b),
+            rect,
+            11.0 * z,
+            look.label_text,
+            false,
+            Align::Right,
+        );
     }
     let clip = frame.at(layout.band);
     let small = 10.5 * z;
@@ -252,20 +392,56 @@ pub(super) fn timeline(p: &mut Painter, id: u32, rect: Box4) {
             continue;
         }
         if let Some(group) = &period.group {
-            let b = frame.at((x0 + 2.0, layout.groups_y, x0 + 400.0, layout.groups_y + logic::TL_TEXT_H));
-            text_in(p, group, b, clip, small, look.period_text, true, Align::Left);
+            let b = frame.at((
+                x0 + 2.0,
+                layout.groups_y,
+                x0 + 400.0,
+                layout.groups_y + logic::TL_TEXT_H,
+            ));
+            text_in(
+                p,
+                group,
+                b,
+                clip,
+                small,
+                look.period_text,
+                true,
+                Align::Left,
+            );
         }
-        let name = frame.at((x0, layout.names_y, x0 + layout.tile, layout.names_y + logic::TL_TEXT_H));
-        text_in(p, &period.label, name, clip, small, look.period_text, false, Align::Centre);
+        let name = frame.at((
+            x0,
+            layout.names_y,
+            x0 + layout.tile,
+            layout.names_y + logic::TL_TEXT_H,
+        ));
+        text_in(
+            p,
+            &period.label,
+            name,
+            clip,
+            small,
+            look.period_text,
+            false,
+            Align::Centre,
+        );
         let on = selected.is_some_and(|(first, last)| index >= first && index <= last);
         let bar = frame.at((x0 + 1.0, layout.bar.0, x0 + layout.tile - 1.0, layout.bar.1));
-        fill(p, bar, clip, if on { look.selected } else { look.unselected });
+        fill(
+            p,
+            bar,
+            clip,
+            if on { look.selected } else { look.unselected },
+        );
     }
     // The handles at the two ends of the selected span.
     if let Some((first, last)) = selected {
         for x in [layout.period_x(first), layout.period_x(last + 1)] {
             let handle = frame.at((x - 3.0, layout.bar.0 - 3.0, x + 3.0, layout.bar.1 + 3.0));
-            if let Some(b) = cut(handle, (clip.0 - 3.0 * z, clip.1, clip.2 + 3.0 * z, clip.3 + 4.0 * z)) {
+            if let Some(b) = cut(
+                handle,
+                (clip.0 - 3.0 * z, clip.1, clip.2 + 3.0 * z, clip.3 + 4.0 * z),
+            ) {
                 p.rounded(b.0, b.1, b.2, b.3, 2.0, c(look.handle), None);
             }
         }

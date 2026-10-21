@@ -119,7 +119,13 @@ impl Aggregation {
                 "Dev. standard pop.",
             ],
             Aggregation::Var => ["Var", "Var", "Var", "Var", "Varianza"],
-            Aggregation::Varp => ["Varp", "Varp", "Varp", "Varianz (Grundgesamtheit)", "Varianza pop."],
+            Aggregation::Varp => [
+                "Varp",
+                "Varp",
+                "Varp",
+                "Varianz (Grundgesamtheit)",
+                "Varianza pop.",
+            ],
         };
         t[lang(locale)]
     }
@@ -169,7 +175,13 @@ impl GroupBy {
             GroupBy::Hours => ["Hours", "Heures", "Horas", "Stunden", "Ore"],
             GroupBy::Days => ["Days", "Jours", "Días", "Tage", "Giorni"],
             GroupBy::Months => ["Months", "Mois", "Meses", "Monate", "Mesi"],
-            GroupBy::Quarters => ["Quarters", "Trimestres", "Trimestres", "Quartale", "Trimestri"],
+            GroupBy::Quarters => [
+                "Quarters",
+                "Trimestres",
+                "Trimestres",
+                "Quartale",
+                "Trimestri",
+            ],
             GroupBy::Years => ["Years", "Années", "Años", "Jahre", "Anni"],
         };
         t[lang(locale)]
@@ -236,7 +248,9 @@ pub(crate) fn date_group_index(by: GroupBy, serial: f64) -> usize {
         GroupBy::Months => (m.max(1) - 1) as usize,
         GroupBy::Quarters => ((m.max(1) - 1) / 3) as usize,
         GroupBy::Days => {
-            let before: u32 = (1..m).map(|k| crate::datetime::days_in_month(2024, k)).sum();
+            let before: u32 = (1..m)
+                .map(|k| crate::datetime::days_in_month(2024, k))
+                .sum();
             (before + d.max(1) - 1) as usize
         }
         GroupBy::Hours => h as usize,

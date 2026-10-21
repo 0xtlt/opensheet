@@ -12,7 +12,9 @@ use opensheet_engine::value::Value;
 use opensheet_engine::workbook::{DefinedName, Workbook};
 
 use super::util::{absolute_address, range_arg};
-use super::{ApiClass, Call, Fail, Res, Ret, class, comment, enum_value, object, pivot, state_of, table};
+use super::{
+    ApiClass, Call, Fail, Res, Ret, class, comment, enum_value, object, pivot, state_of, table,
+};
 use crate::host::{Host, MAX_SHEETS, to_script};
 
 /// The identifier of a sheet as Excel writes them.
@@ -22,31 +24,40 @@ pub(super) fn sheet_guid(id: i64) -> String {
 
 /// The sheet a script names, by name or by identifier.
 pub(super) fn find_sheet(h: &Host, key: &str) -> Option<usize> {
-    h.wb.sheet_index(key)
-        .or_else(|| (0..h.wb.sheets.len()).find(|i| sheet_guid(h.sheet_id(*i)).eq_ignore_ascii_case(key)))
+    h.wb.sheet_index(key).or_else(|| {
+        (0..h.wb.sheets.len()).find(|i| sheet_guid(h.sheet_id(*i)).eq_ignore_ascii_case(key))
+    })
 }
 
 /// Why a sheet cannot be called `name`, as Excel says it.
-pub(super) fn sheet_name_problem(wb: &Workbook, name: &str, own: Option<usize>) -> Option<&'static str> {
+pub(super) fn sheet_name_problem(
+    wb: &Workbook,
+    name: &str,
+    own: Option<usize>,
+) -> Option<&'static str> {
     let name = name.trim();
-    if name.is_empty() || name.chars().count() > 31 || name.contains(['\\', '/', '?', '*', '[', ']', ':']) {
+    if name.is_empty()
+        || name.chars().count() > 31
+        || name.contains(['\\', '/', '?', '*', '[', ']', ':'])
+    {
         return Some("The argument is invalid or missing or has an incorrect format.");
     }
     match wb.sheet_index(name) {
-        Some(existing) if Some(existing) != own => Some("A resource with the same name or identifier already exists."),
+        Some(existing) if Some(existing) != own => {
+            Some("A resource with the same name or identifier already exists.")
+        }
         _ => None,
     }
 }
 
 pub(super) fn all_tables(h: &Host, sheet: Option<usize>) -> J {
-    let tables = h
-        .wb
-        .sheets
-        .iter()
-        .enumerate()
-        .filter(|(index, _)| sheet.is_none_or(|s| s == *index))
-        .flat_map(|(_, sh)| sh.tables.iter().map(|t| table::table_object(t.id)))
-        .collect::<Vec<J>>();
+    let tables =
+        h.wb.sheets
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| sheet.is_none_or(|s| s == *index))
+            .flat_map(|(_, sh)| sh.tables.iter().map(|t| table::table_object(t.id)))
+            .collect::<Vec<J>>();
     J::from(tables)
 }
 
@@ -68,12 +79,20 @@ pub(super) fn names_in(h: &Host, scope: NameScope) -> J {
         NameScope::Workbook => &h.wb.names,
         NameScope::Sheet(sheet) => &h.wb.sheets[sheet].names,
     };
-    J::from(names.values().map(|def| named_item(h, scope, &def.name)).collect::<Vec<J>>())
+    J::from(
+        names
+            .values()
+            .map(|def| named_item(h, scope, &def.name))
+            .collect::<Vec<J>>(),
+    )
 }
 
 pub(super) fn name_in(h: &Host, call: &Call, scope: NameScope) -> Res<Ret> {
     let name = call.str(0)?;
-    Ok(Ret::maybe(h.wb.name_in(scope, name).map(|def| named_item(h, scope, &def.name))))
+    Ok(Ret::maybe(
+        h.wb.name_in(scope, name)
+            .map(|def| named_item(h, scope, &def.name)),
+    ))
 }
 
 fn name_fail(call: &Call, error: NameError) -> Fail {
@@ -112,7 +131,8 @@ pub(super) fn add_name(h: &mut Host, call: &Call, scope: NameScope, local: bool)
     };
     let expr = name_formula(h, call, 1, sheet, local)?;
     let comment = call.opt_str(2)?.unwrap_or_default();
-    h.wb.add_name(scope, name, expr, comment).map_err(|e| name_fail(call, e))?;
+    h.wb.add_name(scope, name, expr, comment)
+        .map_err(|e| name_fail(call, e))?;
     h.restructured();
     Ok(Ret::Object(named_item(h, scope, name)))
 }
@@ -137,7 +157,11 @@ fn item_sheet(h: &Host, scope: NameScope) -> usize {
 }
 
 /// The cells a name stands for, when it stands for one range.
-fn item_range(h: &Host, scope: NameScope, def: &DefinedName) -> Option<(usize, opensheet_engine::Rect)> {
+fn item_range(
+    h: &Host,
+    scope: NameScope,
+    def: &DefinedName,
+) -> Option<(usize, opensheet_engine::Rect)> {
     let mut expr = def.expr_at(0, 0);
     while let Expr::Paren(inner) = expr {
         expr = *inner;

@@ -62,7 +62,10 @@ pub(crate) fn apply(app: &mut ExcelApp, bytes: Vec<u8>, cx: &mut Cx) -> bool {
         return false;
     }
     let Some(background) = picture::importable(bytes).and_then(Picture::new) else {
-        let message = t("An error occurred while importing this file.", "Une erreur s'est produite lors de l'importation de ce fichier.");
+        let message = t(
+            "An error occurred while importing this file.",
+            "Une erreur s'est produite lors de l'importation de ce fichier.",
+        );
         app.alert(Alert::new("OpenSheet", message).warning(), cx);
         return false;
     };
@@ -82,12 +85,17 @@ pub(super) fn delete(app: &mut ExcelApp, cx: &mut Cx) {
 /// Where the tiles of a picture `tile` pixels wide and high go in a pane
 /// that shows the box `clip` of a sheet whose corner is at `origin`: the
 /// top-left corners of those that show, row by row.
-pub(super) fn tiles(origin: (f64, f64), tile: (f32, f32), clip: (f32, f32, f32, f32)) -> Vec<(f32, f32)> {
+pub(super) fn tiles(
+    origin: (f64, f64),
+    tile: (f32, f32),
+    clip: (f32, f32, f32, f32),
+) -> Vec<(f32, f32)> {
     let (tw, th) = (tile.0 as f64, tile.1 as f64);
     if tw < 1.0 || th < 1.0 || clip.2 <= clip.0 || clip.3 <= clip.1 {
         return Vec::new();
     }
-    let first = |start: f32, origin: f64, size: f64| ((start as f64 - origin) / size).floor().max(0.0);
+    let first =
+        |start: f32, origin: f64, size: f64| ((start as f64 - origin) / size).floor().max(0.0);
     let (i0, j0) = (first(clip.0, origin.0, tw), first(clip.1, origin.1, th));
     let mut out = Vec::new();
     let mut j = j0;
@@ -116,11 +124,21 @@ pub(super) fn paint(p: &mut Painter) {
     };
     let layout = p.layout;
     let zoom = layout.zoom;
-    let tile = (background.pixels.0 as f32 * zoom, background.pixels.1 as f32 * zoom);
+    let tile = (
+        background.pixels.0 as f32 * zoom,
+        background.pixels.1 as f32 * zoom,
+    );
     // Where the corner of A1 would be in this pane, frozen or scrolled.
     let (row, col) = (p.visible.r0, p.visible.c0);
-    let origin = (layout.col_x(col) as f64 - layout.cols.start(col), layout.row_y(row) as f64 - layout.rows.start(row));
-    let Some((image, _)) = picture::image_for(background, &Placed::plain(0.0, 0.0, tile.0, tile.1), p.scale) else {
+    let origin = (
+        layout.col_x(col) as f64 - layout.cols.start(col),
+        layout.row_y(row) as f64 - layout.rows.start(row),
+    );
+    let Some((image, _)) = picture::image_for(
+        background,
+        &Placed::plain(0.0, 0.0, tile.0, tile.1),
+        p.scale,
+    ) else {
         return;
     };
     for (x, y) in tiles(origin, tile, p.clip) {
@@ -158,23 +176,47 @@ mod tests {
     fn png(width: u32, height: u32) -> Vec<u8> {
         let pixels = image::RgbaImage::from_pixel(width, height, image::Rgba([200, 220, 255, 255]));
         let mut file = std::io::Cursor::new(Vec::new());
-        pixels.write_to(&mut file, image::ImageFormat::Png).expect("a PNG file");
+        pixels
+            .write_to(&mut file, image::ImageFormat::Png)
+            .expect("a PNG file");
         file.into_inner()
     }
 
     /// The tiles painted under the cells of a pane, as boxes in the window.
-    fn painted(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, visible: Rect) -> Vec<(f32, f32, f32, f32)> {
+    fn painted(
+        app: &Entity<ExcelApp>,
+        cx: &mut VisualTestContext,
+        visible: Rect,
+    ) -> Vec<(f32, f32, f32, f32)> {
         app.update_in(cx, |app, window, _| {
             let layout = app.current_layout().expect("the grid was drawn");
-            let clip = (layout.header_w, layout.header_h, layout.width(), layout.height());
-            let mut p = Painter::new(app, &layout, window.text_system(), PaintLayer::Under, visible, clip, 1.0);
+            let clip = (
+                layout.header_w,
+                layout.header_h,
+                layout.width(),
+                layout.height(),
+            );
+            let mut p = Painter::new(
+                app,
+                &layout,
+                window.text_system(),
+                PaintLayer::Under,
+                visible,
+                clip,
+                1.0,
+            );
             paint(&mut p);
             p.items
                 .iter()
                 .map(|item| match item {
                     Draw::Image { bounds, .. } => {
                         let (x, y) = (f32::from(bounds.origin.x), f32::from(bounds.origin.y));
-                        (x, y, x + f32::from(bounds.size.width), y + f32::from(bounds.size.height))
+                        (
+                            x,
+                            y,
+                            x + f32::from(bounds.size.width),
+                            y + f32::from(bounds.size.height),
+                        )
                     }
                     _ => panic!("the background paints pictures only"),
                 })
@@ -185,9 +227,15 @@ mod tests {
     #[gpui::test]
     fn the_button_sets_the_background_then_deletes_it(cx: &mut TestAppContext) {
         let (app, cx) = open(cx);
-        let label = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| Cmd::Background.label_in(app));
-        let background = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| app.wb.sheets[0].background.clone());
-        let undo_label = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| app.update(cx, |app, _| app.wb.undo_label().map(str::to_string));
+        let label = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+            app.update(cx, |app, _| Cmd::Background.label_in(app))
+        };
+        let background = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+            app.update(cx, |app, _| app.wb.sheets[0].background.clone())
+        };
+        let undo_label = |app: &Entity<ExcelApp>, cx: &mut VisualTestContext| {
+            app.update(cx, |app, _| app.wb.undo_label().map(str::to_string))
+        };
         assert_eq!(label(&app, cx), "Background");
         assert!(app.update(cx, |app, _| Cmd::Background.enabled(app)));
         assert!(painted(&app, cx, Rect::new(0, 0, 30, 20)).is_empty());
@@ -211,11 +259,25 @@ mod tests {
         let corner = app.update(cx, |app, _| {
             let layout = app.current_layout().unwrap();
             let at = layout.to_window(layout.col_x(0), layout.row_y(0));
-            (f32::from(at.x), f32::from(at.y), layout.view_w(), layout.view_h())
+            (
+                f32::from(at.x),
+                f32::from(at.y),
+                layout.view_w(),
+                layout.view_h(),
+            )
         });
-        assert_eq!(tiles[0], (corner.0, corner.1, corner.0 + 80.0, corner.1 + 60.0));
-        assert_eq!(tiles[1], (corner.0 + 80.0, corner.1, corner.0 + 160.0, corner.1 + 60.0));
-        let (across, down) = ((corner.2 / 80.0).ceil() as usize, (corner.3 / 60.0).ceil() as usize);
+        assert_eq!(
+            tiles[0],
+            (corner.0, corner.1, corner.0 + 80.0, corner.1 + 60.0)
+        );
+        assert_eq!(
+            tiles[1],
+            (corner.0 + 80.0, corner.1, corner.0 + 160.0, corner.1 + 60.0)
+        );
+        let (across, down) = (
+            (corner.2 / 80.0).ceil() as usize,
+            (corner.3 / 60.0).ceil() as usize,
+        );
         assert_eq!(tiles.len(), across * down);
 
         // Zoomed, the tiles are; in the frozen and in the scrolled panes
@@ -229,16 +291,26 @@ mod tests {
         let frozen = painted(&app, cx, Rect::new(0, 0, 1, 0));
         assert_eq!(frozen[0].2 - frozen[0].0, 120.0);
         let scrolled = painted(&app, cx, Rect::new(2, 1, 40, 20));
-        let step = |a: f32, b: f32, size: f32| ((a - b) / size - ((a - b) / size).round()).abs() < 0.01;
-        assert!(step(scrolled[0].0, frozen[0].0, 120.0) && step(scrolled[0].1, frozen[0].1, 90.0), "{:?} {:?}", scrolled[0], frozen[0]);
+        let step =
+            |a: f32, b: f32, size: f32| ((a - b) / size - ((a - b) / size).round()).abs() < 0.01;
+        assert!(
+            step(scrolled[0].0, frozen[0].0, 120.0) && step(scrolled[0].1, frozen[0].1, 90.0),
+            "{:?} {:?}",
+            scrolled[0],
+            frozen[0]
+        );
         // Not in the Page Break Preview, which paints its own ground.
-        app.update(cx, |app, cx| app.set_view_mode(ViewMode::PageBreakPreview, cx));
+        app.update(cx, |app, cx| {
+            app.set_view_mode(ViewMode::PageBreakPreview, cx)
+        });
         redraw(cx);
         assert!(painted(&app, cx, Rect::new(0, 0, 30, 20)).is_empty());
         app.update(cx, |app, cx| app.set_view_mode(ViewMode::Normal, cx));
 
         // The button now takes the background away; both are undone.
-        app.update_in(cx, |app, window, cx| app.run_command(Cmd::Background, window, cx));
+        app.update_in(cx, |app, window, cx| {
+            app.run_command(Cmd::Background, window, cx)
+        });
         redraw(cx);
         assert_eq!(background(&app, cx), None);
         assert_eq!(label(&app, cx), "Background");
@@ -251,9 +323,14 @@ mod tests {
             app.wb.protect_sheet(0, Default::default(), "");
             app.commit("protect", cx);
         });
-        app.update_in(cx, |app, window, cx| app.run_command(Cmd::Background, window, cx));
+        app.update_in(cx, |app, window, cx| {
+            app.run_command(Cmd::Background, window, cx)
+        });
         redraw(cx);
-        assert!(app.update(cx, |app, _| app.modal_open()), "the refusal is said");
+        assert!(
+            app.update(cx, |app, _| app.modal_open()),
+            "the refusal is said"
+        );
         assert_eq!(background(&app, cx), Some(picture));
     }
 
@@ -261,7 +338,17 @@ mod tests {
     fn tiles_cover_what_shows_and_no_more() {
         // A pane 100 × 50 whose sheet corner is its own.
         let all = tiles((10.0, 20.0), (40.0, 30.0), (10.0, 20.0, 110.0, 70.0));
-        assert_eq!(all, [(10.0, 20.0), (50.0, 20.0), (90.0, 20.0), (10.0, 50.0), (50.0, 50.0), (90.0, 50.0)]);
+        assert_eq!(
+            all,
+            [
+                (10.0, 20.0),
+                (50.0, 20.0),
+                (90.0, 20.0),
+                (10.0, 50.0),
+                (50.0, 50.0),
+                (90.0, 50.0)
+            ]
+        );
         // Scrolled by 95 × 35: the tiling starts off screen.
         let scrolled = tiles((-85.0, -15.0), (40.0, 30.0), (10.0, 20.0, 110.0, 70.0));
         assert_eq!(scrolled[0], (-5.0, 15.0));
@@ -270,6 +357,9 @@ mod tests {
         assert!(tiles((0.0, 0.0), (0.0, 30.0), (0.0, 0.0, 100.0, 100.0)).is_empty());
         assert!(tiles((0.0, 0.0), (40.0, 30.0), (50.0, 0.0, 50.0, 100.0)).is_empty());
         // A picture of one pixel does not flood the display list.
-        assert_eq!(tiles((0.0, 0.0), (1.0, 1.0), (0.0, 0.0, 2000.0, 1000.0)).len(), MAX_TILES);
+        assert_eq!(
+            tiles((0.0, 0.0), (1.0, 1.0), (0.0, 0.0, 2000.0, 1000.0)).len(),
+            MAX_TILES
+        );
     }
 }

@@ -39,17 +39,28 @@ fn media_name(picture: &Picture, extras: &mut Extras) -> String {
 /// them. The pictures of the drawings are in the package by now.
 pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
     for (index, sheet) in wb.sheets.iter().enumerate() {
-        let (Some(picture), Some(id)) = (&sheet.background, SheetLinks::of(sheet).background) else {
+        let (Some(picture), Some(id)) = (&sheet.background, SheetLinks::of(sheet).background)
+        else {
             continue;
         };
         let name = media_name(picture, extras);
-        extras.relate_sheet(index, id, &format!("{NS_DOC_REL}/image"), &format!("../media/{name}"));
+        extras.relate_sheet(
+            index,
+            id,
+            &format!("{NS_DOC_REL}/image"),
+            &format!("../media/{name}"),
+        );
     }
 }
 
 /// Read the background of a worksheet from its XML and its relationships.
 /// A picture that is missing or cannot be shown is no background.
-pub(super) fn read_sheet<R: Read + Seek>(pkg: &mut Package<R>, part: &str, xml: &str, sheet: &mut Sheet) {
+pub(super) fn read_sheet<R: Read + Seek>(
+    pkg: &mut Package<R>,
+    part: &str,
+    xml: &str,
+    sheet: &mut Sheet,
+) {
     // The element comes after the cells; most sheets have none.
     let Some(start) = xml.rfind("<picture ") else {
         return;
@@ -64,9 +75,16 @@ pub(super) fn read_sheet<R: Read + Seek>(pkg: &mut Package<R>, part: &str, xml: 
     let Some(id) = id else {
         return;
     };
-    let target = relationships(pkg, part).into_iter().find(|rel| rel.id == id && rel.kind == "image").map(|rel| rel.target);
+    let target = relationships(pkg, part)
+        .into_iter()
+        .find(|rel| rel.id == id && rel.kind == "image")
+        .map(|rel| rel.target);
     let Some(target) = target else {
         return;
     };
-    sheet.background = pkg.read_bytes(&target).ok().flatten().and_then(Picture::new);
+    sheet.background = pkg
+        .read_bytes(&target)
+        .ok()
+        .flatten()
+        .and_then(Picture::new);
 }

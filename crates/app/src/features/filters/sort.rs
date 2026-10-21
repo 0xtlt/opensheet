@@ -3,8 +3,9 @@
 //! warning asked when one column of a block of data is selected.
 
 use super::{
-    APP_NAME, Cmd, SortPlan, SortTarget, State, cannot_apply, cells_kind, column_title, select_keeping_active,
-    shown_colors, single_selection, sort_failed, sort_plan, straddles_filter,
+    APP_NAME, Cmd, SortPlan, SortTarget, State, cannot_apply, cells_kind, column_title,
+    select_keeping_active, shown_colors, single_selection, sort_failed, sort_plan,
+    straddles_filter,
 };
 use crate::app::ExcelApp;
 use crate::features::{Command, Cx, Intent};
@@ -12,12 +13,12 @@ use crate::i18n::{self, t};
 use crate::shell::{Alert, Modal};
 use crate::theme::{self, c};
 use crate::widgets::{
-    self, Button, CONTROL_H, Checkbox, GroupBox, ListBox, ROW_H, RadioGroup, ScrollArea, Select, dialog, icon, label,
-    ok_cancel, tooltip,
+    self, Button, CONTROL_H, Checkbox, GroupBox, ListBox, ROW_H, RadioGroup, ScrollArea, Select,
+    dialog, icon, label, ok_cancel, tooltip,
 };
 use gpui::{
-    AnyElement, Context, FontWeight, MouseButton, SharedString, WeakEntity, Window, anchored, deferred, div, prelude::*,
-    px, relative,
+    AnyElement, Context, FontWeight, MouseButton, SharedString, WeakEntity, Window, anchored,
+    deferred, div, prelude::*, px, relative,
 };
 use opensheet_engine::filter::{ColumnKind, SortState};
 use opensheet_engine::ops::{SortError, SortLevel, SortOn, SortSpec};
@@ -86,7 +87,10 @@ impl Level {
                 Basis::FontColor => SortOn::FontColor(self.color),
             },
             descending: self.descending,
-            custom_list: self.custom_list.clone().filter(|_| self.basis == Basis::Values),
+            custom_list: self
+                .custom_list
+                .clone()
+                .filter(|_| self.basis == Basis::Values),
         }
     }
 }
@@ -113,7 +117,12 @@ pub(super) struct Setup {
 impl Setup {
     /// How the dialog opens on a target: on the sort its filter remembers,
     /// on the last sort of these very cells, else on one empty level.
-    pub(super) fn opening(wb: &Workbook, sheet: usize, target: SortTarget, last: Option<&Setup>) -> Setup {
+    pub(super) fn opening(
+        wb: &Workbook,
+        sheet: usize,
+        target: SortTarget,
+        last: Option<&Setup>,
+    ) -> Setup {
         let mut setup = Setup {
             target,
             levels: vec![Level::blank()],
@@ -123,7 +132,10 @@ impl Setup {
         };
         match target {
             SortTarget::Filter { scope, .. } => {
-                if let Some(sort) = wb.auto_filter(sheet, scope).and_then(|filter| filter.sort.as_ref()) {
+                if let Some(sort) = wb
+                    .auto_filter(sheet, scope)
+                    .and_then(|filter| filter.sort.as_ref())
+                {
                     setup.levels = sort.levels.iter().map(Level::from_engine).collect();
                     setup.case_sensitive = sort.case_sensitive;
                 }
@@ -147,15 +159,25 @@ impl Setup {
 
     /// How many keys there are to choose from.
     fn key_count(&self) -> u32 {
-        if self.left_to_right { self.rect().rows() } else { self.rect().cols() }
+        if self.left_to_right {
+            self.rect().rows()
+        } else {
+            self.rect().cols()
+        }
     }
 
     /// What the engine is asked to do.
     pub(super) fn spec(&self) -> Result<SortSpec, Problem> {
         let mut levels: Vec<SortLevel> = Vec::new();
         for level in &self.levels {
-            let key = level.key.filter(|key| *key < self.key_count()).ok_or(Problem::NoKey)?;
-            let repeated = level.basis == Basis::Values && levels.iter().any(|l| l.key == key && l.on == SortOn::Values);
+            let key = level
+                .key
+                .filter(|key| *key < self.key_count())
+                .ok_or(Problem::NoKey)?;
+            let repeated = level.basis == Basis::Values
+                && levels
+                    .iter()
+                    .any(|l| l.key == key && l.on == SortOn::Values);
             if repeated {
                 return Err(Problem::Repeated(key));
             }
@@ -171,7 +193,12 @@ impl Setup {
 
     /// Sort. A filtered list sorted by rows keeps the sort with its
     /// filter (the arrows on its buttons).
-    pub(super) fn apply(&self, wb: &mut Workbook, sheet: usize, spec: SortSpec) -> Result<(), SortError> {
+    pub(super) fn apply(
+        &self,
+        wb: &mut Workbook,
+        sheet: usize,
+        spec: SortSpec,
+    ) -> Result<(), SortError> {
         match self.target {
             SortTarget::Filter { scope, .. } if !spec.left_to_right => {
                 let state = SortState {
@@ -188,11 +215,22 @@ impl Setup {
     /// whole row.
     fn key_cells(&self, key: u32) -> impl Iterator<Item = (u32, u32)> + use<> {
         let rect = self.rect();
-        let (left_to_right, first) = (self.left_to_right, rect.r0 + (self.has_header && !self.left_to_right) as u32);
-        let along = if left_to_right { rect.c0..=rect.c1 } else { first..=rect.r1 };
-        along
-            .take(KEY_SAMPLE)
-            .map(move |i| if left_to_right { (rect.r0 + key, i) } else { (i, rect.c0 + key) })
+        let (left_to_right, first) = (
+            self.left_to_right,
+            rect.r0 + (self.has_header && !self.left_to_right) as u32,
+        );
+        let along = if left_to_right {
+            rect.c0..=rect.c1
+        } else {
+            first..=rect.r1
+        };
+        along.take(KEY_SAMPLE).map(move |i| {
+            if left_to_right {
+                (rect.r0 + key, i)
+            } else {
+                (i, rect.c0 + key)
+            }
+        })
     }
 }
 
@@ -290,7 +328,10 @@ pub(super) fn open(app: &mut ExcelApp, window: &mut Window, cx: &mut Cx) {
         SortPlan::Nothing => cannot_apply(app, cx),
         SortPlan::StraddlesFilter => straddles_filter(app, cx),
         SortPlan::Sort(target) => open_on(app, target, window, cx),
-        SortPlan::Ask { selection, expanded } => ask_to_expand(
+        SortPlan::Ask {
+            selection,
+            expanded,
+        } => ask_to_expand(
             app,
             Asking::Sort,
             selection,
@@ -311,10 +352,16 @@ pub(super) fn open_on(app: &mut ExcelApp, target: SortTarget, window: &mut Windo
         return;
     }
     let sheet = app.sheet;
-    let last = app.ext::<State>().and_then(|state| state.last_sort.get(&sheet));
+    let last = app
+        .ext::<State>()
+        .and_then(|state| state.last_sort.get(&sheet));
     let setup = Setup::opening(&app.wb, sheet, target, last);
     let names = names_of(&app.wb, sheet, &setup);
-    let facts = setup.levels.iter().map(|level| facts(&app.wb, sheet, &setup, level.key)).collect();
+    let facts = setup
+        .levels
+        .iter()
+        .map(|level| facts(&app.wb, sheet, &setup, level.key))
+        .collect();
     let lists = app.wb.custom_lists();
     // The rows about to be sorted show as the selection, as in Excel.
     let rect = target.rect();
@@ -334,7 +381,10 @@ pub(super) fn open_on(app: &mut ExcelApp, target: SortTarget, window: &mut Windo
 }
 
 fn names_of(wb: &Workbook, sheet: usize, setup: &Setup) -> Vec<SharedString> {
-    key_names(wb, sheet, setup).into_iter().map(SharedString::from).collect()
+    key_names(wb, sheet, setup)
+        .into_iter()
+        .map(SharedString::from)
+        .collect()
 }
 
 /// What OK does once the dialog is closed.
@@ -391,7 +441,11 @@ impl SortDialog {
     fn refresh_keys(&mut self, cx: &mut Context<Self>) {
         let (sheet, setup) = (self.sheet, &self.setup);
         let read = self.modal.read_app(cx, |app| {
-            let facts: Vec<Facts> = setup.levels.iter().map(|level| facts(&app.wb, sheet, setup, level.key)).collect();
+            let facts: Vec<Facts> = setup
+                .levels
+                .iter()
+                .map(|level| facts(&app.wb, sheet, setup, level.key))
+                .collect();
             (names_of(&app.wb, sheet, setup), facts)
         });
         if let Some((names, facts)) = read {
@@ -404,7 +458,10 @@ impl SortDialog {
     fn refresh_level(&mut self, index: usize, cx: &mut Context<Self>) {
         let (sheet, setup) = (self.sheet, &self.setup);
         let key = setup.levels[index].key;
-        if let Some(found) = self.modal.read_app(cx, |app| facts(&app.wb, sheet, setup, key)) {
+        if let Some(found) = self
+            .modal
+            .read_app(cx, |app| facts(&app.wb, sheet, setup, key))
+        {
             self.facts[index] = found;
         }
         // A colour level starts on the first colour of its key.
@@ -521,14 +578,16 @@ impl SortDialog {
                         .replace("{}", &name)
                     }
                 };
-                self.modal
-                    .update_app(cx, |app, cx| app.alert(Alert::new(APP_NAME, message).warning(), cx));
+                self.modal.update_app(cx, |app, cx| {
+                    app.alert(Alert::new(APP_NAME, message).warning(), cx)
+                });
                 return;
             }
         };
         let (sheet, setup) = (self.sheet, self.setup.clone());
         self.modal.close(window, cx);
-        self.modal.update_app(cx, |app, cx| run(app, sheet, setup, spec, cx));
+        self.modal
+            .update_app(cx, |app, cx| run(app, sheet, setup, spec, cx));
     }
 
     /// The box of a colour: a bar of it, or the name of "no colour".
@@ -560,7 +619,8 @@ impl SortDialog {
             _ => &self.facts[index].cell_colors,
         };
         // The colours, then "no colour", which is always offered.
-        let mut colors: Vec<Option<Color>> = found.iter().flatten().map(|color| Some(*color)).collect();
+        let mut colors: Vec<Option<Color>> =
+            found.iter().flatten().map(|color| Some(*color)).collect();
         colors.push(None);
         let open = self.colors_open == Some(index);
         let button = div()
@@ -580,7 +640,10 @@ impl SortDialog {
             .child(SortDialog::color_face(level.color, basis))
             .child(icon("chevron-down", 10.0, theme::TEXT_MUTED))
             .on_click(cx.listener(move |this, _, _, cx| {
-                let just_closed = this.colors_closed.take().is_some_and(|at| at.elapsed() < Duration::from_millis(250));
+                let just_closed = this
+                    .colors_closed
+                    .take()
+                    .is_some_and(|at| at.elapsed() < Duration::from_millis(250));
                 if !just_closed {
                     this.colors_open = if open { None } else { Some(index) };
                     cx.notify();
@@ -636,7 +699,12 @@ impl SortDialog {
                 .with_priority(3),
             )
         });
-        div().relative().flex_none().child(button).children(panel).into_any_element()
+        div()
+            .relative()
+            .flex_none()
+            .child(button)
+            .children(panel)
+            .into_any_element()
     }
 
     /// The "Order" cell of a level.
@@ -644,9 +712,15 @@ impl SortDialog {
         let level = &self.setup.levels[index];
         if level.basis != Basis::Values {
             let sides: Vec<SharedString> = if self.setup.left_to_right {
-                vec![t("On Left", "À gauche").into(), t("On Right", "À droite").into()]
+                vec![
+                    t("On Left", "À gauche").into(),
+                    t("On Right", "À droite").into(),
+                ]
             } else {
-                vec![t("On Top", "En haut").into(), t("On Bottom", "En bas").into()]
+                vec![
+                    t("On Top", "En haut").into(),
+                    t("On Bottom", "En bas").into(),
+                ]
             };
             return div()
                 .flex()
@@ -664,7 +738,9 @@ impl SortDialog {
         }
         // The two plain orders, the custom list in use (both ways), then
         // the entry that opens the lists.
-        let mut options: Vec<SharedString> = orders(self.facts[index].kind).map(SharedString::from).to_vec();
+        let mut options: Vec<SharedString> = orders(self.facts[index].kind)
+            .map(SharedString::from)
+            .to_vec();
         if let Some(list) = &level.custom_list {
             options.push(list_name(list, false).into());
             options.push(list_name(list, true).into());
@@ -722,22 +798,32 @@ impl SortDialog {
                 }),
             )
             .child(
-                label(if index == 0 { t("Sort by", "Trier par") } else { t("Then by", "Puis par") }).w(px(LABEL_W)),
+                label(if index == 0 {
+                    t("Sort by", "Trier par")
+                } else {
+                    t("Then by", "Puis par")
+                })
+                .w(px(LABEL_W)),
             )
             .child(
-                Select::new(("sort-key", index), self.names.clone(), level.key.map(|key| key as usize))
-                    .width(KEY_W)
-                    .on_change(cx.listener(move |this, at: &usize, _, cx| {
-                        this.setup.levels[index].key = Some(*at as u32);
-                        this.refresh_level(index, cx);
-                    })),
+                Select::new(
+                    ("sort-key", index),
+                    self.names.clone(),
+                    level.key.map(|key| key as usize),
+                )
+                .width(KEY_W)
+                .on_change(cx.listener(move |this, at: &usize, _, cx| {
+                    this.setup.levels[index].key = Some(*at as u32);
+                    this.refresh_level(index, cx);
+                })),
             )
             .child(
                 Select::new(("sort-basis", index), bases, Some(basis))
                     .width(BASIS_W)
                     .on_change(cx.listener(move |this, at: &usize, _, cx| {
                         let level = &mut this.setup.levels[index];
-                        level.basis = [Basis::Values, Basis::CellColor, Basis::FontColor][(*at).min(2)];
+                        level.basis =
+                            [Basis::Values, Basis::CellColor, Basis::FontColor][(*at).min(2)];
                         level.descending = false;
                         this.reset_color(index);
                         cx.notify();
@@ -786,7 +872,9 @@ impl Render for SortDialog {
                 .text_color(c(theme::TEXT_MUTED))
                 .child(text)
         };
-        let levels: Vec<AnyElement> = (0..self.setup.levels.len()).map(|index| self.level_row(index, cx)).collect();
+        let levels: Vec<AnyElement> = (0..self.setup.levels.len())
+            .map(|index| self.level_row(index, cx))
+            .collect();
         let key_heading = if self.setup.left_to_right {
             t("Row", "Ligne")
         } else {
@@ -819,8 +907,9 @@ impl Render for SortDialog {
                     .child(arrow("chevron-up", t("Move Up", "Monter"), false, cx))
                     .child(arrow("chevron-down", t("Move Down", "Descendre"), true, cx))
                     .child(
-                        Button::new("sort-options", t("Options…", "Options…"))
-                            .on_click(cx.listener(|this, _, window, cx| this.open_options(window, cx))),
+                        Button::new("sort-options", t("Options…", "Options…")).on_click(
+                            cx.listener(|this, _, window, cx| this.open_options(window, cx)),
+                        ),
                     )
                     .child(div().flex_1())
                     .child(
@@ -830,10 +919,12 @@ impl Render for SortDialog {
                             self.setup.has_header && !self.setup.left_to_right,
                         )
                         .disabled(fixed)
-                        .on_change(cx.listener(|this, on: &bool, _, cx| {
-                            this.setup.has_header = *on;
-                            this.refresh_keys(cx);
-                        })),
+                        .on_change(cx.listener(
+                            |this, on: &bool, _, cx| {
+                                this.setup.has_header = *on;
+                                this.refresh_keys(cx);
+                            },
+                        )),
                     ),
             )
             .child(
@@ -877,7 +968,9 @@ impl OptionsDialog {
         let (case_sensitive, left_to_right) = (self.case_sensitive, self.left_to_right);
         self.modal.close(window, cx);
         self.parent
-            .update(cx, |parent, cx| parent.set_options(case_sensitive, left_to_right, cx))
+            .update(cx, |parent, cx| {
+                parent.set_options(case_sensitive, left_to_right, cx)
+            })
             .ok();
     }
 }
@@ -892,21 +985,27 @@ impl Render for OptionsDialog {
             .width(280.0)
             .on_ok(cx.listener(Self::ok))
             .child(
-                Checkbox::new("sort-case", t("Case sensitive", "Respecter la casse"), self.case_sensitive).on_change(
-                    cx.listener(|this, on: &bool, _, cx| {
-                        this.case_sensitive = *on;
-                        cx.notify();
-                    }),
-                ),
+                Checkbox::new(
+                    "sort-case",
+                    t("Case sensitive", "Respecter la casse"),
+                    self.case_sensitive,
+                )
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    this.case_sensitive = *on;
+                    cx.notify();
+                })),
             )
             .child(
                 GroupBox::new(t("Orientation", "Orientation")).child(
-                    RadioGroup::new("sort-orientation", orientations, Some(self.left_to_right as usize)).on_change(
-                        cx.listener(|this, at: &usize, _, cx| {
-                            this.left_to_right = *at == 1;
-                            cx.notify();
-                        }),
-                    ),
+                    RadioGroup::new(
+                        "sort-orientation",
+                        orientations,
+                        Some(self.left_to_right as usize),
+                    )
+                    .on_change(cx.listener(|this, at: &usize, _, cx| {
+                        this.left_to_right = *at == 1;
+                        cx.notify();
+                    })),
                 ),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
@@ -926,7 +1025,10 @@ struct ListsDialog {
 
 impl ListsDialog {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
-        let (level, list) = (self.level, self.selected.and_then(|at| self.lists.get(at).cloned()));
+        let (level, list) = (
+            self.level,
+            self.selected.and_then(|at| self.lists.get(at).cloned()),
+        );
         self.modal.close(window, cx);
         let Some(list) = list else {
             return;
@@ -945,13 +1047,28 @@ impl ListsDialog {
 
 impl Render for ListsDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let names: Vec<SharedString> = self.lists.iter().map(|list| list_name(list, false).into()).collect();
+        let names: Vec<SharedString> = self
+            .lists
+            .iter()
+            .map(|list| list_name(list, false).into())
+            .collect();
         let entries: Vec<SharedString> = self
             .selected
             .and_then(|at| self.lists.get(at))
-            .map(|list| list.iter().map(|item| SharedString::from(item.clone())).collect())
+            .map(|list| {
+                list.iter()
+                    .map(|item| SharedString::from(item.clone()))
+                    .collect()
+            })
             .unwrap_or_default();
-        let column = |title: &'static str, list: ListBox| div().flex().flex_col().gap(px(4.)).child(label(title)).child(list);
+        let column = |title: &'static str, list: ListBox| {
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(4.))
+                .child(label(title))
+                .child(list)
+        };
         dialog(&self.modal, t("Custom Lists", "Listes personnalisées"))
             .width(480.0)
             .on_ok(cx.listener(Self::ok))
@@ -975,7 +1092,9 @@ impl Render for ListsDialog {
                     ))
                     .child(column(
                         t("List entries:", "Entrées de la liste\u{a0}:"),
-                        ListBox::new("list-entries", entries, None).width(170.0).height(ROW_H * 10.0),
+                        ListBox::new("list-entries", entries, None)
+                            .width(170.0)
+                            .height(ROW_H * 10.0),
                     )),
             )
             .footer(ok_cancel(&self.modal, cx.listener(Self::ok)))
@@ -1025,7 +1144,11 @@ pub(super) fn ask_to_expand(
 impl ExpandDialog {
     fn ok(&mut self, _: &(), window: &mut Window, cx: &mut Context<Self>) {
         let (expand, then) = (self.expand, self.then.clone());
-        let rect = if expand { self.expanded } else { self.selection };
+        let rect = if expand {
+            self.expanded
+        } else {
+            self.selection
+        };
         self.modal.close(window, cx);
         self.modal.update_app(cx, |app, cx| {
             if expand {
@@ -1048,7 +1171,10 @@ impl Render for ExpandDialog {
                 t("Sort…", "Trier…"),
             ),
             Asking::Duplicates => (
-                t("Remove Duplicates Warning", "Supprimer les avertissements en double"),
+                t(
+                    "Remove Duplicates Warning",
+                    "Supprimer les avertissements en double",
+                ),
                 t(
                     "OpenSheet found data next to your selection. Because you have not selected this data, it will not be removed.",
                     "OpenSheet a trouvé des données près de votre sélection. Étant donné qu'elles ne sont pas sélectionnées, elles ne seront pas supprimées.",
@@ -1058,29 +1184,43 @@ impl Render for ExpandDialog {
         };
         let choices: Vec<SharedString> = vec![
             t("Expand the selection", "Étendre la sélection").into(),
-            t("Continue with the current selection", "Continuer avec la sélection en cours").into(),
+            t(
+                "Continue with the current selection",
+                "Continuer avec la sélection en cours",
+            )
+            .into(),
         ];
         let modal = self.modal.clone();
         dialog(&self.modal, title)
             .width(420.0)
             .on_ok(cx.listener(Self::ok))
             .child(div().line_height(px(18.)).child(message))
-            .child(label(t("What do you want to do?", "Que voulez-vous faire\u{a0}?")))
+            .child(label(t(
+                "What do you want to do?",
+                "Que voulez-vous faire\u{a0}?",
+            )))
             .child(
                 div().pl(px(12.)).child(
-                    RadioGroup::new("expand-choice", choices, Some(if self.expand { 0 } else { 1 })).on_change(
-                        cx.listener(|this, at: &usize, _, cx| {
-                            this.expand = *at == 0;
-                            cx.notify();
-                        }),
-                    ),
+                    RadioGroup::new(
+                        "expand-choice",
+                        choices,
+                        Some(if self.expand { 0 } else { 1 }),
+                    )
+                    .on_change(cx.listener(|this, at: &usize, _, cx| {
+                        this.expand = *at == 0;
+                        cx.notify();
+                    })),
                 ),
             )
             .footer(
                 div()
                     .flex()
                     .gap(px(8.))
-                    .child(Button::new("expand-go", action).primary().on_click(cx.listener(Self::ok)))
+                    .child(
+                        Button::new("expand-go", action)
+                            .primary()
+                            .on_click(cx.listener(Self::ok)),
+                    )
                     .child(
                         Button::new("expand-cancel", t("Cancel", "Annuler"))
                             .on_click(move |_, window, cx| modal.close(window, cx)),

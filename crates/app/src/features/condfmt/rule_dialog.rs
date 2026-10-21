@@ -13,12 +13,12 @@ use crate::shell::{Alert, Modal, RefStyle};
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
 use crate::widgets::{
-    self, Button, Checkbox, ColorButton, GroupBox, ListBox, NumberField, RadioGroup, RefEdit, Select, dialog, icon,
-    label, labeled, ok_cancel, tooltip,
+    self, Button, Checkbox, ColorButton, GroupBox, ListBox, NumberField, RadioGroup, RefEdit,
+    Select, dialog, icon, label, labeled, ok_cancel, tooltip,
 };
 use gpui::{
-    AnyElement, App, Context, Entity, FontWeight, SharedString, Window, anchored, deferred, div, prelude::*, px,
-    relative,
+    AnyElement, App, Context, Entity, FontWeight, SharedString, Window, anchored, deferred, div,
+    prelude::*, px, relative,
 };
 use opensheet_engine::Locale;
 use opensheet_engine::condfmt::{
@@ -73,7 +73,12 @@ pub fn open_new(app: &mut ExcelApp, start: Start, window: &mut Window, cx: &mut 
         Start::Ranked => (Kind::Ranked, Graded::TwoColor),
     };
     let active = app.active();
-    let anchor = app.sel().ranges.first().map(|r| (r.r0, r.c0)).unwrap_or(active);
+    let anchor = app
+        .sel()
+        .ranges
+        .first()
+        .map(|r| (r.r0, r.c0))
+        .unwrap_or(active);
     let weak = cx.weak_entity();
     let setup = Setup {
         title: new_title(),
@@ -82,14 +87,19 @@ pub fn open_new(app: &mut ExcelApp, start: Start, window: &mut Window, cx: &mut 
         active,
         anchor,
         on_ok: Rc::new(move |(rule, format), _, cx| {
-            weak.update(cx, |app, cx| add_rule(app, rule.clone(), format.clone(), cx)).ok();
+            weak.update(cx, |app, cx| {
+                add_rule(app, rule.clone(), format.clone(), cx)
+            })
+            .ok();
         }),
     };
     open(app, setup, window, cx);
 }
 
 pub fn open(app: &mut ExcelApp, setup: Setup, window: &mut Window, cx: &mut Cx) {
-    app.open_modal(window, cx, move |modal, _, cx| RuleDialog::new(modal, setup, cx));
+    app.open_modal(window, cx, move |modal, _, cx| {
+        RuleDialog::new(modal, setup, cx)
+    });
 }
 
 /// The boxes values are typed in.
@@ -258,14 +268,19 @@ impl RuleDialog {
         let draft = self.current(cx);
         match draft.rule(self.locale, self.active, self.anchor) {
             Ok(rule) => {
-                let format = if draft.has_format() { draft.format } else { StylePatch::default() };
+                let format = if draft.has_format() {
+                    draft.format
+                } else {
+                    StylePatch::default()
+                };
                 let on_ok = self.on_ok.clone();
                 self.modal.close(window, cx);
                 on_ok(&(rule, format), window, cx);
             }
             Err(message) => {
-                self.modal
-                    .update_app(cx, |app, cx| app.alert(Alert::new("OpenSheet", message).warning(), cx));
+                self.modal.update_app(cx, |app, cx| {
+                    app.alert(Alert::new("OpenSheet", message).warning(), cx)
+                });
             }
         }
     }
@@ -276,8 +291,9 @@ impl RuleDialog {
             this.draft.format = format.clone();
             cx.notify();
         });
-        self.modal
-            .update_app(cx, |app, cx| format_cells::open_partial(app, start, window, cx, chosen));
+        self.modal.update_app(cx, |app, cx| {
+            format_cells::open_partial(app, start, window, cx, chosen)
+        });
     }
 
     fn open_axis_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -327,30 +343,46 @@ impl RuleDialog {
     /// The "Type" list of a threshold. `place` tells the low end (0), the
     /// middle (1) and the high end (2) apart, for the value a type starts
     /// with.
-    fn type_select(&self, field: Field, options: &'static [At], place: usize, width: f32, cx: &mut Context<Self>) -> Select {
+    fn type_select(
+        &self,
+        field: Field,
+        options: &'static [At],
+        place: usize,
+        width: f32,
+        cx: &mut Context<Self>,
+    ) -> Select {
         let mut draft = self.draft.clone();
         let at = field.level(&mut draft).map(|level| level.at);
         let names = Self::names(options.iter().map(|at| at.name()));
-        Select::new(("type", field.index()), names, options.iter().position(|option| Some(*option) == at))
-            .width(width)
-            .on_change(cx.listener(move |this, ix: &usize, _, cx| {
-                let at = options[*ix];
-                this.edit(cx, |draft| {
-                    if let Some(level) = field.level(draft).filter(|level| level.at != at) {
-                        level.at = at;
-                        level.value = at.default_value(place).to_string();
-                    }
-                });
-            }))
+        Select::new(
+            ("type", field.index()),
+            names,
+            options.iter().position(|option| Some(*option) == at),
+        )
+        .width(width)
+        .on_change(cx.listener(move |this, ix: &usize, _, cx| {
+            let at = options[*ix];
+            this.edit(cx, |draft| {
+                if let Some(level) = field.level(draft).filter(|level| level.at != at) {
+                    level.at = at;
+                    level.value = at.default_value(place).to_string();
+                }
+            });
+        }))
     }
 
     /// The "Value" box of a threshold: a range field, or the name of what
     /// a type without a value stands for.
     fn value_box(&self, field: Field, width: f32) -> AnyElement {
         let mut draft = self.draft.clone();
-        let at = field.level(&mut draft).map(|level| level.at).unwrap_or(At::Number);
+        let at = field
+            .level(&mut draft)
+            .map(|level| level.at)
+            .unwrap_or(At::Number);
         if at.has_value() {
-            return RefEdit::new(self.input(field), &self.modal).width(width).into_any_element();
+            return RefEdit::new(self.input(field), &self.modal)
+                .width(width)
+                .into_any_element();
         }
         div()
             .w(px(width))
@@ -388,7 +420,13 @@ impl RuleDialog {
             .flex_col()
             .gap(px(6.))
             .child(div().h(px(18.)))
-            .children(names.iter().map(|name| div().h(px(widgets::CONTROL_H)).flex().items_center().child(*name)))
+            .children(names.iter().map(|name| {
+                div()
+                    .h(px(widgets::CONTROL_H))
+                    .flex()
+                    .items_center()
+                    .child(*name)
+            }))
     }
 
     fn color_button(
@@ -428,15 +466,30 @@ impl RuleDialog {
 
     fn toggle_drop(&mut self, drop: Drop, cx: &mut Context<Self>) {
         // The press that closed the list is not the click that opens it.
-        if self.drop_closed.take().is_some_and(|at| at.elapsed() < Duration::from_millis(250)) {
+        if self
+            .drop_closed
+            .take()
+            .is_some_and(|at| at.elapsed() < Duration::from_millis(250))
+        {
             return;
         }
-        self.drop = if self.drop == Some(drop) { None } else { Some(drop) };
+        self.drop = if self.drop == Some(drop) {
+            None
+        } else {
+            Some(drop)
+        };
         cx.notify();
     }
 
     /// A box showing `face` that drops `panel` down when clicked.
-    fn drop_button(&self, drop: Drop, face: AnyElement, width: f32, panel: Option<AnyElement>, cx: &mut Context<Self>) -> AnyElement {
+    fn drop_button(
+        &self,
+        drop: Drop,
+        face: AnyElement,
+        width: f32,
+        panel: Option<AnyElement>,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let id = match drop {
             Drop::Set => 0,
             Drop::Band(band) => band + 1,
@@ -559,12 +612,20 @@ impl RuleDialog {
                         .items_center()
                         .justify_center()
                         .rounded(px(3.))
-                        .when(current == Some((*set, index)), |d| d.bg(c(theme::ACCENT_LIGHT)))
+                        .when(current == Some((*set, index)), |d| {
+                            d.bg(c(theme::ACCENT_LIGHT))
+                        })
                         .hover(|s| s.bg(c(theme::HOVER)))
                         .child(draw::icon_picture(set.icons()[index as usize], 16.0))
                         .on_click(pick(Some((*set, index))))
                 });
-                div().w(px(118.)).h(px(24.)).flex().items_center().children(icons).into_any_element()
+                div()
+                    .w(px(118.))
+                    .h(px(24.))
+                    .flex()
+                    .items_center()
+                    .children(icons)
+                    .into_any_element()
             })
             .collect();
         div()
@@ -594,19 +655,30 @@ impl RuleDialog {
         let style_ix = Graded::ALL.iter().position(|s| *s == style).unwrap_or(0);
         let mut top = div().flex().items_center().gap(px(16.)).child(labeled(
             t("Format Style:", "Style de mise en forme :"),
-            self.choice("style", styles, style_ix, 180.0, cx, |draft, ix| draft.style = Graded::ALL[ix]),
+            self.choice("style", styles, style_ix, 180.0, cx, |draft, ix| {
+                draft.style = Graded::ALL[ix]
+            }),
         ));
         top = match style {
             Graded::DataBar => top.child(
-                Checkbox::new("bar-only", t("Show Bar Only", "Afficher la barre uniquement"), !self.draft.bar.show_value)
-                    .on_change(cx.listener(|this, on: &bool, _, cx| {
-                        let on = *on;
-                        this.edit(cx, |draft| draft.bar.show_value = !on);
-                    })),
+                Checkbox::new(
+                    "bar-only",
+                    t("Show Bar Only", "Afficher la barre uniquement"),
+                    !self.draft.bar.show_value,
+                )
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    let on = *on;
+                    this.edit(cx, |draft| draft.bar.show_value = !on);
+                })),
             ),
             Graded::IconSet => top.child(
-                Button::new("reverse", t("Reverse Icon Order", "Ordre inverse des icônes"))
-                    .on_click(cx.listener(|this, _, _, cx| this.edit(cx, |draft| draft.icons.reverse()))),
+                Button::new(
+                    "reverse",
+                    t("Reverse Icon Order", "Ordre inverse des icônes"),
+                )
+                .on_click(
+                    cx.listener(|this, _, _, cx| this.edit(cx, |draft| draft.icons.reverse())),
+                ),
             ),
             _ => top,
         };
@@ -619,7 +691,9 @@ impl RuleDialog {
             top.into_any_element(),
         ];
         out.extend(match style {
-            Graded::TwoColor | Graded::ThreeColor => self.scale_editor(style == Graded::ThreeColor, cx),
+            Graded::TwoColor | Graded::ThreeColor => {
+                self.scale_editor(style == Graded::ThreeColor, cx)
+            }
             Graded::DataBar => self.bar_editor(cx),
             Graded::IconSet => self.icon_editor(cx),
         });
@@ -628,35 +702,70 @@ impl RuleDialog {
 
     fn scale_editor(&self, three: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let width = if three { 170.0 } else { 220.0 };
-        let stop = |place: usize, title: &'static str, options: &'static [At], id: &'static str, this: &Self, cx: &mut Context<Self>| {
+        let stop = |place: usize,
+                    title: &'static str,
+                    options: &'static [At],
+                    id: &'static str,
+                    this: &Self,
+                    cx: &mut Context<Self>| {
             Self::column(
                 title,
                 width,
                 vec![
-                    this.type_select(Field::Stop(place), options, place, width, cx).into_any_element(),
-                    this.value_box(Field::Stop(place), width),
-                    this.color_button(id, this.draft.colors[place], cx, move |draft, color| draft.colors[place] = color)
+                    this.type_select(Field::Stop(place), options, place, width, cx)
                         .into_any_element(),
+                    this.value_box(Field::Stop(place), width),
+                    this.color_button(id, this.draft.colors[place], cx, move |draft, color| {
+                        draft.colors[place] = color
+                    })
+                    .into_any_element(),
                 ],
             )
         };
         let mut columns = div()
             .flex()
             .gap(px(12.))
-            .child(Self::row_names(&[t("Type:", "Type :"), t("Value:", "Valeur :"), t("Color:", "Couleur :")]))
-            .child(stop(0, t("Minimum", "Minimum"), &At::SCALE_LOW, "color-low", self, cx));
+            .child(Self::row_names(&[
+                t("Type:", "Type :"),
+                t("Value:", "Valeur :"),
+                t("Color:", "Couleur :"),
+            ]))
+            .child(stop(
+                0,
+                t("Minimum", "Minimum"),
+                &At::SCALE_LOW,
+                "color-low",
+                self,
+                cx,
+            ));
         if three {
-            columns = columns.child(stop(1, t("Midpoint", "Milieu"), &At::MIDDLE, "color-mid", self, cx));
+            columns = columns.child(stop(
+                1,
+                t("Midpoint", "Milieu"),
+                &At::MIDDLE,
+                "color-mid",
+                self,
+                cx,
+            ));
         }
-        columns = columns.child(stop(2, t("Maximum", "Maximum"), &At::SCALE_HIGH, "color-high", self, cx));
+        columns = columns.child(stop(
+            2,
+            t("Maximum", "Maximum"),
+            &At::SCALE_HIGH,
+            "color-high",
+            self,
+            cx,
+        ));
 
         let colors: Vec<Color> = match three {
             true => self.draft.colors.to_vec(),
             false => vec![self.draft.colors[0], self.draft.colors[2]],
         };
-        let strip = draw::picture(if three { 534.0 } else { 452.0 }, 22.0, move |bounds, out| {
-            draw::scale_strip(&colors, bounds, out)
-        });
+        let strip = draw::picture(
+            if three { 534.0 } else { 452.0 },
+            22.0,
+            move |bounds, out| draw::scale_strip(&colors, bounds, out),
+        );
         vec![
             columns.into_any_element(),
             div()
@@ -664,19 +773,30 @@ impl RuleDialog {
                 .items_center()
                 .gap(px(12.))
                 .child(label(t("Preview:", "Aperçu :")))
-                .child(div().border_1().border_color(c(theme::BORDER_STRONG)).child(strip))
+                .child(
+                    div()
+                        .border_1()
+                        .border_color(c(theme::BORDER_STRONG))
+                        .child(strip),
+                )
                 .into_any_element(),
         ]
     }
 
     fn bar_editor(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let bar = &self.draft.bar;
-        let end = |field: Field, place: usize, title: &'static str, options: &'static [At], this: &Self, cx: &mut Context<Self>| {
+        let end = |field: Field,
+                   place: usize,
+                   title: &'static str,
+                   options: &'static [At],
+                   this: &Self,
+                   cx: &mut Context<Self>| {
             Self::column(
                 title,
                 220.0,
                 vec![
-                    this.type_select(field, options, place, 220.0, cx).into_any_element(),
+                    this.type_select(field, options, place, 220.0, cx)
+                        .into_any_element(),
                     this.value_box(field, 220.0),
                 ],
             )
@@ -684,14 +804,42 @@ impl RuleDialog {
         let ends = div()
             .flex()
             .gap(px(12.))
-            .child(Self::row_names(&[t("Type:", "Type :"), t("Value:", "Valeur :")]))
-            .child(end(Field::BarLow, 0, t("Minimum", "Minimum"), &At::BAR_LOW, self, cx))
-            .child(end(Field::BarHigh, 2, t("Maximum", "Maximum"), &At::BAR_HIGH, self, cx));
+            .child(Self::row_names(&[
+                t("Type:", "Type :"),
+                t("Value:", "Valeur :"),
+            ]))
+            .child(end(
+                Field::BarLow,
+                0,
+                t("Minimum", "Minimum"),
+                &At::BAR_LOW,
+                self,
+                cx,
+            ))
+            .child(end(
+                Field::BarHigh,
+                2,
+                t("Maximum", "Maximum"),
+                &At::BAR_HIGH,
+                self,
+                cx,
+            ));
 
-        let fills = Self::names([t("Solid Fill", "Remplissage uni"), t("Gradient Fill", "Dégradé")]);
-        let borders = Self::names([t("No Border", "Aucune bordure"), t("Solid Border", "Bordure pleine")]);
+        let fills = Self::names([
+            t("Solid Fill", "Remplissage uni"),
+            t("Gradient Fill", "Dégradé"),
+        ]);
+        let borders = Self::names([
+            t("No Border", "Aucune bordure"),
+            t("Solid Border", "Bordure pleine"),
+        ]);
         let titled = |title: &'static str, control: AnyElement| {
-            div().flex().flex_col().gap(px(3.)).child(label(title)).child(control)
+            div()
+                .flex()
+                .flex_col()
+                .gap(px(3.))
+                .child(label(title))
+                .child(control)
         };
         let mut appearance = div()
             .flex()
@@ -699,27 +847,46 @@ impl RuleDialog {
             .gap(px(12.))
             .child(titled(
                 t_ctx("bar", "Fill", "Remplissage"),
-                self.choice("bar-fill-kind", fills, bar.gradient as usize, 130.0, cx, |draft, ix| draft.bar.gradient = ix == 1)
-                    .into_any_element(),
+                self.choice(
+                    "bar-fill-kind",
+                    fills,
+                    bar.gradient as usize,
+                    130.0,
+                    cx,
+                    |draft, ix| draft.bar.gradient = ix == 1,
+                )
+                .into_any_element(),
             ))
             .child(titled(
                 t("Color", "Couleur"),
-                self.color_button("bar-fill", bar.fill, cx, |draft, color| draft.bar.fill = color)
-                    .into_any_element(),
+                self.color_button("bar-fill", bar.fill, cx, |draft, color| {
+                    draft.bar.fill = color
+                })
+                .into_any_element(),
             ))
             .child(titled(
                 t("Border", "Bordure"),
-                self.choice("bar-border-kind", borders, bar.border.is_some() as usize, 130.0, cx, |draft, ix| {
-                    // A new border starts black, as Excel's does.
-                    draft.bar.border = (ix == 1).then(|| draft.bar.border.unwrap_or(Color::BLACK));
-                })
+                self.choice(
+                    "bar-border-kind",
+                    borders,
+                    bar.border.is_some() as usize,
+                    130.0,
+                    cx,
+                    |draft, ix| {
+                        // A new border starts black, as Excel's does.
+                        draft.bar.border =
+                            (ix == 1).then(|| draft.bar.border.unwrap_or(Color::BLACK));
+                    },
+                )
                 .into_any_element(),
             ));
         if let Some(border) = bar.border {
             appearance = appearance.child(titled(
                 t("Color", "Couleur"),
-                self.color_button("bar-border", border, cx, |draft, color| draft.bar.border = Some(color))
-                    .into_any_element(),
+                self.color_button("bar-border", border, cx, |draft, color| {
+                    draft.bar.border = Some(color)
+                })
+                .into_any_element(),
             ));
         }
 
@@ -728,10 +895,21 @@ impl RuleDialog {
             t("Left-to-Right", "De gauche à droite"),
             t("Right-to-Left", "De droite à gauche"),
         ]);
-        let direction_ix = BarDirection::ALL.iter().position(|d| *d == bar.direction).unwrap_or(0);
+        let direction_ix = BarDirection::ALL
+            .iter()
+            .position(|d| *d == bar.direction)
+            .unwrap_or(0);
         let sample = Bar {
-            start: if bar.direction == BarDirection::RightToLeft { 1.0 } else { 0.0 },
-            end: if bar.direction == BarDirection::RightToLeft { 0.25 } else { 0.75 },
+            start: if bar.direction == BarDirection::RightToLeft {
+                1.0
+            } else {
+                0.0
+            },
+            end: if bar.direction == BarDirection::RightToLeft {
+                0.25
+            } else {
+                0.75
+            },
             fill: bar.fill,
             gradient: bar.gradient,
             border: bar.border,
@@ -752,14 +930,24 @@ impl RuleDialog {
                 .items_center()
                 .gap(px(16.))
                 .child(
-                    Button::new("axis", t("Negative Value and Axis...", "Valeur négative et axe..."))
-                        .on_click(cx.listener(|this, _, window, cx| this.open_axis_settings(window, cx))),
+                    Button::new(
+                        "axis",
+                        t("Negative Value and Axis...", "Valeur négative et axe..."),
+                    )
+                    .on_click(
+                        cx.listener(|this, _, window, cx| this.open_axis_settings(window, cx)),
+                    ),
                 )
                 .child(labeled(
                     t("Bar Direction:", "Orientation de la barre :"),
-                    self.choice("bar-direction", directions, direction_ix, 150.0, cx, |draft, ix| {
-                        draft.bar.direction = BarDirection::ALL[ix]
-                    }),
+                    self.choice(
+                        "bar-direction",
+                        directions,
+                        direction_ix,
+                        150.0,
+                        cx,
+                        |draft, ix| draft.bar.direction = BarDirection::ALL[ix],
+                    ),
                 ))
                 .into_any_element(),
             div()
@@ -767,7 +955,13 @@ impl RuleDialog {
                 .items_center()
                 .gap(px(12.))
                 .child(label(t("Preview:", "Aperçu :")))
-                .child(div().bg(c(0xFFFFFF)).border_1().border_color(c(theme::BORDER_STRONG)).child(preview))
+                .child(
+                    div()
+                        .bg(c(0xFFFFFF))
+                        .border_1()
+                        .border_color(c(theme::BORDER_STRONG))
+                        .child(preview),
+                )
                 .into_any_element(),
         ]
     }
@@ -777,7 +971,9 @@ impl RuleDialog {
         let bands = draft.icons.len();
         let style_face: AnyElement = match draft.shown_set() {
             Some(set) => draw::set_picture(set, 16.0, 3.0).into_any_element(),
-            None => div().child(t_ctx("icons", "Custom", "Personnalisé")).into_any_element(),
+            None => div()
+                .child(t_ctx("icons", "Custom", "Personnalisé"))
+                .into_any_element(),
         };
         let set_panel = (self.drop == Some(Drop::Set)).then(|| self.set_panel(cx));
         let top = div()
@@ -789,11 +985,15 @@ impl RuleDialog {
                 self.drop_button(Drop::Set, style_face, 140.0, set_panel, cx),
             ))
             .child(
-                Checkbox::new("icon-only", t("Show Icon Only", "Afficher l'icône uniquement"), draft.show_icon_only)
-                    .on_change(cx.listener(|this, on: &bool, _, cx| {
-                        let on = *on;
-                        this.edit(cx, |draft| draft.show_icon_only = on);
-                    })),
+                Checkbox::new(
+                    "icon-only",
+                    t("Show Icon Only", "Afficher l'icône uniquement"),
+                    draft.show_icon_only,
+                )
+                .on_change(cx.listener(|this, on: &bool, _, cx| {
+                    let on = *on;
+                    this.edit(cx, |draft| draft.show_icon_only = on);
+                })),
             );
         let header = div()
             .flex()
@@ -810,7 +1010,9 @@ impl RuleDialog {
         let mut rows: Vec<AnyElement> = Vec::new();
         for band in (0..bands).rev() {
             let face: AnyElement = match draft.icons[band] {
-                Some((set, index)) => draw::icon_picture(icon_of(set, index), 16.0).into_any_element(),
+                Some((set, index)) => {
+                    draw::icon_picture(icon_of(set, index), 16.0).into_any_element()
+                }
                 None => div().size(px(16.)).into_any_element(),
             };
             let panel = (self.drop == Some(Drop::Band(band))).then(|| self.icon_panel(band, cx));
@@ -819,7 +1021,11 @@ impl RuleDialog {
                 Some(above) => {
                     let sign = if above.gte { "<" } else { "<=" };
                     let value = self.input(Field::Icon(band)).read(cx).text().to_string();
-                    let and = if band > 0 { format!(" {}", t("and", "et")) } else { String::new() };
+                    let and = if band > 0 {
+                        format!(" {}", t("and", "et"))
+                    } else {
+                        String::new()
+                    };
                     format!("{} {sign} {value}{and}", t("when", "si"))
                 }
                 None => t("when value is", "si la valeur est").to_string(),
@@ -835,16 +1041,22 @@ impl RuleDialog {
                 let gte = draft.icon_rows[band - 1].gte;
                 row = row
                     .child(
-                        Select::new(("gte", band), Self::names([">=", ">"]), Some(if gte { 0 } else { 1 }))
-                            .width(60.0)
-                            .on_change(cx.listener(move |this, ix: &usize, _, cx| {
+                        Select::new(
+                            ("gte", band),
+                            Self::names([">=", ">"]),
+                            Some(if gte { 0 } else { 1 }),
+                        )
+                        .width(60.0)
+                        .on_change(cx.listener(
+                            move |this, ix: &usize, _, cx| {
                                 let gte = *ix == 0;
                                 this.edit(cx, |draft| {
                                     if let Some(row) = draft.icon_rows.get_mut(band - 1) {
                                         row.gte = gte;
                                     }
                                 });
-                            })),
+                            },
+                        )),
                     )
                     .child(self.value_box(field, 130.0))
                     .child(self.type_select(field, &At::MIDDLE, 1, 120.0, cx));
@@ -869,7 +1081,10 @@ impl RuleDialog {
     fn contains_editor(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let draft = &self.draft;
         let kinds = Self::names(Contains::ALL.iter().map(|kind| kind.name()));
-        let kind_ix = Contains::ALL.iter().position(|k| *k == draft.contains).unwrap_or(0);
+        let kind_ix = Contains::ALL
+            .iter()
+            .position(|k| *k == draft.contains)
+            .unwrap_or(0);
         let mut row = div().flex().items_center().gap(px(8.)).child(self.choice(
             "contains",
             kinds,
@@ -881,11 +1096,16 @@ impl RuleDialog {
         row = match draft.contains {
             Contains::CellValue => {
                 let ops = Self::names(CellOp::ALL.iter().map(|op| words::cell_op_name(*op)));
-                let op_ix = CellOp::ALL.iter().position(|op| *op == draft.cell_op).unwrap_or(0);
+                let op_ix = CellOp::ALL
+                    .iter()
+                    .position(|op| *op == draft.cell_op)
+                    .unwrap_or(0);
                 let two = draft.cell_op.takes_two();
                 let width = if two { 110.0 } else { 240.0 };
                 row = row
-                    .child(self.choice("cell-op", ops, op_ix, 170.0, cx, |draft, ix| draft.cell_op = CellOp::ALL[ix]))
+                    .child(self.choice("cell-op", ops, op_ix, 170.0, cx, |draft, ix| {
+                        draft.cell_op = CellOp::ALL[ix]
+                    }))
                     .child(RefEdit::new(self.input(Field::First), &self.modal).width(width));
                 match two {
                     true => row
@@ -896,14 +1116,30 @@ impl RuleDialog {
             }
             Contains::Text => {
                 let ops = Self::names(TextOp::ALL.iter().map(|op| words::text_op_name(*op)));
-                let op_ix = TextOp::ALL.iter().position(|op| *op == draft.text_op).unwrap_or(0);
-                row.child(self.choice("text-op", ops, op_ix, 160.0, cx, |draft, ix| draft.text_op = TextOp::ALL[ix]))
-                    .child(RefEdit::new(self.input(Field::Text), &self.modal).width(250.0))
+                let op_ix = TextOp::ALL
+                    .iter()
+                    .position(|op| *op == draft.text_op)
+                    .unwrap_or(0);
+                row.child(self.choice("text-op", ops, op_ix, 160.0, cx, |draft, ix| {
+                    draft.text_op = TextOp::ALL[ix]
+                }))
+                .child(RefEdit::new(self.input(Field::Text), &self.modal).width(250.0))
             }
             Contains::Dates => {
-                let periods = Self::names(TimePeriod::ALL.iter().map(|period| words::period_name(*period)));
-                let period_ix = TimePeriod::ALL.iter().position(|p| *p == draft.period).unwrap_or(0);
-                row.child(self.choice("period", periods, period_ix, 210.0, cx, |draft, ix| draft.period = TimePeriod::ALL[ix]))
+                let periods = Self::names(
+                    TimePeriod::ALL
+                        .iter()
+                        .map(|period| words::period_name(*period)),
+                );
+                let period_ix = TimePeriod::ALL
+                    .iter()
+                    .position(|p| *p == draft.period)
+                    .unwrap_or(0);
+                row.child(
+                    self.choice("period", periods, period_ix, 210.0, cx, |draft, ix| {
+                        draft.period = TimePeriod::ALL[ix]
+                    }),
+                )
             }
             _ => row,
         };
@@ -919,12 +1155,22 @@ impl RuleDialog {
     }
 
     fn ranked_editor(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let sides = Self::names([t_ctx("rank", "Top", "premiers"), t_ctx("rank", "Bottom", "derniers")]);
+        let sides = Self::names([
+            t_ctx("rank", "Top", "premiers"),
+            t_ctx("rank", "Bottom", "derniers"),
+        ]);
         let row = div()
             .flex()
             .items_center()
             .gap(px(8.))
-            .child(self.choice("side", sides, self.draft.bottom as usize, 110.0, cx, |draft, ix| draft.bottom = ix == 1))
+            .child(self.choice(
+                "side",
+                sides,
+                self.draft.bottom as usize,
+                110.0,
+                cx,
+                |draft, ix| draft.bottom = ix == 1,
+            ))
             .child(NumberField::new("rank", self.input(Field::Rank)).width(70.0))
             .child(
                 Checkbox::new(
@@ -961,24 +1207,48 @@ impl RuleDialog {
                 cx,
                 |draft, ix| draft.average = ix,
             ))
-            .child(label(t("the average for the selected range", "de la moyenne de la plage sélectionnée")));
+            .child(label(t(
+                "the average for the selected range",
+                "de la moyenne de la plage sélectionnée",
+            )));
         vec![
-            Self::heading(t("Format values that are:", "Appliquer une mise en forme aux valeurs qui sont :")).into_any_element(),
+            Self::heading(t(
+                "Format values that are:",
+                "Appliquer une mise en forme aux valeurs qui sont :",
+            ))
+            .into_any_element(),
             row.into_any_element(),
             self.format_row(cx).into_any_element(),
         ]
     }
 
     fn unique_editor(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
-        let kinds = Self::names([t("duplicate", "valeurs en double"), t("unique", "valeurs uniques")]);
+        let kinds = Self::names([
+            t("duplicate", "valeurs en double"),
+            t("unique", "valeurs uniques"),
+        ]);
         let row = div()
             .flex()
             .items_center()
             .gap(px(8.))
-            .child(self.choice("unique", kinds, self.draft.unique as usize, 160.0, cx, |draft, ix| draft.unique = ix == 1))
-            .child(label(t("values in the selected range", "dans la plage sélectionnée")));
+            .child(self.choice(
+                "unique",
+                kinds,
+                self.draft.unique as usize,
+                160.0,
+                cx,
+                |draft, ix| draft.unique = ix == 1,
+            ))
+            .child(label(t(
+                "values in the selected range",
+                "dans la plage sélectionnée",
+            )));
         vec![
-            Self::heading(t("Format all:", "Appliquer une mise en forme à toutes les valeurs :")).into_any_element(),
+            Self::heading(t(
+                "Format all:",
+                "Appliquer une mise en forme à toutes les valeurs :",
+            ))
+            .into_any_element(),
             row.into_any_element(),
             self.format_row(cx).into_any_element(),
         ]
@@ -1003,13 +1273,22 @@ impl RuleDialog {
 /// The picture of an icon of a set; a blank disc for an index the set
 /// does not have (a file may hold one).
 fn icon_of(set: IconSet, index: u8) -> Icon {
-    set.icons().get(index as usize).copied().unwrap_or(Icon::WhiteCircle)
+    set.icons()
+        .get(index as usize)
+        .copied()
+        .unwrap_or(Icon::WhiteCircle)
 }
 
 impl Render for RuleDialog {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let kinds: Vec<SharedString> = Kind::ALL.iter().map(|kind| format!("► {}", kind.name()).into()).collect();
-        let kind_ix = Kind::ALL.iter().position(|kind| *kind == self.draft.kind).unwrap_or(0);
+        let kinds: Vec<SharedString> = Kind::ALL
+            .iter()
+            .map(|kind| format!("► {}", kind.name()).into())
+            .collect();
+        let kind_ix = Kind::ALL
+            .iter()
+            .position(|kind| *kind == self.draft.kind)
+            .unwrap_or(0);
         let editor = match self.draft.kind {
             Kind::Values => self.values_editor(cx),
             Kind::Contains => self.contains_editor(cx),
@@ -1021,7 +1300,10 @@ impl Render for RuleDialog {
         dialog(&self.modal, self.title)
             .width(680.0)
             .on_ok(cx.listener(Self::ok))
-            .child(label(t("Select a Rule Type:", "Sélectionnez un type de règle :")))
+            .child(label(t(
+                "Select a Rule Type:",
+                "Sélectionnez un type de règle :",
+            )))
             .child(
                 ListBox::new("kind", kinds, Some(kind_ix))
                     .height(widgets::ROW_H * Kind::ALL.len() as f32 + 2.0)
@@ -1031,7 +1313,10 @@ impl Render for RuleDialog {
                         this.edit(cx, |draft| draft.kind = kind);
                     })),
             )
-            .child(label(t("Edit the Rule Description:", "Modifier la description de la règle :")))
+            .child(label(t(
+                "Edit the Rule Description:",
+                "Modifier la description de la règle :",
+            )))
             .child(
                 div()
                     .min_h(px(270.))
@@ -1122,7 +1407,10 @@ impl Render for AxisDialog {
             )
             .into(),
         ];
-        let axis_ix = BarAxis::ALL.iter().position(|axis| *axis == self.bar.axis).unwrap_or(0);
+        let axis_ix = BarAxis::ALL
+            .iter()
+            .position(|axis| *axis == self.bar.axis)
+            .unwrap_or(0);
         dialog(&self.modal, t("Negative Value and Axis Settings", "Paramètres de valeur négative et d'axe"))
             .width(600.0)
             .on_ok(cx.listener(Self::ok))

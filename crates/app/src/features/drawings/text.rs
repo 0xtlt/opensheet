@@ -5,7 +5,8 @@
 //! shown.
 
 use gpui::{
-    Font, Hsla, Pixels, SharedString, StrikethroughStyle, TextRun, UnderlineStyle, WindowTextSystem, WrappedLine, px,
+    Font, Hsla, Pixels, SharedString, StrikethroughStyle, TextRun, UnderlineStyle,
+    WindowTextSystem, WrappedLine, px,
 };
 use opensheet_engine::drawing::{TextAlign, TextAnchor};
 
@@ -57,10 +58,19 @@ impl TextLook {
             }),
         };
         let lines: Vec<WrappedLine> = ts
-            .shape_text(SharedString::from(text.to_string()), px(self.size), &[run], Some(px(width.max(8.0))), None)
+            .shape_text(
+                SharedString::from(text.to_string()),
+                px(self.size),
+                &[run],
+                Some(px(width.max(8.0))),
+                None,
+            )
             .map(|lines| lines.into_iter().collect())
             .unwrap_or_default();
-        let rows = lines.iter().map(|line| line.wrap_boundaries().len() + 1).sum();
+        let rows = lines
+            .iter()
+            .map(|line| line.wrap_boundaries().len() + 1)
+            .sum();
         (lines, rows)
     }
 

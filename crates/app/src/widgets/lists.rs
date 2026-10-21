@@ -3,14 +3,14 @@
 //! thousands of items.
 
 use super::{
-    CONTROL_H, DropState, FIELD_BORDER, Handler, ROW_H, SELECTED_BG, ScrollState, TextField, Tri, check_mark, focus_of, icon,
-    plain, virtual_rows,
+    CONTROL_H, DropState, FIELD_BORDER, Handler, ROW_H, SELECTED_BG, ScrollState, TextField, Tri,
+    check_mark, focus_of, icon, plain, virtual_rows,
 };
 use crate::text_input::TextInput;
 use crate::theme::{self, c};
 use gpui::{
-    AnyElement, App, ClickEvent, ElementId, Entity, IntoElement, KeyDownEvent, RenderOnce, SharedString, Window, div,
-    prelude::*, px,
+    AnyElement, App, ClickEvent, ElementId, Entity, IntoElement, KeyDownEvent, RenderOnce,
+    SharedString, Window, div, prelude::*, px,
 };
 use std::rc::Rc;
 
@@ -97,7 +97,11 @@ pub struct ListBox {
 
 impl ListBox {
     /// `selected`: `None` shows no selection (the cells disagree).
-    pub fn new(id: impl Into<ElementId>, items: Vec<SharedString>, selected: Option<usize>) -> ListBox {
+    pub fn new(
+        id: impl Into<ElementId>,
+        items: Vec<SharedString>,
+        selected: Option<usize>,
+    ) -> ListBox {
         ListBox {
             id: id.into(),
             items,
@@ -113,7 +117,11 @@ impl ListBox {
     }
 
     /// A list in which several items can be selected.
-    pub fn multi(id: impl Into<ElementId>, items: Vec<SharedString>, selected: Vec<usize>) -> ListBox {
+    pub fn multi(
+        id: impl Into<ElementId>,
+        items: Vec<SharedString>,
+        selected: Vec<usize>,
+    ) -> ListBox {
         let mut list = ListBox::new(id, items, None);
         list.selected = selected;
         list.selected.sort_unstable();
@@ -146,7 +154,10 @@ impl ListBox {
     }
 
     /// The set of selected items changed (multiple lists), sorted.
-    pub fn on_change_multi(mut self, f: impl Fn(&Vec<usize>, &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_change_multi(
+        mut self,
+        f: impl Fn(&Vec<usize>, &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_change_multi = Some(Rc::new(f));
         self
     }
@@ -190,27 +201,30 @@ impl RenderOnce for ListBox {
 
         // Every way of changing the selection ends here.
         let select: Rc<dyn Fn(Vec<usize>, usize, &mut Window, &mut App)> = {
-            let (on_change, on_change_multi) = (self.on_change.clone(), self.on_change_multi.clone());
+            let (on_change, on_change_multi) =
+                (self.on_change.clone(), self.on_change_multi.clone());
             let (cursor, scroll) = (cursor.clone(), scroll.clone());
-            Rc::new(move |mut rows: Vec<usize>, at: usize, window: &mut Window, cx: &mut App| {
-                rows.sort_unstable();
-                rows.dedup();
-                cursor.update(cx, |s, _| {
-                    s.cursor = at;
-                    s.revealed = rows.first().copied();
-                });
-                scroll.update(cx, |s, cx| {
-                    s.reveal(at, at, ROW_H, height);
-                    cx.notify();
-                });
-                if multi {
-                    if let Some(f) = &on_change_multi {
-                        f(&rows, window, cx);
+            Rc::new(
+                move |mut rows: Vec<usize>, at: usize, window: &mut Window, cx: &mut App| {
+                    rows.sort_unstable();
+                    rows.dedup();
+                    cursor.update(cx, |s, _| {
+                        s.cursor = at;
+                        s.revealed = rows.first().copied();
+                    });
+                    scroll.update(cx, |s, cx| {
+                        s.reveal(at, at, ROW_H, height);
+                        cx.notify();
+                    });
+                    if multi {
+                        if let Some(f) = &on_change_multi {
+                            f(&rows, window, cx);
+                        }
+                    } else if let (Some(f), Some(row)) = (&on_change, rows.first()) {
+                        f(row, window, cx);
                     }
-                } else if let (Some(f), Some(row)) = (&on_change, rows.first()) {
-                    f(row, window, cx);
-                }
-            })
+                },
+            )
         };
 
         let row_fn = self.row.clone();
@@ -232,7 +246,9 @@ impl RenderOnce for ListBox {
                 .flex()
                 .items_center()
                 .whitespace_nowrap()
-                .when(on, |d| d.bg(c(if focused { SELECTED_BG } else { theme::HOVER })))
+                .when(on, |d| {
+                    d.bg(c(if focused { SELECTED_BG } else { theme::HOVER }))
+                })
                 .when(!on, |d| d.hover(|s| s.bg(c(0xF5F5F5))))
                 .child(content)
                 .on_click(move |ev: &ClickEvent, window, cx| {
@@ -291,7 +307,12 @@ impl RenderOnce for ListBox {
                     return;
                 }
                 // Typing jumps to the item starting with the letters.
-                let Some(ch) = ev.keystroke.key_char.as_deref().filter(|ch| !ch.trim().is_empty()) else {
+                let Some(ch) = ev
+                    .keystroke
+                    .key_char
+                    .as_deref()
+                    .filter(|ch| !ch.trim().is_empty())
+                else {
                     return;
                 };
                 let found = typing.update(cx, |s, _| s.type_to_select(ch, &key_items, lead));
@@ -389,14 +410,20 @@ impl CheckList {
 
     /// An item was ticked or unticked: its index in the items given, and
     /// its new state.
-    pub fn on_toggle(mut self, f: impl Fn(&(usize, bool), &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_toggle(
+        mut self,
+        f: impl Fn(&(usize, bool), &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_toggle = Some(Rc::new(f));
         self
     }
 
     /// "(Select All)" was ticked or unticked: the indices of the items
     /// currently listed (all of them without a search), and the new state.
-    pub fn on_toggle_all(mut self, f: impl Fn(&(Vec<usize>, bool), &mut Window, &mut App) + 'static) -> Self {
+    pub fn on_toggle_all(
+        mut self,
+        f: impl Fn(&(Vec<usize>, bool), &mut Window, &mut App) + 'static,
+    ) -> Self {
         self.on_toggle_all = Some(Rc::new(f));
         self
     }
@@ -434,7 +461,11 @@ impl RenderOnce for CheckList {
             Tri::Mixed
         };
         let all_label: SharedString = if searching {
-            crate::i18n::t("(Select All Search Results)", "(Sélectionner tous les résultats de la recherche)").into()
+            crate::i18n::t(
+                "(Select All Search Results)",
+                "(Sélectionner tous les résultats de la recherche)",
+            )
+            .into()
         } else {
             self.all_label
         };
@@ -518,10 +549,13 @@ impl RenderOnce for CheckList {
             .flex_col()
             .gap(px(4.))
             .children(self.search.as_ref().map(|search| {
-                div()
-                    .h(px(CONTROL_H))
-                    .flex()
-                    .child(TextField::new(search).trailing(div().pr(px(4.)).child(icon("search", 12.0, theme::TEXT_MUTED))))
+                div().h(px(CONTROL_H)).flex().child(
+                    TextField::new(search).trailing(div().pr(px(4.)).child(icon(
+                        "search",
+                        12.0,
+                        theme::TEXT_MUTED,
+                    ))),
+                )
             }))
             .child(list)
     }
@@ -566,7 +600,11 @@ impl TreeNode {
         }
         let mut states = self.children.iter().map(|child| child.state());
         let first = states.next().unwrap_or_default();
-        if states.all(|s| s == first) { first } else { Tri::Mixed }
+        if states.all(|s| s == first) {
+            first
+        } else {
+            Tri::Mixed
+        }
     }
 
     /// Tick or untick the node and everything under it.
@@ -722,7 +760,12 @@ impl RenderOnce for Tree {
         let (on_toggle, on_expand, on_select) = (self.on_toggle, self.on_expand, self.on_select);
 
         let go: Rc<dyn Fn(usize, &mut Window, &mut App)> = {
-            let (cursor, scroll, rows, on_select) = (cursor.clone(), scroll.clone(), rows.clone(), on_select.clone());
+            let (cursor, scroll, rows, on_select) = (
+                cursor.clone(),
+                scroll.clone(),
+                rows.clone(),
+                on_select.clone(),
+            );
             Rc::new(move |row: usize, window: &mut Window, cx: &mut App| {
                 cursor.update(cx, |s, cx| {
                     s.cursor = row;
@@ -750,7 +793,15 @@ impl RenderOnce for Tree {
                         .justify_center()
                         .rounded(px(2.))
                         .hover(|s| s.bg(c(theme::HOVER)))
-                        .child(icon(if open { "chevron-down" } else { "chevron-right" }, 9.0, theme::TEXT_MUTED))
+                        .child(icon(
+                            if open {
+                                "chevron-down"
+                            } else {
+                                "chevron-right"
+                            },
+                            9.0,
+                            theme::TEXT_MUTED,
+                        ))
                         .on_click(move |_, window, cx| {
                             if let Some(f) = &on_expand {
                                 f(&path, window, cx);

@@ -7,7 +7,9 @@
 use super::actions::{self, AutoChange, AutoKind, TabMove};
 use super::{Doing, TablesUi, active_table, refuse, resize};
 use crate::app::{ExcelApp, MenuEntry, Popup, PopupKind};
-use crate::features::{self, CellEdit, ChangeCause, Cx, Intent, PaintLayer, Painter, Zone, ZoneEvent, ZoneResponse};
+use crate::features::{
+    self, CellEdit, ChangeCause, Cx, Intent, PaintLayer, Painter, Zone, ZoneEvent, ZoneResponse,
+};
 use crate::grid::{Draw, GridLayout};
 use crate::i18n::t;
 use crate::theme::{self, c};
@@ -69,7 +71,9 @@ pub(super) fn paint(p: &mut Painter) {
         PaintLayer::Under => {}
         PaintLayer::Over => {
             // The range typed in the Create Table or Resize Table dialog.
-            let shown = ui.and_then(|ui| ui.shown.upgrade()).and_then(|shown| shown.get());
+            let shown = ui
+                .and_then(|ui| ui.shown.upgrade())
+                .and_then(|shown| shown.get());
             if let Some((_, range)) = shown.filter(|(on, _)| *on == app.sheet) {
                 marquee(p, range);
             }
@@ -151,11 +155,26 @@ fn corner(p: &mut Painter, id: u32, range: Rect) {
     // and takes the presses there (see `corner_over_fill_handle`).
     let covered = under_fill_handle(p.app, range);
     let inset = if covered { 4.0 } else { 0.0 };
-    p.rect(right - arm, bottom - thick, right - inset, bottom, c(HANDLE));
-    p.rect(right - thick, bottom - arm, right, bottom - inset, c(HANDLE));
+    p.rect(
+        right - arm,
+        bottom - thick,
+        right - inset,
+        bottom,
+        c(HANDLE),
+    );
+    p.rect(
+        right - thick,
+        bottom - arm,
+        right,
+        bottom - inset,
+        c(HANDLE),
+    );
     if !covered {
-        p.zone((right - arm - 1.0, bottom - arm - 1.0, x1, y1), Spot::Corner(id))
-            .cursor(CursorStyle::ResizeUpLeftDownRight);
+        p.zone(
+            (right - arm - 1.0, bottom - arm - 1.0, x1, y1),
+            Spot::Corner(id),
+        )
+        .cursor(CursorStyle::ResizeUpLeftDownRight);
     }
 }
 
@@ -283,7 +302,10 @@ fn auto_button(p: &mut Painter) {
     );
     p.zone((bx0, by0, bx0 + side, by0 + side), Spot::Auto)
         .cursor(CursorStyle::PointingHand)
-        .tooltip(t("AutoCorrect Options", "Options de correction automatique"));
+        .tooltip(t(
+            "AutoCorrect Options",
+            "Options de correction automatique",
+        ));
 }
 
 /// Whether the header row of `table` has scrolled out of view above the
@@ -292,7 +314,10 @@ fn auto_button(p: &mut Painter) {
 fn header_scrolled_away(layout: &GridLayout, table: &Table) -> bool {
     let first_shown = layout.scrolled_rows().start;
     let head = table.range.r0;
-    table.header_row && head >= layout.frozen_rows && head < first_shown && table.range.r1 >= first_shown
+    table.header_row
+        && head >= layout.frozen_rows
+        && head < first_shown
+        && table.range.r1 >= first_shown
 }
 
 /// Once the header row of the table holding the active cell has scrolled
@@ -346,7 +371,13 @@ fn header_names(p: &mut Painter) {
         };
         p.rect(x0, top, x1, height, c(background));
         if x + width <= hi {
-            p.rect(x + width - 1.0, top, x + width, height, c(theme::HEADER_BORDER));
+            p.rect(
+                x + width - 1.0,
+                top,
+                x + width,
+                height,
+                c(theme::HEADER_BORDER),
+            );
         }
         let line = p.shape(&column.name, size, c(ink), state > 0);
         let text_w = f32::from(line.width);
@@ -399,7 +430,9 @@ pub(super) fn zone_mouse_down(
             else {
                 return ZoneResponse::Ignored;
             };
-            if (app.is_editing() && !app.commit_edit(None, window, cx)) || !app.may(Intent::ChangeTable, cx) {
+            if (app.is_editing() && !app.commit_edit(None, window, cx))
+                || !app.may(Intent::ChangeTable, cx)
+            {
                 return ZoneResponse::Handled;
             }
             app.ext_mut::<TablesUi>().resize = Some(ResizeDrag {
@@ -437,7 +470,11 @@ pub(super) fn zone_drag(app: &mut ExcelApp, zone: &Zone, ev: &ZoneEvent, cx: &mu
         return;
     };
     scroll_at_edge(app, ev);
-    let Some(to) = app.wb.table(sheet, id).map(|table| actions::drag_range(table, ev.cell)) else {
+    let Some(to) = app
+        .wb
+        .table(sheet, id)
+        .map(|table| actions::drag_range(table, ev.cell))
+    else {
         return;
     };
     if let Some(drag) = &mut app.ext_mut::<TablesUi>().resize {
@@ -477,7 +514,14 @@ fn scroll_at_edge(app: &mut ExcelApp, ev: &ZoneEvent) {
 }
 
 /// The list of a totals cell: what the row computes under the column.
-fn open_totals_list(app: &mut ExcelApp, table: u32, column: usize, row: u32, col: u32, cx: &mut Cx) {
+fn open_totals_list(
+    app: &mut ExcelApp,
+    table: u32,
+    column: usize,
+    row: u32,
+    col: u32,
+    cx: &mut Cx,
+) {
     let sheet = app.sheet;
     let Some(current) = app
         .wb
@@ -506,13 +550,23 @@ fn open_totals_list(app: &mut ExcelApp, table: u32, column: usize, row: u32, col
     app.open_context_menu(app.cell_anchor(Rect::cell(row, col)), entries, cx);
 }
 
-fn set_totals(app: &mut ExcelApp, sheet: usize, table: u32, column: usize, function: TotalsFunction, cx: &mut Cx) {
+fn set_totals(
+    app: &mut ExcelApp,
+    sheet: usize,
+    table: u32,
+    column: usize,
+    function: TotalsFunction,
+    cx: &mut Cx,
+) {
     if !app.may(Intent::ChangeTable, cx) {
         return;
     }
     if app.wb.set_totals_function(sheet, table, column, function) {
         app.commit(
-            t("Change Total Row Formula", "Modifier la formule de la ligne de total"),
+            t(
+                "Change Total Row Formula",
+                "Modifier la formule de la ligne de total",
+            ),
             cx,
         );
     }
@@ -564,7 +618,12 @@ fn undo_auto(app: &mut ExcelApp, cx: &mut Cx) {
 /// their header cells, fill calculated columns).
 pub(super) fn cells_written(app: &mut ExcelApp, edit: &CellEdit) {
     let sheet = edit.sheet;
-    if app.wb.sheets.get(sheet).is_none_or(|sh| sh.tables.is_empty()) {
+    if app
+        .wb
+        .sheets
+        .get(sheet)
+        .is_none_or(|sh| sh.tables.is_empty())
+    {
         return;
     }
     // Formats alone change nothing a table follows.
@@ -650,7 +709,10 @@ pub(super) fn entry_committing(app: &mut ExcelApp) {
 /// made here instead: to the next table row from the last column (and
 /// back with Shift+Tab), with a new row from the last cell of the data.
 pub fn advance(app: &mut ExcelApp, dir: Direction, cx: &mut Cx) -> bool {
-    if app.ext::<TablesUi>().is_none_or(|ui| ui.tab == TabKey::None) {
+    if app
+        .ext::<TablesUi>()
+        .is_none_or(|ui| ui.tab == TabKey::None)
+    {
         return false;
     }
     app.ext_mut::<TablesUi>().tab = TabKey::None;

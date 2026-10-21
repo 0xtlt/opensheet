@@ -24,7 +24,13 @@ struct Planes {
 impl Planes {
     fn of(bitmap: &Bitmap) -> Planes {
         let (w, h) = (bitmap.width as usize, bitmap.height as usize);
-        let plane = |channel: usize| bitmap.data.chunks_exact(4).map(|pixel| pixel[channel] as f32 / 255.0).collect::<Vec<f32>>();
+        let plane = |channel: usize| {
+            bitmap
+                .data
+                .chunks_exact(4)
+                .map(|pixel| pixel[channel] as f32 / 255.0)
+                .collect::<Vec<f32>>()
+        };
         // Stored blue first.
         Planes {
             w,
@@ -52,7 +58,11 @@ impl Planes {
         for plane in &mut rgb {
             gaussian_clamped(plane, self.w, self.h, sigma);
         }
-        Planes { w: self.w, h: self.h, rgb }
+        Planes {
+            w: self.w,
+            h: self.h,
+            rgb,
+        }
     }
 
     fn map(&mut self, f: impl Fn(f32) -> f32) {
@@ -82,7 +92,9 @@ fn gaussian_clamped(plane: &mut Vec<f32>, w: usize, h: usize, sigma: f32) {
 /// A number from 0 to 1 that depends on two whole numbers only: the
 /// grain of film, the tooth of paper.
 fn hash(x: i64, y: i64, seed: u32) -> f32 {
-    let mut v = (x as u32).wrapping_mul(0x85EB_CA6B) ^ (y as u32).wrapping_mul(0xC2B2_AE35) ^ seed.wrapping_mul(0x27D4_EB2F);
+    let mut v = (x as u32).wrapping_mul(0x85EB_CA6B)
+        ^ (y as u32).wrapping_mul(0xC2B2_AE35)
+        ^ seed.wrapping_mul(0x27D4_EB2F);
     v ^= v >> 15;
     v = v.wrapping_mul(0x2C1B_3C6D);
     v ^= v >> 12;
@@ -106,12 +118,20 @@ fn smooth_noise(x: f32, y: f32, cell: f32, seed: u32) -> f32 {
 
 /// How strong the edges of a plane are at each pixel (Sobel).
 fn edges(plane: &[f32], w: usize, h: usize) -> Vec<f32> {
-    let at = |x: i64, y: i64| plane[y.clamp(0, h as i64 - 1) as usize * w + x.clamp(0, w as i64 - 1) as usize];
+    let at = |x: i64, y: i64| {
+        plane[y.clamp(0, h as i64 - 1) as usize * w + x.clamp(0, w as i64 - 1) as usize]
+    };
     let mut out = vec![0.0f32; w * h];
     for y in 0..h as i64 {
         for x in 0..w as i64 {
-            let gx = at(x + 1, y - 1) + 2.0 * at(x + 1, y) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2.0 * at(x - 1, y) - at(x - 1, y + 1);
-            let gy = at(x - 1, y + 1) + 2.0 * at(x, y + 1) + at(x + 1, y + 1) - at(x - 1, y - 1) - 2.0 * at(x, y - 1) - at(x + 1, y - 1);
+            let gx = at(x + 1, y - 1) + 2.0 * at(x + 1, y) + at(x + 1, y + 1)
+                - at(x - 1, y - 1)
+                - 2.0 * at(x - 1, y)
+                - at(x - 1, y + 1);
+            let gy = at(x - 1, y + 1) + 2.0 * at(x, y + 1) + at(x + 1, y + 1)
+                - at(x - 1, y - 1)
+                - 2.0 * at(x, y - 1)
+                - at(x + 1, y - 1);
             out[y as usize * w + x as usize] = (gx * gx + gy * gy).sqrt();
         }
     }
@@ -143,11 +163,14 @@ fn kuwahara(source: &Planes, radius: usize) -> Planes {
         }
         sums
     };
-    let sums: Vec<Vec<f64>> = (0..3).map(|c| table(&|i| source.rgb[c][i] as f64)).collect();
+    let sums: Vec<Vec<f64>> = (0..3)
+        .map(|c| table(&|i| source.rgb[c][i] as f64))
+        .collect();
     let light = table(&|i| luma[i] as f64);
     let squares = table(&|i| (luma[i] * luma[i]) as f64);
     let total = |sums: &[f64], x0: usize, y0: usize, x1: usize, y1: usize| {
-        sums[y1 * (w + 1) + x1] - sums[y0 * (w + 1) + x1] - sums[y1 * (w + 1) + x0] + sums[y0 * (w + 1) + x0]
+        sums[y1 * (w + 1) + x1] - sums[y0 * (w + 1) + x1] - sums[y1 * (w + 1) + x0]
+            + sums[y0 * (w + 1) + x0]
     };
     let mut out = Planes {
         w,
@@ -158,8 +181,16 @@ fn kuwahara(source: &Planes, radius: usize) -> Planes {
         for x in 0..w {
             let mut best = (f64::INFINITY, (0, 0, 1, 1));
             for (left, up) in [(true, true), (false, true), (true, false), (false, false)] {
-                let (x0, x1) = if left { (x.saturating_sub(radius), x + 1) } else { (x, (x + radius + 1).min(w)) };
-                let (y0, y1) = if up { (y.saturating_sub(radius), y + 1) } else { (y, (y + radius + 1).min(h)) };
+                let (x0, x1) = if left {
+                    (x.saturating_sub(radius), x + 1)
+                } else {
+                    (x, (x + radius + 1).min(w))
+                };
+                let (y0, y1) = if up {
+                    (y.saturating_sub(radius), y + 1)
+                } else {
+                    (y, (y + radius + 1).min(h))
+                };
                 let count = ((x1 - x0) * (y1 - y0)) as f64;
                 let mean = total(&light, x0, y0, x1, y1) / count;
                 let variance = total(&squares, x0, y0, x1, y1) / count - mean * mean;
@@ -208,7 +239,12 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
             let grey = planes.luma();
             let sketch = artistic.kind == ArtisticKind::PencilSketch;
             let mut soft = grey.clone();
-            gaussian_clamped(&mut soft, w, h, (2.0 + 6.0 * if sketch { 0.3 } else { share }) * unit);
+            gaussian_clamped(
+                &mut soft,
+                w,
+                h,
+                (2.0 + 6.0 * if sketch { 0.3 } else { share }) * unit,
+            );
             let out: Vec<f32> = (0..w * h)
                 .map(|i| {
                     let dodge = (grey[i] / soft[i].max(0.02)).min(1.0);
@@ -217,7 +253,11 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
                         // Lines only, pressed harder or softer, with
                         // strokes in the darkest parts.
                         let line = dodge.powf(2.0 + 10.0 * share);
-                        let shade = if grey[i] < 0.35 { 0.82 + 0.18 * stroke } else { 1.0 };
+                        let shade = if grey[i] < 0.35 {
+                            0.82 + 0.18 * stroke
+                        } else {
+                            1.0
+                        };
                         (line * shade).clamp(0.0, 1.0)
                     } else {
                         // The tones of the image stay, drawn in strokes.
@@ -236,7 +276,9 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
             let width = (0.6 + 2.4 * share) * unit;
             gaussian_clamped(&mut fine, w, h, width.max(0.5));
             gaussian_clamped(&mut wide, w, h, (width * 2.6).max(1.2));
-            let out = (0..w * h).map(|i| smoothstep(-0.035, -0.004, fine[i] - wide[i])).collect();
+            let out = (0..w * h)
+                .map(|i| smoothstep(-0.035, -0.004, fine[i] - wide[i]))
+                .collect();
             Planes::grey(w, h, out)
         }
         ArtisticKind::ChalkSketch => {
@@ -250,15 +292,25 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
             let out = (0..w * h)
                 .map(|i| {
                     let (x, y) = (i % w, i / w);
-                    let grain = 0.55 + 0.45 * hash((x as f32 / unit.max(1.0)) as i64, (y as f32 / unit.max(1.0)) as i64, 11);
+                    let grain = 0.55
+                        + 0.45
+                            * hash(
+                                (x as f32 / unit.max(1.0)) as i64,
+                                (y as f32 / unit.max(1.0)) as i64,
+                                11,
+                            );
                     let line = smoothstep(0.08, 0.5, strong[i] * 2.2) * grain * press;
-                    let dust = smoothstep(0.55, 1.0, grey[i]) * 0.35 * hatching(x, y, unit, 3) * press;
+                    let dust =
+                        smoothstep(0.55, 1.0, grey[i]) * 0.35 * hatching(x, y, unit, 3) * press;
                     (0.27 + 0.73 * (line + dust).min(1.0)).clamp(0.0, 1.0)
                 })
                 .collect();
             Planes::grey(w, h, out)
         }
-        ArtisticKind::PaintBrush => kuwahara(&planes, ((1.5 + 1.2 * amount) * unit).round().max(1.0) as usize),
+        ArtisticKind::PaintBrush => kuwahara(
+            &planes,
+            ((1.5 + 1.2 * amount) * unit).round().max(1.0) as usize,
+        ),
         ArtisticKind::GlowDiffused => {
             // A soft copy laid over the image the way light adds up.
             let soft = planes.blurred((3.0 + 1.4 * amount) * unit);
@@ -279,7 +331,11 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
                 let (x, y) = ((i % w) as f32, (i / w) as f32);
                 let (u, v) = ((x / cell).fract(), (y / cell).fract());
                 let lit = 0.10 + 0.22 * (1.0 - (u + v) / 2.0);
-                let rule = if u < 1.2 / cell || v < 1.2 / cell { 0.25 } else { 0.0 };
+                let rule = if u < 1.2 / cell || v < 1.2 / cell {
+                    0.25
+                } else {
+                    0.0
+                };
                 let add = (lit + rule).min(0.6);
                 for plane in &mut out {
                     plane[i] += (1.0 - plane[i]) * add;
@@ -291,10 +347,14 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
             // Noise in the light of the image, in clumps the size of
             // the grain.
             let grain = (0.5 + 2.5 * share) * unit;
-            let mut noise: Vec<f32> = (0..w * h).map(|i| hash((i % w) as i64, (i / w) as i64, 5) - 0.5).collect();
+            let mut noise: Vec<f32> = (0..w * h)
+                .map(|i| hash((i % w) as i64, (i / w) as i64, 5) - 0.5)
+                .collect();
             gaussian_clamped(&mut noise, w, h, grain);
             // Blurring flattens noise: bring it back to its strength.
-            let spread = (noise.iter().map(|n| n * n).sum::<f32>() / (w * h) as f32).sqrt().max(1e-5);
+            let spread = (noise.iter().map(|n| n * n).sum::<f32>() / (w * h) as f32)
+                .sqrt()
+                .max(1e-5);
             let mut out = planes.rgb.clone();
             for plane in &mut out {
                 for (v, n) in plane.iter_mut().zip(&noise) {
@@ -307,10 +367,14 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
             // Round tiles, each of the mean colour of what it covers,
             // lit from above, on that colour darkened.
             let cell = ((5.0 + 0.3 * amount) * unit).max(3.0);
-            let (columns, rows) = ((w as f32 / cell).ceil() as usize, (h as f32 / cell).ceil() as usize);
+            let (columns, rows) = (
+                (w as f32 / cell).ceil() as usize,
+                (h as f32 / cell).ceil() as usize,
+            );
             let mut sums = vec![[0.0f32; 4]; columns * rows];
             for i in 0..w * h {
-                let tile = &mut sums[((i / w) as f32 / cell) as usize * columns + ((i % w) as f32 / cell) as usize];
+                let tile = &mut sums
+                    [((i / w) as f32 / cell) as usize * columns + ((i % w) as f32 / cell) as usize];
                 for c in 0..3 {
                     tile[c] += planes.rgb[c][i];
                 }
@@ -321,10 +385,17 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
                 let (x, y) = ((i % w) as f32, (i / w) as f32);
                 let (column, row) = ((x / cell) as usize, (y / cell) as usize);
                 let tile = sums[row * columns + column];
-                let (dx, dy) = (x + 0.5 - (column as f32 + 0.5) * cell, y + 0.5 - (row as f32 + 0.5) * cell);
+                let (dx, dy) = (
+                    x + 0.5 - (column as f32 + 0.5) * cell,
+                    y + 0.5 - (row as f32 + 0.5) * cell,
+                );
                 let from_centre = (dx * dx + dy * dy).sqrt() / (cell / 2.0);
                 let inside = 1.0 - smoothstep(0.86, 1.0, from_centre);
-                let shine = (1.0 - ((dx + cell * 0.18).powi(2) + (dy + cell * 0.18).powi(2)).sqrt() / (cell * 0.45)).max(0.0) * 0.28;
+                let shine = (1.0
+                    - ((dx + cell * 0.18).powi(2) + (dy + cell * 0.18).powi(2)).sqrt()
+                        / (cell * 0.45))
+                    .max(0.0)
+                    * 0.28;
                 for c in 0..3 {
                     let mean = tile[c] / tile[3].max(1.0);
                     let bubble = (mean * (1.0 - 0.18 * from_centre.min(1.0)) + shine).min(1.0);
@@ -338,7 +409,10 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
             // which one decided by smooth noise.
             let reach = (1.0 + 7.0 * share) * unit;
             let cell = (4.0 * unit).max(2.0);
-            let at = |plane: &[f32], x: f32, y: f32| plane[(y.round().clamp(0.0, h as f32 - 1.0)) as usize * w + x.round().clamp(0.0, w as f32 - 1.0) as usize];
+            let at = |plane: &[f32], x: f32, y: f32| {
+                plane[(y.round().clamp(0.0, h as f32 - 1.0)) as usize * w
+                    + x.round().clamp(0.0, w as f32 - 1.0) as usize]
+            };
             let mut out = planes.rgb.clone();
             for i in 0..w * h {
                 let (x, y) = ((i % w) as f32, (i / w) as f32);
@@ -367,7 +441,8 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
             let out = (0..w * h)
                 .map(|i| {
                     let darker = around[i] - grey[i];
-                    let toner = smoothstep(0.01, 0.09, darker) + 0.35 * smoothstep(0.75, 0.25, grey[i]);
+                    let toner =
+                        smoothstep(0.01, 0.09, darker) + 0.35 * smoothstep(0.75, 0.25, grey[i]);
                     1.0 - 0.82 * toner.min(1.0)
                 })
                 .collect();
@@ -378,14 +453,20 @@ pub fn apply(source: &Bitmap, artistic: &Artistic) -> Bitmap {
             let soft = planes.blurred((0.4 + 0.25 * amount) * unit);
             let mut rgb = [Vec::new(), Vec::new(), Vec::new()];
             for c in 0..3 {
-                rgb[c] = edges(&soft.rgb[c], w, h).into_iter().map(|e| (e * 2.6).min(1.0)).collect();
+                rgb[c] = edges(&soft.rgb[c], w, h)
+                    .into_iter()
+                    .map(|e| (e * 2.6).min(1.0))
+                    .collect();
             }
             Planes { w, h, rgb }
         }
         ArtisticKind::Marker => {
             // Felt pens: flat areas of a few strong colours with a dark
             // line where they meet.
-            let flat = kuwahara(&planes, ((1.0 + 0.04 * amount) * unit).round().max(1.0) as usize);
+            let flat = kuwahara(
+                &planes,
+                ((1.0 + 0.04 * amount) * unit).round().max(1.0) as usize,
+            );
             let strong = edges(&flat.luma(), w, h);
             let mut out = flat;
             let light = out.luma();
@@ -448,7 +529,12 @@ mod tests {
     }
 
     fn colours(bitmap: &Bitmap) -> usize {
-        bitmap.data.chunks_exact(4).map(|p| (p[0], p[1], p[2])).collect::<std::collections::HashSet<_>>().len()
+        bitmap
+            .data
+            .chunks_exact(4)
+            .map(|p| (p[0], p[1], p[2]))
+            .collect::<std::collections::HashSet<_>>()
+            .len()
     }
 
     #[test]
@@ -458,12 +544,23 @@ mod tests {
         let mut seen = std::collections::HashSet::new();
         for kind in ArtisticKind::ALL {
             let made = apply(&source, &Artistic::preset(kind));
-            assert_eq!((made.width, made.height), (source.width, source.height), "{kind:?}");
+            assert_eq!(
+                (made.width, made.height),
+                (source.width, source.height),
+                "{kind:?}"
+            );
             assert_ne!(made.data, source.data, "{kind:?}");
             assert_eq!(made.data[3], 0, "{kind:?}");
-            assert!(made.data.chunks_exact(4).skip(1).all(|p| p[3] == 255), "{kind:?}");
+            assert!(
+                made.data.chunks_exact(4).skip(1).all(|p| p[3] == 255),
+                "{kind:?}"
+            );
             // The same twice: nothing in a filter is left to chance.
-            assert_eq!(apply(&source, &Artistic::preset(kind)).data, made.data, "{kind:?}");
+            assert_eq!(
+                apply(&source, &Artistic::preset(kind)).data,
+                made.data,
+                "{kind:?}"
+            );
             assert!(seen.insert(made.data), "{kind:?} looks like another effect");
         }
         // Wholly let through, an effect leaves the image as it was.
@@ -477,17 +574,40 @@ mod tests {
     #[test]
     fn effects_do_what_their_names_say() {
         let source = photo();
-        let made = |kind: ArtisticKind, amount: f32| apply(&source, &Artistic { kind, transparency: 0.0, amount });
-        let grey = |bitmap: &Bitmap| bitmap.data.chunks_exact(4).all(|p| p[0] == p[1] && p[1] == p[2]);
+        let made = |kind: ArtisticKind, amount: f32| {
+            apply(
+                &source,
+                &Artistic {
+                    kind,
+                    transparency: 0.0,
+                    amount,
+                },
+            )
+        };
+        let grey = |bitmap: &Bitmap| {
+            bitmap
+                .data
+                .chunks_exact(4)
+                .all(|p| p[0] == p[1] && p[1] == p[2])
+        };
         // A blur smooths, the more the larger its radius, and keeps the
         // light of the image.
-        let (little, much) = (made(ArtisticKind::Blur, 10.0), made(ArtisticKind::Blur, 60.0));
+        let (little, much) = (
+            made(ArtisticKind::Blur, 10.0),
+            made(ArtisticKind::Blur, 60.0),
+        );
         assert!(roughness(&little) < roughness(&source) && roughness(&much) < roughness(&little));
         assert!((mean(&much)[1] - mean(&source)[1]).abs() < 4.0);
         // Grain roughens.
         assert!(roughness(&made(ArtisticKind::FilmGrain, 40.0)) > roughness(&source) * 1.5);
         // Pencils, chalk, photocopies and line drawings have no colour.
-        for kind in [ArtisticKind::PencilGrayscale, ArtisticKind::PencilSketch, ArtisticKind::LineDrawing, ArtisticKind::ChalkSketch, ArtisticKind::Photocopy] {
+        for kind in [
+            ArtisticKind::PencilGrayscale,
+            ArtisticKind::PencilSketch,
+            ArtisticKind::LineDrawing,
+            ArtisticKind::ChalkSketch,
+            ArtisticKind::Photocopy,
+        ] {
             assert!(grey(&made(kind, kind.amount_range().2)), "{kind:?}");
         }
         // A line drawing and a sketch are mostly white paper; chalk is
@@ -497,7 +617,10 @@ mod tests {
         assert!(mean(&made(ArtisticKind::ChalkSketch, 4.0))[0] < 130.0);
         assert!(mean(&made(ArtisticKind::GlowEdges, 5.0))[1] < 70.0);
         // A cutout has few shades, fewer when fewer are asked for.
-        let (few, more) = (colours(&made(ArtisticKind::Cutout, 0.0)), colours(&made(ArtisticKind::Cutout, 6.0)));
+        let (few, more) = (
+            colours(&made(ArtisticKind::Cutout, 0.0)),
+            colours(&made(ArtisticKind::Cutout, 6.0)),
+        );
         assert!(few <= 8 && few < more && more <= 512, "{few} {more}");
         // A light screen and a diffused glow lighten.
         assert!(mean(&made(ArtisticKind::LightScreen, 3.0))[1] > mean(&source)[1] + 8.0);
@@ -516,14 +639,19 @@ mod tests {
             rgb: [vec![0.0; w * h], vec![0.0; w * h], vec![0.0; w * h]],
         };
         for i in 0..w * h {
-            let value = if i % w < 20 { 0.2 } else { 0.8 } + (hash((i % w) as i64, (i / w) as i64, 1) - 0.5) * 0.1;
+            let value = if i % w < 20 { 0.2 } else { 0.8 }
+                + (hash((i % w) as i64, (i / w) as i64, 1) - 0.5) * 0.1;
             for plane in &mut planes.rgb {
                 plane[i] = value;
             }
         }
         let painted = kuwahara(&planes, 3);
         // No pixel is a mix of the two halves.
-        assert!(painted.rgb[0].iter().all(|v| (*v - 0.2).abs() < 0.06 || (*v - 0.8).abs() < 0.06));
+        assert!(
+            painted.rgb[0]
+                .iter()
+                .all(|v| (*v - 0.2).abs() < 0.06 || (*v - 0.8).abs() < 0.06)
+        );
         // And the noise is less.
         let spread = |values: &[f32]| values.iter().take(10).map(|v| (v - 0.2).abs()).sum::<f32>();
         assert!(spread(&painted.rgb[0][5 * w..]) < spread(&planes.rgb[0][5 * w..]));

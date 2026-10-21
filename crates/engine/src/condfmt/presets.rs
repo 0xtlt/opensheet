@@ -3,8 +3,8 @@
 //! galleries (data bars, colour scales, icon sets), with Excel's colours.
 
 use super::model::{
-    BarAxis, BarDirection, CellOp, Cfvo, ColorScale, ColorStop, DataBar, IconRule, IconSet, IconThreshold, Rule,
-    TextOp, TimePeriod,
+    BarAxis, BarDirection, CellOp, Cfvo, ColorScale, ColorStop, DataBar, IconRule, IconSet,
+    IconThreshold, Rule, TextOp, TimePeriod,
 };
 use crate::ast::Expr;
 use crate::refs::Rect;

@@ -21,15 +21,17 @@ use crate::shell::Modal;
 use crate::text_input::{InputEvent, TextInput};
 use crate::theme::{self, c};
 use crate::widgets::{
-    self, Checkbox, ColorButton, ColorGrid, GroupBox, ListBox, NumberField, Select, Sketch, TabStrip, TextField, Tri,
-    dialog, icon, label, labeled, ok_cancel, preview, tooltip,
+    self, Checkbox, ColorButton, ColorGrid, GroupBox, ListBox, NumberField, Select, Sketch,
+    TabStrip, TextField, Tri, dialog, icon, label, labeled, ok_cancel, preview, tooltip,
 };
 use gpui::{
-    AnyElement, App, Bounds, Context, Entity, FontWeight, MouseButton, MouseDownEvent, Pixels, SharedString, Window,
-    canvas, div, prelude::*, px,
+    AnyElement, App, Bounds, Context, Entity, FontWeight, MouseButton, MouseDownEvent, Pixels,
+    SharedString, Window, canvas, div, prelude::*, px,
 };
 use opensheet_engine::format;
-use opensheet_engine::style::{Border, BorderStyle, Color, HAlign, Style, StylePatch, Underline, VAlign};
+use opensheet_engine::style::{
+    Border, BorderStyle, Color, HAlign, Style, StylePatch, Underline, VAlign,
+};
 use opensheet_engine::{Locale, Rect, Value};
 use std::cell::Cell;
 use std::rc::Rc;
@@ -72,7 +74,9 @@ impl Command for Cmd {
             return;
         }
         let state = Opening::of(app, tab);
-        app.open_modal(window, cx, move |modal, _, cx| Dialog::new(modal, state, cx));
+        app.open_modal(window, cx, move |modal, _, cx| {
+            Dialog::new(modal, state, cx)
+        });
     }
 }
 
@@ -82,8 +86,14 @@ impl Feature for FormatCells {
     }
 
     fn context_menu(&self, app: &ExcelApp, target: &MenuTarget, menu: &mut ContextMenu) {
-        if matches!(target, MenuTarget::Cell(..) | MenuTarget::RowHeader(_) | MenuTarget::ColHeader(_)) {
-            menu.add(MenuSection::Format, MenuEntry::command(Cmd::Open, app).shortcut("⌘1"));
+        if matches!(
+            target,
+            MenuTarget::Cell(..) | MenuTarget::RowHeader(_) | MenuTarget::ColHeader(_)
+        ) {
+            menu.add(
+                MenuSection::Format,
+                MenuEntry::command(Cmd::Open, app).shortcut("⌘1"),
+            );
         }
     }
 }
@@ -199,7 +209,10 @@ impl Opening {
         }
         ids.sort_unstable();
         ids.dedup();
-        let styles: Vec<Style> = ids.iter().map(|id| app.wb.styles.get(*id).clone()).collect();
+        let styles: Vec<Style> = ids
+            .iter()
+            .map(|id| app.wb.styles.get(*id).clone())
+            .collect();
 
         let touches_merge = |range: &Rect| sheet.merges.iter().any(|m| m.intersects(range));
         let is_merge = |range: &Rect| sheet.merges.contains(range);
@@ -214,7 +227,12 @@ impl Opening {
         let current = app.wb.clamp_to_used(app.sheet, app.sel().current());
         let mut used_codes: Vec<String> = Vec::new();
         for id in 0..app.wb.styles.len() {
-            let code = app.wb.styles.get(opensheet_engine::StyleId(id as u32)).num_fmt.to_string();
+            let code = app
+                .wb
+                .styles
+                .get(opensheet_engine::StyleId(id as u32))
+                .num_fmt
+                .to_string();
             if !used_codes.contains(&code) {
                 used_codes.push(code);
             }
@@ -264,7 +282,11 @@ impl Opening {
         second.num_fmt = Arc::from("0.000000000000");
         format.apply(&mut first);
         format.apply(&mut second);
-        opening.tab = if PARTIAL_TABS.contains(&tab) { tab } else { TAB_FONT };
+        opening.tab = if PARTIAL_TABS.contains(&tab) {
+            tab
+        } else {
+            TAB_FONT
+        };
         opening.styles = vec![first, second];
         opening.merged = Some(false);
         opening.many_rows = false;
@@ -399,7 +421,11 @@ fn edges_of(app: &ExcelApp, range: Rect) -> [Option<Border>; 6] {
         .collect();
     let inner_v: Vec<Border> = rows
         .iter()
-        .flat_map(|r| cols.iter().filter(|c| **c < range.c1).map(move |c| (*r, *c)))
+        .flat_map(|r| {
+            cols.iter()
+                .filter(|c| **c < range.c1)
+                .map(move |c| (*r, *c))
+        })
         .map(|(r, c)| borders(r, c).right)
         .collect();
     [
@@ -407,8 +433,16 @@ fn edges_of(app: &ExcelApp, range: Rect) -> [Option<Border>; 6] {
         common(cols.iter().map(|c| borders(range.r1, *c).bottom).collect()),
         common(rows.iter().map(|r| borders(*r, range.c0).left).collect()),
         common(rows.iter().map(|r| borders(*r, range.c1).right).collect()),
-        if inner_h.is_empty() { Some(Border::NONE) } else { common(inner_h) },
-        if inner_v.is_empty() { Some(Border::NONE) } else { common(inner_v) },
+        if inner_h.is_empty() {
+            Some(Border::NONE)
+        } else {
+            common(inner_h)
+        },
+        if inner_v.is_empty() {
+            Some(Border::NONE)
+        } else {
+            common(inner_v)
+        },
     ]
 }
 
@@ -538,7 +572,9 @@ impl Changes {
         }
         // Merging and the two protection flags are more than formatting
         // to a protected sheet.
-        if (self.merge.is_some() || self.locked.is_some() || self.hidden.is_some()) && !app.may(Intent::ChangeSheet, cx) {
+        if (self.merge.is_some() || self.locked.is_some() || self.hidden.is_some())
+            && !app.may(Intent::ChangeSheet, cx)
+        {
             return;
         }
         let sheet = app.sheet;
@@ -714,8 +750,20 @@ impl Dialog {
             None => Choice::general(),
         };
         let custom_codes = number::custom_codes(locale, &open.used_codes);
-        let decimals = widgets::number_input(cx, Some(choice.decimals as f64), 0.0, number::MAX_DECIMALS as f64, 1.0);
-        let code_input = widgets::input(cx, code.value.as_deref().map(|c| number::shown(c, locale)).unwrap_or_default());
+        let decimals = widgets::number_input(
+            cx,
+            Some(choice.decimals as f64),
+            0.0,
+            number::MAX_DECIMALS as f64,
+            1.0,
+        );
+        let code_input = widgets::input(
+            cx,
+            code.value
+                .as_deref()
+                .map(|c| number::shown(c, locale))
+                .unwrap_or_default(),
+        );
         cx.subscribe(&decimals, |this, _, ev: &InputEvent, cx| {
             if *ev == InputEvent::Changed {
                 if let Some(n) = this.decimals.read(cx).number() {
@@ -736,19 +784,31 @@ impl Dialog {
 
         let indent = Prop::of(styles, |s| s.indent);
         let indent_at_open = indent.value.map(|v| v.to_string()).unwrap_or_default();
-        let indent_input = widgets::number_input(cx, indent.value.map(|v| v as f64), 0.0, 250.0, 1.0);
+        let indent_input =
+            widgets::number_input(cx, indent.value.map(|v| v as f64), 0.0, 250.0, 1.0);
         let rotation = Prop::of(styles, |s| s.rotation);
         let rotation_at_open = rotation.value.map(|v| v.to_string()).unwrap_or_default();
-        let rotation_input = widgets::number_input(cx, rotation.value.map(|v| v as f64), -90.0, 90.0, 1.0);
+        let rotation_input =
+            widgets::number_input(cx, rotation.value.map(|v| v as f64), -90.0, 90.0, 1.0);
 
         // Office fonts first, as in the ribbon's list, then the system's.
         // The fonts of the theme come before all others.
         let mut font_names: Vec<SharedString> =
-            crate::theme::theme_font_labels(&crate::theme::document_theme()).into_iter().map(SharedString::from).collect();
-        for name in ["Aptos Narrow", "Aptos", "Calibri", "Arial", "Times New Roman", "Courier New"]
-            .iter()
-            .map(|n| n.to_string())
-            .chain(open.fonts.names.iter().cloned())
+            crate::theme::theme_font_labels(&crate::theme::document_theme())
+                .into_iter()
+                .map(SharedString::from)
+                .collect();
+        for name in [
+            "Aptos Narrow",
+            "Aptos",
+            "Calibri",
+            "Arial",
+            "Times New Roman",
+            "Courier New",
+        ]
+        .iter()
+        .map(|n| n.to_string())
+        .chain(open.fonts.names.iter().cloned())
         {
             if !font_names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
                 font_names.push(name.into());
@@ -757,7 +817,10 @@ impl Dialog {
         let font_name = Prop::of(styles, |s| crate::theme::font_label(&s.font));
         let font_name_at_open = font_name.value.clone().unwrap_or_default();
         let size = Prop::of(styles, |s| s.font.size);
-        let size_at_open = size.value.map(|half| size_text(half as f32 / 2.0, locale)).unwrap_or_default();
+        let size_at_open = size
+            .value
+            .map(|half| size_text(half as f32 / 2.0, locale))
+            .unwrap_or_default();
 
         Dialog {
             tab: open.tab.min(TAB_PROTECTION),
@@ -796,7 +859,10 @@ impl Dialog {
             strike: Prop::of(styles, |s| s.font.strike),
             line_style: BorderStyle::Thin,
             line_color: None,
-            edges: open.edges.map(|border| Edge { border, changed: false }),
+            edges: open.edges.map(|border| Edge {
+                border,
+                changed: false,
+            }),
             many_rows: open.many_rows,
             many_cols: open.many_cols,
             preview_bounds: Rc::default(),
@@ -817,14 +883,25 @@ impl Dialog {
     fn code(&self, cx: &App) -> String {
         match self.choice.code(self.locale) {
             Some(code) => code,
-            None => number::typed(self.code_input.read(cx).text(), &self.custom_codes, self.locale),
+            None => number::typed(
+                self.code_input.read(cx).text(),
+                &self.custom_codes,
+                self.locale,
+            ),
         }
     }
 
     /// The size typed in the Size box, in points.
     fn typed_size(&self, cx: &App) -> Option<f32> {
-        let text = self.size.read(cx).text().trim().replace(self.locale.decimal_sep, ".");
-        text.parse::<f32>().ok().filter(|pt| (1.0..=409.0).contains(pt))
+        let text = self
+            .size
+            .read(cx)
+            .text()
+            .trim()
+            .replace(self.locale.decimal_sep, ".");
+        text.parse::<f32>()
+            .ok()
+            .filter(|pt| (1.0..=409.0).contains(pt))
     }
 
     /// The font the cells would get, for the preview.
@@ -893,7 +970,12 @@ impl Dialog {
             let mut style = whole.base.clone();
             changes.style(&mut style);
             let borders = &mut style.borders;
-            for (index, side) in [(TOP, &mut borders.top), (BOTTOM, &mut borders.bottom), (LEFT, &mut borders.left), (RIGHT, &mut borders.right)] {
+            for (index, side) in [
+                (TOP, &mut borders.top),
+                (BOTTOM, &mut borders.bottom),
+                (LEFT, &mut borders.left),
+                (RIGHT, &mut borders.right),
+            ] {
                 if let Some(border) = changes.edges[index] {
                     *side = border;
                 }
@@ -932,11 +1014,17 @@ impl Dialog {
             _ => format.fill = None,
         }
         let (on_ok, tab) = (partial.on_ok.clone(), self.tab);
-        let Some(opening) = self.modal.read_app(cx, |app| Opening::partial(app, &format, tab)) else {
+        let Some(opening) = self
+            .modal
+            .read_app(cx, |app| Opening::partial(app, &format, tab))
+        else {
             return;
         };
         *self = Dialog::new(self.modal.clone(), opening, cx);
-        self.partial = Some(Partial { base: format, on_ok });
+        self.partial = Some(Partial {
+            base: format,
+            on_ok,
+        });
         cx.notify();
     }
 
@@ -952,7 +1040,11 @@ impl Dialog {
         field: fn(&mut Self) -> &mut Prop<bool>,
         cx: &mut Context<Self>,
     ) -> Checkbox {
-        let state = if prop.changed || !prop.mixed { Tri::from(prop.value) } else { Tri::Mixed };
+        let state = if prop.changed || !prop.mixed {
+            Tri::from(prop.value)
+        } else {
+            Tri::Mixed
+        };
         let checkbox = Checkbox::new(id, text, state);
         if prop.mixed {
             checkbox.on_change_tri(cx.listener(move |this, state: &Tri, _, cx| {
@@ -972,7 +1064,12 @@ impl Dialog {
 
     /// A title over a control.
     fn titled(title: &'static str, control: impl IntoElement) -> gpui::Div {
-        div().flex().flex_col().gap(px(3.)).child(label(title)).child(control)
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(3.))
+            .child(label(title))
+            .child(control)
     }
 
     // ---- Number ---------------------------------------------------------------
@@ -983,8 +1080,11 @@ impl Dialog {
         self.choice.kind = 0;
         if self.choice.category == Category::Custom {
             // Custom starts from the code the previous choices gave.
-            let text = before.map(|code| number::shown(&code, self.locale)).unwrap_or_default();
-            self.code_input.update(cx, |input, cx| input.set_text(text, cx));
+            let text = before
+                .map(|code| number::shown(&code, self.locale))
+                .unwrap_or_default();
+            self.code_input
+                .update(cx, |input, cx| input.set_text(text, cx));
         }
         self.code_mixed = false;
         self.number_touched = true;
@@ -993,8 +1093,14 @@ impl Dialog {
 
     fn number_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let locale = self.locale;
-        let categories: Vec<SharedString> = Category::ALL.iter().map(|cat| cat.name().into()).collect();
-        let selected = (!self.code_mixed).then(|| Category::ALL.iter().position(|c| *c == self.choice.category).unwrap_or(0));
+        let categories: Vec<SharedString> =
+            Category::ALL.iter().map(|cat| cat.name().into()).collect();
+        let selected = (!self.code_mixed).then(|| {
+            Category::ALL
+                .iter()
+                .position(|c| *c == self.choice.category)
+                .unwrap_or(0)
+        });
         let code = self.code(cx);
         let sample = if self.code_mixed {
             String::new()
@@ -1025,13 +1131,23 @@ impl Dialog {
         let dated = |codes: Vec<String>| -> Vec<SharedString> {
             codes
                 .iter()
-                .map(|code| format::format_number(number::SAMPLE_DATE, code, locale).text.into())
+                .map(|code| {
+                    format::format_number(number::SAMPLE_DATE, code, locale)
+                        .text
+                        .into()
+                })
                 .collect()
         };
         let symbol = |cx: &mut Context<Self>| {
             let names: Vec<SharedString> = number::symbols(locale)
                 .iter()
-                .map(|s| if s.is_empty() { t("None", "Aucune").into() } else { (*s).into() })
+                .map(|s| {
+                    if s.is_empty() {
+                        t("None", "Aucune").into()
+                    } else {
+                        (*s).into()
+                    }
+                })
                 .collect();
             labeled(
                 t("Symbol:", "Symbole :"),
@@ -1107,15 +1223,27 @@ impl Dialog {
                     options.push(decimals().into_any_element());
                     options.push(symbol(cx).into_any_element());
                 }
-                Category::Date => options.push(kinds(dated(number::date_types(locale)), cx).into_any_element()),
-                Category::Time => options.push(kinds(dated(number::time_types(locale)), cx).into_any_element()),
-                Category::Percentage | Category::Scientific => options.push(decimals().into_any_element()),
+                Category::Date => {
+                    options.push(kinds(dated(number::date_types(locale)), cx).into_any_element())
+                }
+                Category::Time => {
+                    options.push(kinds(dated(number::time_types(locale)), cx).into_any_element())
+                }
+                Category::Percentage | Category::Scientific => {
+                    options.push(decimals().into_any_element())
+                }
                 Category::Fraction => {
-                    let names = number::fraction_types().iter().map(|(_, name)| (*name).into()).collect();
+                    let names = number::fraction_types()
+                        .iter()
+                        .map(|(_, name)| (*name).into())
+                        .collect();
                     options.push(kinds(names, cx).into_any_element());
                 }
                 Category::Special => {
-                    let names = number::special_types(locale).iter().map(|(_, name)| (*name).into()).collect();
+                    let names = number::special_types(locale)
+                        .iter()
+                        .map(|(_, name)| (*name).into())
+                        .collect();
                     options.push(kinds(names, cx).into_any_element());
                 }
                 Category::Custom => {
@@ -1137,8 +1265,10 @@ impl Dialog {
                                     ListBox::new("custom", shown, current)
                                         .height(widgets::ROW_H * 8.0)
                                         .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                                            let text = number::shown(&this.custom_codes[*ix], this.locale);
-                                            this.code_input.update(cx, |input, cx| input.set_text(text, cx));
+                                            let text =
+                                                number::shown(&this.custom_codes[*ix], this.locale);
+                                            this.code_input
+                                                .update(cx, |input, cx| input.set_text(text, cx));
                                             this.number_touched = true;
                                             cx.notify();
                                         })),
@@ -1149,7 +1279,11 @@ impl Dialog {
                 }
             }
         }
-        let description = if self.code_mixed { "" } else { self.choice.category.description() };
+        let description = if self.code_mixed {
+            ""
+        } else {
+            self.choice.category.description()
+        };
 
         div()
             .flex()
@@ -1206,13 +1340,25 @@ impl Dialog {
         .iter()
         .map(|name| (*name).into())
         .collect();
-        let vertical: Vec<SharedString> = [t("Top", "Haut"), t("Center", "Centré"), t("Bottom", "Bas")]
-            .iter()
-            .map(|name| (*name).into())
-            .collect();
-        let h = self.h_align.value.and_then(|v| H_ALIGNS.iter().position(|a| *a == v));
-        let v = self.v_align.value.and_then(|v| V_ALIGNS.iter().position(|a| *a == v));
-        let degrees = self.rotation.read(cx).number().unwrap_or(0.0).clamp(-90.0, 90.0) as f32;
+        let vertical: Vec<SharedString> =
+            [t("Top", "Haut"), t("Center", "Centré"), t("Bottom", "Bas")]
+                .iter()
+                .map(|name| (*name).into())
+                .collect();
+        let h = self
+            .h_align
+            .value
+            .and_then(|v| H_ALIGNS.iter().position(|a| *a == v));
+        let v = self
+            .v_align
+            .value
+            .and_then(|v| V_ALIGNS.iter().position(|a| *a == v));
+        let degrees = self
+            .rotation
+            .read(cx)
+            .number()
+            .unwrap_or(0.0)
+            .clamp(-90.0, 90.0) as f32;
         let text = t("Text", "Texte");
 
         // The dial: a half circle of marks and a hand at the chosen angle.
@@ -1229,16 +1375,37 @@ impl Dialog {
                     let a = (step as f32 * 15.0).to_radians();
                     let (x, y) = (cx0 + radius * a.cos(), cy0 - radius * a.sin());
                     let half = if step % 3 == 0 { 2.0 } else { 1.0 };
-                    s.rect(x - half, y - half, x + half, y + half, c(if step % 3 == 0 { 0x000000 } else { 0x808080 }));
+                    s.rect(
+                        x - half,
+                        y - half,
+                        x + half,
+                        y + half,
+                        c(if step % 3 == 0 { 0x000000 } else { 0x808080 }),
+                    );
                 }
                 let a = degrees.to_radians();
-                let end = (cx0 + (radius - 8.0) * a.cos(), cy0 - (radius - 8.0) * a.sin());
+                let end = (
+                    cx0 + (radius - 8.0) * a.cos(),
+                    cy0 - (radius - 8.0) * a.sin(),
+                );
                 s.line((cx0, cy0), end, 1.0, c(0x000000));
-                s.rect(end.0 - 3.0, end.1 - 3.0, end.0 + 3.0, end.1 + 3.0, c(theme::ACCENT));
+                s.rect(
+                    end.0 - 3.0,
+                    end.1 - 3.0,
+                    end.0 + 3.0,
+                    end.1 + 3.0,
+                    c(theme::ACCENT),
+                );
                 if degrees.abs() < 0.5 {
                     // Level text can be shown on the hand, as Excel does.
                     let font = widgets::ui_font();
-                    s.rect(cx0 + 2.0, cy0 - 8.0, cx0 + 6.0 + s.measure(text, &font, 12.0), cy0 + 8.0, c(0xFFFFFF));
+                    s.rect(
+                        cx0 + 2.0,
+                        cy0 - 8.0,
+                        cx0 + 6.0 + s.measure(text, &font, 12.0),
+                        cy0 + 8.0,
+                        c(0xFFFFFF),
+                    );
                     s.text(text, cx0 + 4.0, cy0 - 8.0, &font, 12.0, c(0x000000));
                 }
             }))
@@ -1254,7 +1421,11 @@ impl Dialog {
                     let b = this.dial_bounds.get();
                     let dx = f32::from(ev.position.x - b.left()) - 14.0;
                     let dy = f32::from(b.top() + b.size.height / 2.0 - ev.position.y);
-                    let angle = dy.atan2(dx.max(0.01)).to_degrees().round().clamp(-90.0, 90.0);
+                    let angle = dy
+                        .atan2(dx.max(0.01))
+                        .to_degrees()
+                        .round()
+                        .clamp(-90.0, 90.0);
                     this.rotation
                         .update(cx, |input, cx| input.set_text(format!("{angle:.0}"), cx));
                     cx.notify();
@@ -1279,12 +1450,12 @@ impl Dialog {
                                     .gap(px(12.))
                                     .child(Self::titled(
                                         t("Horizontal:", "Horizontal :"),
-                                        Select::new("h-align", horizontal, h).width(210.0).on_change(cx.listener(
-                                            |this, ix: &usize, _, cx| {
+                                        Select::new("h-align", horizontal, h)
+                                            .width(210.0)
+                                            .on_change(cx.listener(|this, ix: &usize, _, cx| {
                                                 this.h_align.set(H_ALIGNS[*ix]);
                                                 cx.notify();
-                                            },
-                                        )),
+                                            })),
                                     ))
                                     .child(Self::titled(
                                         t("Indent:", "Retrait :"),
@@ -1293,12 +1464,12 @@ impl Dialog {
                             )
                             .child(Self::titled(
                                 t("Vertical:", "Vertical :"),
-                                Select::new("v-align", vertical, v).width(210.0).on_change(cx.listener(
-                                    |this, ix: &usize, _, cx| {
+                                Select::new("v-align", vertical, v).width(210.0).on_change(
+                                    cx.listener(|this, ix: &usize, _, cx| {
                                         this.v_align.set(V_ALIGNS[*ix]);
                                         cx.notify();
-                                    },
-                                )),
+                                    }),
+                                ),
                             )),
                     )
                     .child(
@@ -1310,7 +1481,13 @@ impl Dialog {
                                 |d| &mut d.wrap,
                                 cx,
                             ))
-                            .child(self.check("shrink", t("Shrink to fit", "Ajuster"), &self.shrink, |d| &mut d.shrink, cx))
+                            .child(self.check(
+                                "shrink",
+                                t("Shrink to fit", "Ajuster"),
+                                &self.shrink,
+                                |d| &mut d.shrink,
+                                cx,
+                            ))
                             .child(
                                 self.check(
                                     "merge",
@@ -1324,10 +1501,12 @@ impl Dialog {
                     ),
             )
             .child(
-                GroupBox::new(t("Orientation", "Orientation")).child(dial).child(labeled(
-                    t("Degrees:", "Degrés :"),
-                    NumberField::new("degrees", &self.rotation).width(60.0),
-                )),
+                GroupBox::new(t("Orientation", "Orientation"))
+                    .child(dial)
+                    .child(labeled(
+                        t("Degrees:", "Degrés :"),
+                        NumberField::new("degrees", &self.rotation).width(60.0),
+                    )),
             )
             .into_any_element()
     }
@@ -1337,7 +1516,10 @@ impl Dialog {
     fn font_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let locale = self.locale;
         let name = self.font_name.read(cx).text().trim().to_string();
-        let name_ix = self.font_names.iter().position(|n| n.eq_ignore_ascii_case(&name));
+        let name_ix = self
+            .font_names
+            .iter()
+            .position(|n| n.eq_ignore_ascii_case(&name));
         let styles: Vec<SharedString> = [
             t("Regular", "Normal"),
             t("Italic", "Italique"),
@@ -1351,21 +1533,37 @@ impl Dialog {
             (Some(bold), Some(italic)) => Some(bold as usize * 2 + italic as usize),
             _ => None,
         };
-        let sizes: Vec<SharedString> = ExcelApp::FONT_SIZES.iter().map(|s| size_text(*s, locale).into()).collect();
-        let size_ix = self
-            .typed_size(cx)
-            .and_then(|pt| ExcelApp::FONT_SIZES.iter().position(|s| (*s - pt).abs() < 0.01));
-        let underlines: Vec<SharedString> = [t("None", "Aucun"), t("Single", "Simple"), t("Double", "Double")]
+        let sizes: Vec<SharedString> = ExcelApp::FONT_SIZES
             .iter()
-            .map(|name| (*name).into())
+            .map(|s| size_text(*s, locale).into())
             .collect();
-        let underline_ix = self.underline.value.and_then(|u| UNDERLINES.iter().position(|v| *v == u));
+        let size_ix = self.typed_size(cx).and_then(|pt| {
+            ExcelApp::FONT_SIZES
+                .iter()
+                .position(|s| (*s - pt).abs() < 0.01)
+        });
+        let underlines: Vec<SharedString> = [
+            t("None", "Aucun"),
+            t("Single", "Simple"),
+            t("Double", "Double"),
+        ]
+        .iter()
+        .map(|name| (*name).into())
+        .collect();
+        let underline_ix = self
+            .underline
+            .value
+            .and_then(|u| UNDERLINES.iter().position(|v| *v == u));
 
         // The sample, in the font the cells would get.
         let style = self.preview_style(cx);
         let font = cell_font(&style, &self.fonts);
         let font_px = pt_to_px(style.font.size_pt());
-        let color = style.font.color.map(|col| c(col.value())).unwrap_or(c(0x000000));
+        let color = style
+            .font
+            .color
+            .map(|col| c(col.value()))
+            .unwrap_or(c(0x000000));
         let (underline, strike) = (style.font.underline != Underline::None, style.font.strike);
         let sample = preview(300.0, 64.0, move |s: &mut Sketch| {
             let text = "AaBbCcYyZz";
@@ -1385,24 +1583,27 @@ impl Dialog {
                 div()
                     .flex()
                     .gap(px(12.))
-                    .when(whole, |d| d.child(Self::titled(
-                        t("Font:", "Police :"),
-                        div()
-                            .w(px(220.))
-                            .flex()
-                            .flex_col()
-                            .gap(px(2.))
-                            .child(div().flex().child(TextField::new(&self.font_name)))
-                            .child(
-                                ListBox::new("fonts", self.font_names.clone(), name_ix)
-                                    .height(widgets::ROW_H * 6.0)
-                                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                                        let name = this.font_names[*ix].to_string();
-                                        this.font_name.update(cx, |input, cx| input.set_text(name, cx));
-                                        cx.notify();
-                                    })),
-                            ),
-                    )))
+                    .when(whole, |d| {
+                        d.child(Self::titled(
+                            t("Font:", "Police :"),
+                            div()
+                                .w(px(220.))
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.))
+                                .child(div().flex().child(TextField::new(&self.font_name)))
+                                .child(
+                                    ListBox::new("fonts", self.font_names.clone(), name_ix)
+                                        .height(widgets::ROW_H * 6.0)
+                                        .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                                            let name = this.font_names[*ix].to_string();
+                                            this.font_name
+                                                .update(cx, |input, cx| input.set_text(name, cx));
+                                            cx.notify();
+                                        })),
+                                ),
+                        ))
+                    })
                     .child(Self::titled(
                         t("Font style:", "Style :"),
                         ListBox::new("font-style", styles, style_ix)
@@ -1414,24 +1615,28 @@ impl Dialog {
                                 cx.notify();
                             })),
                     ))
-                    .when(whole, |d| d.child(Self::titled(
-                        t("Size:", "Taille :"),
-                        div()
-                            .w(px(80.))
-                            .flex()
-                            .flex_col()
-                            .gap(px(2.))
-                            .child(div().flex().child(TextField::new(&self.size)))
-                            .child(
-                                ListBox::new("sizes", sizes, size_ix)
-                                    .height(widgets::ROW_H * 6.0)
-                                    .on_change(cx.listener(|this, ix: &usize, _, cx| {
-                                        let text = size_text(ExcelApp::FONT_SIZES[*ix], this.locale);
-                                        this.size.update(cx, |input, cx| input.set_text(text, cx));
-                                        cx.notify();
-                                    })),
-                            ),
-                    ))),
+                    .when(whole, |d| {
+                        d.child(Self::titled(
+                            t("Size:", "Taille :"),
+                            div()
+                                .w(px(80.))
+                                .flex()
+                                .flex_col()
+                                .gap(px(2.))
+                                .child(div().flex().child(TextField::new(&self.size)))
+                                .child(
+                                    ListBox::new("sizes", sizes, size_ix)
+                                        .height(widgets::ROW_H * 6.0)
+                                        .on_change(cx.listener(|this, ix: &usize, _, cx| {
+                                            let text =
+                                                size_text(ExcelApp::FONT_SIZES[*ix], this.locale);
+                                            this.size
+                                                .update(cx, |input, cx| input.set_text(text, cx));
+                                            cx.notify();
+                                        })),
+                                ),
+                        ))
+                    }),
             )
             .child(
                 div()
@@ -1439,12 +1644,12 @@ impl Dialog {
                     .gap(px(24.))
                     .child(Self::titled(
                         t("Underline:", "Soulignement :"),
-                        Select::new("underline", underlines, underline_ix).width(150.0).on_change(cx.listener(
-                            |this, ix: &usize, _, cx| {
+                        Select::new("underline", underlines, underline_ix)
+                            .width(150.0)
+                            .on_change(cx.listener(|this, ix: &usize, _, cx| {
                                 this.underline.set(UNDERLINES[*ix]);
                                 cx.notify();
-                            },
-                        )),
+                            })),
                     ))
                     .child(Self::titled(
                         t("Color:", "Couleur :"),
@@ -1503,7 +1708,11 @@ impl Dialog {
             color: self.line_color,
         };
         let edge = &mut self.edges[index];
-        edge.border = Some(if edge.border == Some(line) || line.is_none() { Border::NONE } else { line });
+        edge.border = Some(if edge.border == Some(line) || line.is_none() {
+            Border::NONE
+        } else {
+            line
+        });
         edge.changed = true;
         cx.notify();
     }
@@ -1556,7 +1765,13 @@ impl Dialog {
             LINE_STYLES
                 .iter()
                 .copied()
-                .filter(|s| !partial || !matches!(s, BorderStyle::Medium | BorderStyle::Thick | BorderStyle::Double))
+                .filter(|s| {
+                    !partial
+                        || !matches!(
+                            s,
+                            BorderStyle::Medium | BorderStyle::Thick | BorderStyle::Double
+                        )
+                })
                 .collect(),
         );
         let style_ix = styles.iter().position(|s| *s == self.line_style);
@@ -1573,7 +1788,12 @@ impl Dialog {
             let (mx, my) = ((x0 + x1) / 2.0, (y0 + y1) / 2.0);
             // Corner marks, as in Excel's diagram.
             let mark = c(0x9A9A9A);
-            for (x, y, dx, dy) in [(x0, y0, -1.0, -1.0), (x1, y0, 1.0, -1.0), (x0, y1, -1.0, 1.0), (x1, y1, 1.0, 1.0)] {
+            for (x, y, dx, dy) in [
+                (x0, y0, -1.0, -1.0),
+                (x1, y0, 1.0, -1.0),
+                (x0, y1, -1.0, 1.0),
+                (x1, y1, 1.0, 1.0),
+            ] {
                 s.line((x, y + dy * 2.0), (x, y + dy * 9.0), 1.0, mark);
                 s.line((x + dx * 2.0, y), (x + dx * 9.0, y), 1.0, mark);
             }
@@ -1603,13 +1823,29 @@ impl Dialog {
                 let color = c(border.color.map(|col| col.value()).unwrap_or(0x000000));
                 let solid = |offset: f32, width: f32, s: &mut Sketch| {
                     if horizontal {
-                        s.rect(from.0, from.1 + offset, to.0, from.1 + offset + width, color);
+                        s.rect(
+                            from.0,
+                            from.1 + offset,
+                            to.0,
+                            from.1 + offset + width,
+                            color,
+                        );
                     } else {
-                        s.rect(from.0 + offset, from.1, from.0 + offset + width, to.1, color);
+                        s.rect(
+                            from.0 + offset,
+                            from.1,
+                            from.0 + offset + width,
+                            to.1,
+                            color,
+                        );
                     }
                 };
                 let dashed = |on: f32, off: f32, s: &mut Sketch| {
-                    let (mut p, end) = if horizontal { (from.0, to.0) } else { (from.1, to.1) };
+                    let (mut p, end) = if horizontal {
+                        (from.0, to.0)
+                    } else {
+                        (from.1, to.1)
+                    };
                     while p < end {
                         let e = (p + on).min(end);
                         if horizontal {
@@ -1664,7 +1900,10 @@ impl Dialog {
                     // The edge nearest to the pointer, if it is close.
                     let b = this.preview_bounds.get();
                     let (w, h) = (f32::from(b.size.width), f32::from(b.size.height));
-                    let (x, y) = (f32::from(ev.position.x - b.left()), f32::from(ev.position.y - b.top()));
+                    let (x, y) = (
+                        f32::from(ev.position.x - b.left()),
+                        f32::from(ev.position.y - b.top()),
+                    );
                     let (x0, y0, x1, y1) = (14.0, 14.0, w - 14.0, h - 14.0);
                     let candidates = [
                         (TOP, (y - y0).abs()),
@@ -1676,7 +1915,9 @@ impl Dialog {
                     ];
                     let nearest = candidates
                         .iter()
-                        .filter(|(i, _)| (*i != INNER_H || this.many_rows) && (*i != INNER_V || this.many_cols))
+                        .filter(|(i, _)| {
+                            (*i != INNER_H || this.many_rows) && (*i != INNER_V || this.many_cols)
+                        })
                         .min_by(|a, b| a.1.total_cmp(&b.1));
                     if let Some((index, distance)) = nearest {
                         if *distance <= 10.0 {
@@ -1689,7 +1930,12 @@ impl Dialog {
         // The buttons around the diagram. The two diagonals are there for
         // the shape of Excel's tab; the workbook model has no diagonal
         // borders, so they stay disabled.
-        let edge_button = |id: &'static str, icon_name: &'static str, tip: &'static str, index: Option<usize>, this: &Self, cx: &mut Context<Self>| {
+        let edge_button = |id: &'static str,
+                           icon_name: &'static str,
+                           tip: &'static str,
+                           index: Option<usize>,
+                           this: &Self,
+                           cx: &mut Context<Self>| {
             let enabled = match index {
                 Some(INNER_H) => this.many_rows,
                 Some(INNER_V) => this.many_cols,
@@ -1706,10 +1952,22 @@ impl Dialog {
                 .justify_center()
                 .rounded(px(3.))
                 .border_1()
-                .border_color(c(if on { theme::ACCENT } else { theme::BORDER_STRONG }))
+                .border_color(c(if on {
+                    theme::ACCENT
+                } else {
+                    theme::BORDER_STRONG
+                }))
                 .bg(c(if on { theme::ACCENT_LIGHT } else { 0xFFFFFF }))
                 .when(enabled, |d| d.hover(|s| s.bg(c(theme::HOVER))))
-                .child(icon(icon_name, 16.0, if enabled { theme::TEXT } else { theme::TEXT_DISABLED }))
+                .child(icon(
+                    icon_name,
+                    16.0,
+                    if enabled {
+                        theme::TEXT
+                    } else {
+                        theme::TEXT_DISABLED
+                    },
+                ))
                 .tooltip(tooltip(tip))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if let Some(index) = index {
@@ -1717,7 +1975,12 @@ impl Dialog {
                     }
                 }))
         };
-        let preset = |id: &'static str, icon_name: &'static str, text: &'static str, enabled: bool, cx: &mut Context<Self>, f: fn(&mut Self, &mut Context<Self>)| {
+        let preset = |id: &'static str,
+                      icon_name: &'static str,
+                      text: &'static str,
+                      enabled: bool,
+                      cx: &mut Context<Self>,
+                      f: fn(&mut Self, &mut Context<Self>)| {
             div()
                 .id(id)
                 .w(px(64.))
@@ -1736,9 +1999,21 @@ impl Dialog {
                         .border_color(c(theme::BORDER_STRONG))
                         .bg(c(0xFFFFFF))
                         .when(enabled, |d| d.hover(|s| s.bg(c(theme::HOVER))))
-                        .child(icon(icon_name, 22.0, if enabled { theme::TEXT } else { theme::TEXT_DISABLED })),
+                        .child(icon(
+                            icon_name,
+                            22.0,
+                            if enabled {
+                                theme::TEXT
+                            } else {
+                                theme::TEXT_DISABLED
+                            },
+                        )),
                 )
-                .child(div().when(!enabled, |d| d.text_color(c(theme::TEXT_DISABLED))).child(text))
+                .child(
+                    div()
+                        .when(!enabled, |d| d.text_color(c(theme::TEXT_DISABLED)))
+                        .child(text),
+                )
                 .on_click(cx.listener(move |this, _, _, cx| {
                     if enabled {
                         f(this, cx)
@@ -1897,7 +2172,11 @@ impl Dialog {
     // ---- Fill ---------------------------------------------------------------------
 
     fn fill_tab(&mut self, cx: &mut Context<Self>) -> AnyElement {
-        let shown = if self.fill.mixed && !self.fill.changed { None } else { self.fill.value };
+        let shown = if self.fill.mixed && !self.fill.changed {
+            None
+        } else {
+            self.fill.value
+        };
         div()
             .flex()
             .gap(px(28.))
@@ -1918,7 +2197,10 @@ impl Dialog {
                             .h(px(60.))
                             .border_1()
                             .border_color(c(theme::BORDER_STRONG))
-                            .bg(c(shown.flatten().map(|col| col.value()).unwrap_or(0xFFFFFF))),
+                            .bg(c(shown
+                                .flatten()
+                                .map(|col| col.value())
+                                .unwrap_or(0xFFFFFF))),
                     ),
                 ),
             )
@@ -1981,16 +2263,24 @@ impl Render for Dialog {
         dialog(&self.modal, t("Format Cells", "Format de cellule"))
             .width(560.0)
             .on_ok(cx.listener(Self::ok))
-            .child(
-                TabStrip::new("tabs", tabs, selected).on_change(cx.listener(move |this, ix: &usize, _, cx| {
+            .child(TabStrip::new("tabs", tabs, selected).on_change(cx.listener(
+                move |this, ix: &usize, _, cx| {
                     let tab = shown[*ix];
                     this.tab = tab;
                     // The dialog reopens on the tab it was left on.
-                    this.modal.update_app(cx, |app, _| app.ext_mut::<Memory>().tab = tab);
+                    this.modal
+                        .update_app(cx, |app, _| app.ext_mut::<Memory>().tab = tab);
                     cx.notify();
-                })),
+                },
+            )))
+            .child(
+                div()
+                    .h(px(352.))
+                    .flex()
+                    .flex_col()
+                    .font_weight(FontWeight::NORMAL)
+                    .child(body),
             )
-            .child(div().h(px(352.)).flex().flex_col().font_weight(FontWeight::NORMAL).child(body))
             .footer(footer)
     }
 }

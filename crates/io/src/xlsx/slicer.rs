@@ -81,7 +81,10 @@ pub(super) fn pivot_cache_number(wb: &Workbook, cache: &Arc<PivotCache>) -> Opti
             seen.push(&p.cache);
         }
         if Arc::ptr_eq(&p.cache, cache) {
-            return seen.iter().position(|known| Arc::ptr_eq(known, cache)).map(|at| at + 1);
+            return seen
+                .iter()
+                .position(|known| Arc::ptr_eq(known, cache))
+                .map(|at| at + 1);
         }
     }
     None
@@ -102,8 +105,18 @@ pub(super) fn push_pivot_tables(x: &mut String, wb: &Workbook, pivots: &[u32]) {
 /// The cell a point lies in, `offset` pixels after the start of line
 /// `index`, and what is left of the offset there.
 fn locate(sheet: &Sheet, cols: bool, mut index: u32, mut offset: f64) -> (u32, f64) {
-    let size = |i: u32| if cols { sheet.col_width(i) as f64 } else { sheet.row_height(i) as f64 };
-    let last = if cols { opensheet_engine::MAX_COLS } else { opensheet_engine::MAX_ROWS } - 1;
+    let size = |i: u32| {
+        if cols {
+            sheet.col_width(i) as f64
+        } else {
+            sheet.row_height(i) as f64
+        }
+    };
+    let last = if cols {
+        opensheet_engine::MAX_COLS
+    } else {
+        opensheet_engine::MAX_ROWS
+    } - 1;
     while index < last && offset >= size(index) && offset > 0.0 {
         offset -= size(index);
         index += 1;
@@ -113,13 +126,26 @@ fn locate(sheet: &Sheet, cols: bool, mut index: u32, mut offset: f64) -> (u32, f
 
 /// Pixels from the start of line `from` to a point of line `to`.
 fn distance(sheet: &Sheet, cols: bool, from: u32, to: u32, offset: f64) -> f64 {
-    let size = |i: u32| if cols { sheet.col_width(i) as f64 } else { sheet.row_height(i) as f64 };
+    let size = |i: u32| {
+        if cols {
+            sheet.col_width(i) as f64
+        } else {
+            sheet.row_height(i) as f64
+        }
+    };
     (from..to).map(size).sum::<f64>() + offset
 }
 
 /// One frame of a drawing holding a slicer or a timeline. `id` is the
 /// object's own in the part.
-fn push_frame(x: &mut String, sheet: &Sheet, id: usize, name: &str, timeline: bool, place: ((u32, u32), (f32, f32), (f32, f32))) {
+fn push_frame(
+    x: &mut String,
+    sheet: &Sheet,
+    id: usize,
+    name: &str,
+    timeline: bool,
+    place: ((u32, u32), (f32, f32), (f32, f32)),
+) {
     let (anchor, offset, size) = place;
     let left = locate(sheet, true, anchor.1, offset.0 as f64);
     let top = locate(sheet, false, anchor.0, offset.1 as f64);
@@ -147,15 +173,27 @@ fn push_frame(x: &mut String, sheet: &Sheet, id: usize, name: &str, timeline: bo
     // Applications that know the object take the first choice; the others
     // get a rectangle saying what it stands for.
     if timeline {
-        w!(x, "<mc:AlternateContent xmlns:mc=\"{NS_MC}\" xmlns:tsle=\"{NS_TSLE}\"><mc:Choice Requires=\"tsle\">");
+        w!(
+            x,
+            "<mc:AlternateContent xmlns:mc=\"{NS_MC}\" xmlns:tsle=\"{NS_TSLE}\"><mc:Choice Requires=\"tsle\">"
+        );
     } else {
-        w!(x, "<mc:AlternateContent xmlns:mc=\"{NS_MC}\" xmlns:a14=\"{NS_A14}\"><mc:Choice Requires=\"a14\">");
+        w!(
+            x,
+            "<mc:AlternateContent xmlns:mc=\"{NS_MC}\" xmlns:a14=\"{NS_A14}\"><mc:Choice Requires=\"a14\">"
+        );
     }
-    w!(x, "<xdr:graphicFrame macro=\"\"><xdr:nvGraphicFramePr><xdr:cNvPr id=\"{id}\"");
+    w!(
+        x,
+        "<xdr:graphicFrame macro=\"\"><xdr:nvGraphicFramePr><xdr:cNvPr id=\"{id}\""
+    );
     push_text_attr(x, "name", name);
     x.push_str("/><xdr:cNvGraphicFramePr/></xdr:nvGraphicFramePr>");
     x.push_str("<xdr:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/></xdr:xfrm>");
-    w!(x, "<a:graphic><a:graphicData uri=\"{ns}\"><{prefix}:{element}");
+    w!(
+        x,
+        "<a:graphic><a:graphicData uri=\"{ns}\"><{prefix}:{element}"
+    );
     if !timeline {
         w!(x, " xmlns:sle=\"{NS_SLE}\"");
     }
@@ -188,11 +226,25 @@ pub(crate) fn anchors(sheet: &Sheet, first_id: usize) -> String {
     let mut x = String::new();
     let mut id = first_id;
     for s in &sheet.slicers {
-        push_frame(&mut x, sheet, id, &s.name, false, (s.anchor, s.offset, s.size));
+        push_frame(
+            &mut x,
+            sheet,
+            id,
+            &s.name,
+            false,
+            (s.anchor, s.offset, s.size),
+        );
         id += 1;
     }
     for t in &sheet.timelines {
-        push_frame(&mut x, sheet, id, &t.name, true, (t.anchor, t.offset, t.size));
+        push_frame(
+            &mut x,
+            sheet,
+            id,
+            &t.name,
+            true,
+            (t.anchor, t.offset, t.size),
+        );
         id += 1;
     }
     x
@@ -208,16 +260,25 @@ pub(super) struct Frame {
 }
 
 /// The frames of slicers and timelines in the drawing of a worksheet.
-pub(super) fn read_frames<R: Read + Seek>(pkg: &mut Package<R>, sheet_part: &str, sheet: &Sheet) -> Vec<Frame> {
+pub(super) fn read_frames<R: Read + Seek>(
+    pkg: &mut Package<R>,
+    sheet_part: &str,
+    sheet: &Sheet,
+) -> Vec<Frame> {
     let mut out = Vec::new();
-    for rel in relationships(pkg, sheet_part).into_iter().filter(|rel| rel.kind == "drawing") {
+    for rel in relationships(pkg, sheet_part)
+        .into_iter()
+        .filter(|rel| rel.kind == "drawing")
+    {
         let Ok(Some(xml)) = pkg.read(&rel.target) else {
             continue;
         };
         let mut r = Reader::new(&xml);
         loop {
             match r.next() {
-                Event::Open(t) if matches!(t.name, "twoCellAnchor" | "oneCellAnchor") && !t.empty => {
+                Event::Open(t)
+                    if matches!(t.name, "twoCellAnchor" | "oneCellAnchor") && !t.empty =>
+                {
                     out.extend(read_frame(&mut r, sheet));
                 }
                 Event::Eof => break,
@@ -245,7 +306,8 @@ fn read_frame(r: &mut Reader, sheet: &Sheet) -> Option<Frame> {
                         match r.next() {
                             Event::Open(c) => {
                                 let name = c.name;
-                                let number = r.text(&c).trim().parse::<f64>().unwrap_or(0.0).max(0.0);
+                                let number =
+                                    r.text(&c).trim().parse::<f64>().unwrap_or(0.0).max(0.0);
                                 match name {
                                     "col" => corner.0 = number as u32,
                                     "colOff" => corner.1 = number / EMU_PER_PX,
@@ -267,7 +329,10 @@ fn read_frame(r: &mut Reader, sheet: &Sheet) -> Option<Frame> {
                 }
                 "slicer" | "timeslicer" => {
                     if let Some(name) = t.attr("name") {
-                        named.get_or_insert((decode_cell_text(&name).into_owned(), t.name == "timeslicer"));
+                        named.get_or_insert((
+                            decode_cell_text(&name).into_owned(),
+                            t.name == "timeslicer",
+                        ));
                     }
                     depth += usize::from(!t.empty);
                 }
@@ -306,8 +371,13 @@ pub(super) fn sheets_by_id(wb: &Workbook, workbook_xml: &str) -> HashMap<u32, us
     loop {
         match r.next() {
             Event::Open(t) if t.name == "sheet" => {
-                let name = t.attr("name").map(|name| decode_cell_text(&name).into_owned());
-                if let (Some(id), Some(index)) = (t.attr_u32("sheetId"), name.and_then(|name| wb.sheet_index(&name))) {
+                let name = t
+                    .attr("name")
+                    .map(|name| decode_cell_text(&name).into_owned());
+                if let (Some(id), Some(index)) = (
+                    t.attr_u32("sheetId"),
+                    name.and_then(|name| wb.sheet_index(&name)),
+                ) {
                     out.insert(id, index);
                 }
                 r.skip(&t);
@@ -321,7 +391,12 @@ pub(super) fn sheets_by_id(wb: &Workbook, workbook_xml: &str) -> HashMap<u32, us
 }
 
 /// A `<pivotTables>` list as ids of PivotTables of `wb`.
-pub(super) fn read_pivot_tables(r: &mut Reader, tag: &Tag, wb: &Workbook, sheets: &HashMap<u32, usize>) -> Vec<u32> {
+pub(super) fn read_pivot_tables(
+    r: &mut Reader,
+    tag: &Tag,
+    wb: &Workbook,
+    sheets: &HashMap<u32, usize>,
+) -> Vec<u32> {
     let mut out = Vec::new();
     if tag.empty {
         return out;
@@ -329,10 +404,18 @@ pub(super) fn read_pivot_tables(r: &mut Reader, tag: &Tag, wb: &Workbook, sheets
     loop {
         match r.next() {
             Event::Open(t) => {
-                let name = t.attr("name").map(|name| decode_cell_text(&name).to_lowercase());
+                let name = t
+                    .attr("name")
+                    .map(|name| decode_cell_text(&name).to_lowercase());
                 let sheet = t.attr_u32("tabId").and_then(|id| sheets.get(&id));
                 if let (Some(name), Some(sheet)) = (name, sheet) {
-                    out.extend(wb.sheets[*sheet].pivots.iter().find(|p| p.name.to_lowercase() == name).map(|p| p.id));
+                    out.extend(
+                        wb.sheets[*sheet]
+                            .pivots
+                            .iter()
+                            .find(|p| p.name.to_lowercase() == name)
+                            .map(|p| p.id),
+                    );
                 }
                 r.skip(&t);
             }
@@ -347,7 +430,10 @@ pub(super) fn read_pivot_tables(r: &mut Reader, tag: &Tag, wb: &Workbook, sheets
 
 fn cache_names(wb: &Workbook) -> Vec<&str> {
     let mut names: Vec<&str> = Vec::new();
-    let all = wb.slicers().map(|(_, s)| s.cache_name.as_str()).chain(wb.timelines().map(|(_, t)| t.cache_name.as_str()));
+    let all = wb
+        .slicers()
+        .map(|(_, s)| s.cache_name.as_str())
+        .chain(wb.timelines().map(|(_, t)| t.cache_name.as_str()));
     for name in all {
         if !names.contains(&name) {
             names.push(name);
@@ -371,7 +457,9 @@ pub(crate) fn push_names(x: &mut String, wb: &Workbook) {
 
 /// True for a defined name that only stands for a cache.
 pub(crate) fn is_cache_name(wb: &Workbook, name: &str) -> bool {
-    cache_names(wb).iter().any(|known| known.eq_ignore_ascii_case(name))
+    cache_names(wb)
+        .iter()
+        .any(|known| known.eq_ignore_ascii_case(name))
 }
 
 /// The extensions of a worksheet naming its slicers and timelines.
@@ -399,7 +487,10 @@ pub(crate) fn write_ext(list: &mut SheetExtensions, sheet: &Sheet) {
 pub(crate) fn push_workbook_ext(x: &mut String, list: CacheList, ids: &[usize]) {
     match list {
         CacheList::PivotSlicers => {
-            w!(x, "<ext uri=\"{EXT_BOOK_SLICERS}\" xmlns:x14=\"{NS_X14}\"><x14:slicerCaches>");
+            w!(
+                x,
+                "<ext uri=\"{EXT_BOOK_SLICERS}\" xmlns:x14=\"{NS_X14}\"><x14:slicerCaches>"
+            );
             for id in ids {
                 w!(x, "<x14:slicerCache r:id=\"rId{id}\"/>");
             }
@@ -416,7 +507,10 @@ pub(crate) fn push_workbook_ext(x: &mut String, list: CacheList, ids: &[usize]) 
             x.push_str("</x15:slicerCaches></ext>");
         }
         CacheList::Timelines => {
-            w!(x, "<ext uri=\"{EXT_BOOK_TIMELINES}\" xmlns:x15=\"{NS_X15}\"><x15:timelineCacheRefs>");
+            w!(
+                x,
+                "<ext uri=\"{EXT_BOOK_TIMELINES}\" xmlns:x15=\"{NS_X15}\"><x15:timelineCacheRefs>"
+            );
             for id in ids {
                 w!(x, "<x15:timelineCacheRef r:id=\"rId{id}\"/>");
             }
@@ -428,7 +522,12 @@ pub(crate) fn push_workbook_ext(x: &mut String, list: CacheList, ids: &[usize]) 
 /// The `<extLst>` of the definition of pivot cache number `n`: the id
 /// slicers and timelines name it by, when some do.
 pub(crate) fn cache_extensions(wb: &Workbook, cache: &Arc<PivotCache>, n: usize) -> String {
-    let on_cache = |pivots: &[u32]| pivots.iter().filter_map(|id| wb.pivot(*id)).any(|(_, p)| Arc::ptr_eq(&p.cache, cache));
+    let on_cache = |pivots: &[u32]| {
+        pivots
+            .iter()
+            .filter_map(|id| wb.pivot(*id))
+            .any(|(_, p)| Arc::ptr_eq(&p.cache, cache))
+    };
     let sliced = wb.slicers().any(|(_, s)| on_cache(s.pivots()));
     let timed = wb.timelines().any(|(_, t)| on_cache(&t.pivots));
     if !sliced && !timed {
@@ -477,7 +576,9 @@ fn cache_xml(wb: &Workbook, slicer: &Slicer) -> Option<String> {
     );
     push_text_attr(&mut x, "name", &slicer.cache_name);
     let hide = if slicer.hide_no_data {
-        format!("<x:ext uri=\"{EXT_HIDE_NO_DATA}\" xmlns:x15=\"{NS_X15}\"><x15:slicerCacheHideItemsWithNoData/></x:ext>")
+        format!(
+            "<x:ext uri=\"{EXT_HIDE_NO_DATA}\" xmlns:x15=\"{NS_X15}\"><x15:slicerCacheHideItemsWithNoData/></x:ext>"
+        )
     } else {
         String::new()
     };
@@ -536,7 +637,10 @@ fn cache_xml(wb: &Workbook, slicer: &Slicer) -> Option<String> {
 /// A part listing slicers of one sheet.
 fn slicers_xml(slicers: &[&Slicer]) -> String {
     let mut x = String::from(XML_DECL);
-    w!(x, "<slicers xmlns=\"{NS_X14}\" xmlns:mc=\"{NS_MC}\" mc:Ignorable=\"x\" xmlns:x=\"{NS_MAIN}\">");
+    w!(
+        x,
+        "<slicers xmlns=\"{NS_X14}\" xmlns:mc=\"{NS_MC}\" mc:Ignorable=\"x\" xmlns:x=\"{NS_MAIN}\">"
+    );
     for s in slicers {
         x.push_str("<slicer");
         push_text_attr(&mut x, "name", &s.name);
@@ -554,7 +658,11 @@ fn slicers_xml(slicers: &[&Slicer]) -> String {
         if s.style != "SlicerStyleLight1" && !s.style.is_empty() {
             push_text_attr(&mut x, "style", &s.style);
         }
-        w!(x, " rowHeight=\"{}\"/>", (s.button_height.max(1.0) as f64 * EMU_PER_PX).round() as i64);
+        w!(
+            x,
+            " rowHeight=\"{}\"/>",
+            (s.button_height.max(1.0) as f64 * EMU_PER_PX).round() as i64
+        );
     }
     x.push_str("</slicers>");
     x
@@ -573,12 +681,20 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
         };
         caches.push(&slicer.cache_name);
         let n = caches.len();
-        extras.add_part(format!("xl/slicerCaches/slicerCache{n}.xml"), Some(CT_SLICER_CACHE), xml);
+        extras.add_part(
+            format!("xl/slicerCaches/slicerCache{n}.xml"),
+            Some(CT_SLICER_CACHE),
+            xml,
+        );
         let list = match slicer.source {
             SlicerSource::Pivot { .. } => CacheList::PivotSlicers,
             SlicerSource::Table { .. } => CacheList::TableSlicers,
         };
-        extras.add_listed_cache(list, REL_SLICER_CACHE, &format!("slicerCaches/slicerCache{n}.xml"));
+        extras.add_listed_cache(
+            list,
+            REL_SLICER_CACHE,
+            &format!("slicerCaches/slicerCache{n}.xml"),
+        );
     }
     let mut parts = 0;
     for (index, sheet) in wb.sheets.iter().enumerate() {
@@ -593,8 +709,17 @@ pub(crate) fn add_parts(wb: &Workbook, extras: &mut Extras) {
                 .filter(|s| matches!(s.source, SlicerSource::Table { .. }) == of_table)
                 .collect();
             parts += 1;
-            extras.add_part(format!("xl/slicers/slicer{parts}.xml"), Some(CT_SLICER), slicers_xml(&listed));
-            extras.relate_sheet(index, id, REL_SLICER, &format!("../slicers/slicer{parts}.xml"));
+            extras.add_part(
+                format!("xl/slicers/slicer{parts}.xml"),
+                Some(CT_SLICER),
+                slicers_xml(&listed),
+            );
+            extras.relate_sheet(
+                index,
+                id,
+                REL_SLICER,
+                &format!("../slicers/slicer{parts}.xml"),
+            );
         }
     }
 }
@@ -614,7 +739,12 @@ struct ReadCache {
     items: Vec<(u32, bool)>,
 }
 
-fn parse_cache(xml: &str, wb: &Workbook, sheets: &HashMap<u32, usize>, tables: &HashMap<(u32, u32), (u32, String)>) -> Option<ReadCache> {
+fn parse_cache(
+    xml: &str,
+    wb: &Workbook,
+    sheets: &HashMap<u32, usize>,
+    tables: &HashMap<(u32, u32), (u32, String)>,
+) -> Option<ReadCache> {
     let mut r = Reader::new(xml);
     let root = loop {
         match r.next() {
@@ -643,7 +773,10 @@ fn parse_cache(xml: &str, wb: &Workbook, sheets: &HashMap<u32, usize>, tables: &
     let sorting = |cache: &mut ReadCache, t: &Tag| {
         cache.descending = t.attr("sortOrder").as_deref() == Some("descending");
         cache.custom_lists = t.attr_bool("customListSort").unwrap_or(true);
-        cache.cross_filter = t.attr("crossFilter").map(|v| v.into_owned()).unwrap_or_default();
+        cache.cross_filter = t
+            .attr("crossFilter")
+            .map(|v| v.into_owned())
+            .unwrap_or_default();
     };
     loop {
         match r.next() {
@@ -661,7 +794,10 @@ fn parse_cache(xml: &str, wb: &Workbook, sheets: &HashMap<u32, usize>, tables: &
                 }
                 "tableSlicerCache" => {
                     sorting(&mut cache, &t);
-                    let key = (t.attr_u32("tableId").unwrap_or(0), t.attr_u32("column").unwrap_or(0));
+                    let key = (
+                        t.attr_u32("tableId").unwrap_or(0),
+                        t.attr_u32("column").unwrap_or(0),
+                    );
                     table = tables.get(&key).cloned();
                     // A column the table no longer has: no slicer.
                     table.as_ref()?;
@@ -688,10 +824,17 @@ fn parse_cache(xml: &str, wb: &Workbook, sheets: &HashMap<u32, usize>, tables: &
 /// The table columns of the file by the ids caches name them with:
 /// (`tableId`, id of the column) → (id of the table in `wb`, name of the
 /// column).
-fn table_columns<R: Read + Seek>(pkg: &mut Package<R>, wb: &Workbook, sheet_parts: &[String]) -> HashMap<(u32, u32), (u32, String)> {
+fn table_columns<R: Read + Seek>(
+    pkg: &mut Package<R>,
+    wb: &Workbook,
+    sheet_parts: &[String],
+) -> HashMap<(u32, u32), (u32, String)> {
     let mut out = HashMap::new();
     for part in sheet_parts {
-        for rel in relationships(pkg, part).into_iter().filter(|rel| rel.kind == "table") {
+        for rel in relationships(pkg, part)
+            .into_iter()
+            .filter(|rel| rel.kind == "table")
+        {
             let Ok(Some(xml)) = pkg.read(&rel.target) else {
                 continue;
             };
@@ -701,16 +844,28 @@ fn table_columns<R: Read + Seek>(pkg: &mut Package<R>, wb: &Workbook, sheet_part
                 match r.next() {
                     Event::Open(t) if t.name == "table" => {
                         let name = t.attr("displayName").or_else(|| t.attr("name"));
-                        let known = name.and_then(|name| wb.table_by_name(&decode_cell_text(&name)).map(|(_, table)| table.id));
+                        let known = name.and_then(|name| {
+                            wb.table_by_name(&decode_cell_text(&name))
+                                .map(|(_, table)| table.id)
+                        });
                         table = t.attr_u32("id").zip(known);
                     }
                     Event::Open(t) if t.name == "tableColumn" => {
-                        if let (Some((file_id, id)), Some(column), Some(name)) = (table, t.attr_u32("id"), t.attr("name")) {
-                            out.insert((file_id, column), (id, decode_cell_text(&name).into_owned()));
+                        if let (Some((file_id, id)), Some(column), Some(name)) =
+                            (table, t.attr_u32("id"), t.attr("name"))
+                        {
+                            out.insert(
+                                (file_id, column),
+                                (id, decode_cell_text(&name).into_owned()),
+                            );
                         }
                         r.skip(&t);
                     }
-                    Event::Open(t) if matches!(t.name, "autoFilter" | "sortState" | "tableStyleInfo") => r.skip(&t),
+                    Event::Open(t)
+                        if matches!(t.name, "autoFilter" | "sortState" | "tableStyleInfo") =>
+                    {
+                        r.skip(&t)
+                    }
                     Event::Eof => break,
                     _ => {}
                 }
@@ -729,7 +884,10 @@ pub(crate) fn read_all<R: Read + Seek>(
     workbook_rels: &[Rel],
     sheet_parts: &[String],
 ) {
-    let cache_parts: Vec<&Rel> = workbook_rels.iter().filter(|rel| rel.kind == "slicerCache").collect();
+    let cache_parts: Vec<&Rel> = workbook_rels
+        .iter()
+        .filter(|rel| rel.kind == "slicerCache")
+        .collect();
     if cache_parts.is_empty() {
         return;
     }
@@ -744,7 +902,10 @@ pub(crate) fn read_all<R: Read + Seek>(
     let mut next_id = 1;
     for (index, part) in sheet_parts.iter().enumerate() {
         let frames = read_frames(pkg, part, &wb.sheets[index]);
-        for rel in relationships(pkg, part).into_iter().filter(|rel| rel.kind == "slicer") {
+        for rel in relationships(pkg, part)
+            .into_iter()
+            .filter(|rel| rel.kind == "slicer")
+        {
             let Ok(Some(xml)) = pkg.read(&rel.target) else {
                 continue;
             };
@@ -764,8 +925,12 @@ pub(crate) fn read_all<R: Read + Seek>(
                 let (Some(frame), Some(cache)) = (frame, cache) else {
                     continue;
                 };
-                let taken = wb.slicers().any(|(_, s)| s.name.to_lowercase() == name.to_lowercase());
-                if taken || matches!(&cache.source, SlicerSource::Pivot { pivots, .. } if pivots.is_empty()) {
+                let taken = wb
+                    .slicers()
+                    .any(|(_, s)| s.name.to_lowercase() == name.to_lowercase());
+                if taken
+                    || matches!(&cache.source, SlicerSource::Pivot { pivots, .. } if pivots.is_empty())
+                {
                     continue;
                 }
                 wb.sheets[index].slicers.push(Slicer {
@@ -789,7 +954,8 @@ pub(crate) fn read_all<R: Read + Seek>(
                     custom_lists: cache.custom_lists,
                     hide_no_data: cache.hide_no_data,
                     indicate_no_data: cache.cross_filter != "none",
-                    no_data_last: cache.cross_filter.is_empty() || cache.cross_filter == "showItemsWithDataAtTop",
+                    no_data_last: cache.cross_filter.is_empty()
+                        || cache.cross_filter == "showItemsWithDataAtTop",
                     show_deleted: cache.show_deleted,
                     start_item: t.attr_u32("startItem").unwrap_or(0),
                 });
@@ -807,7 +973,12 @@ pub(crate) fn read_all<R: Read + Seek>(
         if !wb.slicers().any(|(_, s)| s.cache_name == cache.name) {
             continue;
         }
-        let selected: Vec<u32> = cache.items.iter().filter(|(_, s)| *s).map(|(x, _)| *x).collect();
+        let selected: Vec<u32> = cache
+            .items
+            .iter()
+            .filter(|(_, s)| *s)
+            .map(|(x, _)| *x)
+            .collect();
         let partial = !selected.is_empty() && selected.len() < cache.items.len();
         let _ = wb.pivot_update_many(pivots, true, |p| {
             let Some(f) = p.cache.field_index(field) else {

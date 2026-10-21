@@ -5,8 +5,8 @@
 
 use super::compute::{self, FormatOf, NONE, Tag, Tree};
 use super::{
-    Area, AxisField, FieldGroup, GroupBy, GroupKind, PivotCache, PivotCell, PivotError, PivotSource, PivotTable,
-    Report, cuts, same_name,
+    Area, AxisField, FieldGroup, GroupBy, GroupKind, PivotCache, PivotCell, PivotError,
+    PivotSource, PivotTable, Report, cuts, same_name,
 };
 use crate::ast::StructuralEdit;
 use crate::refs::Rect;
@@ -68,12 +68,25 @@ fn put(sh: &mut Sheet, row: u32, col: u32, value: Value, style: StyleId) {
     } else {
         Content::Value(value.clone())
     };
-    sh.cells.insert((row, col), Cell { content, value, style });
+    sh.cells.insert(
+        (row, col),
+        Cell {
+            content,
+            value,
+            style,
+        },
+    );
 }
 
 /// Insert the fields `new` where the first of the fields `old` (indices in
 /// the definition `before` the cache changed) sat, in its area.
-fn replace_in_area(before: &PivotTable, p: &mut PivotTable, old: &[usize], new: &[usize], locale: &crate::Locale) {
+fn replace_in_area(
+    before: &PivotTable,
+    p: &mut PivotTable,
+    old: &[usize],
+    new: &[usize],
+    locale: &crate::Locale,
+) {
     let Some(area) = old.iter().find_map(|f| before.axis_of(*f)) else {
         return;
     };
@@ -82,7 +95,10 @@ fn replace_in_area(before: &PivotTable, p: &mut PivotTable, old: &[usize], new: 
         Area::Columns => before.col_fields.iter().map(AxisField::field).collect(),
         _ => before.page_fields.iter().map(|pf| Some(pf.field)).collect(),
     };
-    let Some(at) = entries.iter().position(|e| e.is_some_and(|f| old.contains(&f))) else {
+    let Some(at) = entries
+        .iter()
+        .position(|e| e.is_some_and(|f| old.contains(&f)))
+    else {
         return;
     };
     for (k, f) in new.iter().enumerate() {
@@ -116,7 +132,11 @@ impl Workbook {
 
     /// The PivotTable a cell belongs to (report or filter block).
     pub fn pivot_at(&self, sheet: usize, row: u32, col: u32) -> Option<&PivotTable> {
-        self.sheets.get(sheet)?.pivots.iter().find(|p| p.contains(row, col))
+        self.sheets
+            .get(sheet)?
+            .pivots
+            .iter()
+            .find(|p| p.contains(row, col))
     }
 
     /// Whether a cell is part of a PivotTable, and which part.
@@ -149,9 +169,11 @@ impl Workbook {
     /// make this change for the selected cells because it will affect a
     /// PivotTable").
     pub fn pivot_blocks_edit(&self, sheet: usize, edit: StructuralEdit) -> bool {
-        self.sheets
-            .get(sheet)
-            .is_some_and(|sh| sh.pivots.iter().any(|p| p.footprint().any(|r| cuts(r, edit))))
+        self.sheets.get(sheet).is_some_and(|sh| {
+            sh.pivots
+                .iter()
+                .any(|p| p.footprint().any(|r| cuts(r, edit)))
+        })
     }
 
     /// The name Excel would give the next PivotTable ("PivotTable1").
@@ -166,7 +188,12 @@ impl Workbook {
     // ---- writing -----------------------------------------------------------
 
     /// Why a report cannot be written where it is placed.
-    fn pivot_conflict(&self, x: &Placed, all: &[Placed], overwrite: bool) -> Result<(), PivotError> {
+    fn pivot_conflict(
+        &self,
+        x: &Placed,
+        all: &[Placed],
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let sh = &self.sheets[x.sheet];
         let own: Vec<Rect> = x
             .index
@@ -179,7 +206,9 @@ impl Workbook {
                 }
                 // A PivotTable changed along with this one counts where it
                 // is going, not where it was.
-                let moved = all.iter().find(|y| y.sheet == x.sheet && y.index == Some(oi));
+                let moved = all
+                    .iter()
+                    .find(|y| y.sheet == x.sheet && y.index == Some(oi));
                 let hit = match moved {
                     Some(y) => y.rects().any(|r| r.intersects(&rect)),
                     None => other.footprint().any(|r| r.intersects(&rect)),
@@ -198,12 +227,15 @@ impl Workbook {
                 continue;
             }
             let mine = |r: u32, c: u32| own.iter().any(|o| o.contains(r, c));
-            let data = sh
-                .cells
-                .range((rect.r0, rect.c0)..=(rect.r1, rect.c1))
-                .any(|((r, c), cell)| {
-                    *c >= rect.c0 && *c <= rect.c1 && !matches!(cell.content, Content::Empty) && !mine(*r, *c)
-                });
+            let data =
+                sh.cells
+                    .range((rect.r0, rect.c0)..=(rect.r1, rect.c1))
+                    .any(|((r, c), cell)| {
+                        *c >= rect.c0
+                            && *c <= rect.c1
+                            && !matches!(cell.content, Content::Empty)
+                            && !mine(*r, *c)
+                    });
             let spill = sh.spills.iter().any(|sp| {
                 let area = Rect::new(
                     sp.row,
@@ -228,26 +260,29 @@ impl Workbook {
         let (p, report) = (&x.pivot, &x.report);
         let general: Arc<str> = Arc::from("General");
         let mut memo: HashMap<(StyleId, FormatOf, Option<u8>), StyleId> = HashMap::new();
-        let mut styled = |wb: &mut Workbook, row: u32, col: u32, of: FormatOf, indent: Option<u8>| -> StyleId {
-            let current = wb.sheets[x.sheet].style_id_at(row, col);
-            *memo.entry((current, of, indent)).or_insert_with(|| {
-                let mut s = wb.styles.get(current).clone();
-                let code = match of {
-                    FormatOf::Nothing => None,
-                    FormatOf::Field(f) => p.label_format(f),
-                    FormatOf::Data(d) => p.data_format(d),
-                    FormatOf::Subtotal(d) => p.data_fields.get(d).and_then(|d| d.num_fmt.clone()),
-                };
-                s.num_fmt = code.unwrap_or_else(|| general.clone());
-                s.indent = indent.unwrap_or(0);
-                s.h_align = if indent.is_some() {
-                    HAlign::Left
-                } else {
-                    HAlign::General
-                };
-                wb.styles.intern(s)
-            })
-        };
+        let mut styled =
+            |wb: &mut Workbook, row: u32, col: u32, of: FormatOf, indent: Option<u8>| -> StyleId {
+                let current = wb.sheets[x.sheet].style_id_at(row, col);
+                *memo.entry((current, of, indent)).or_insert_with(|| {
+                    let mut s = wb.styles.get(current).clone();
+                    let code = match of {
+                        FormatOf::Nothing => None,
+                        FormatOf::Field(f) => p.label_format(f),
+                        FormatOf::Data(d) => p.data_format(d),
+                        FormatOf::Subtotal(d) => {
+                            p.data_fields.get(d).and_then(|d| d.num_fmt.clone())
+                        }
+                    };
+                    s.num_fmt = code.unwrap_or_else(|| general.clone());
+                    s.indent = indent.unwrap_or(0);
+                    s.h_align = if indent.is_some() {
+                        HAlign::Left
+                    } else {
+                        HAlign::General
+                    };
+                    wb.styles.intern(s)
+                })
+            };
         let (rows, cols) = report.size();
         for r in 0..rows {
             for c in 0..cols {
@@ -258,7 +293,13 @@ impl Workbook {
                     (None, false) => None,
                 };
                 let style = styled(self, row, col, report.format_of(r, c, p), indent);
-                put(&mut self.sheets[x.sheet], row, col, report.value(r, c).clone(), style);
+                put(
+                    &mut self.sheets[x.sheet],
+                    row,
+                    col,
+                    report.value(r, c).clone(),
+                    style,
+                );
             }
         }
         let Some(pages) = x.pages else {
@@ -268,7 +309,10 @@ impl Workbook {
             for c in pages.c0..=pages.c1 {
                 let (pr, pc) = (r - pages.r0, c - pages.c0);
                 let label = report.pages.iter().find(|pg| pg.row == pr && pg.col == pc);
-                let value = report.pages.iter().find(|pg| pg.row == pr && pg.col + 1 == pc);
+                let value = report
+                    .pages
+                    .iter()
+                    .find(|pg| pg.row == pr && pg.col + 1 == pc);
                 let (v, of) = match (label, value) {
                     (Some(pg), _) => (Value::text(p.field_caption(pg.field)), FormatOf::Nothing),
                     (None, Some(pg)) => (pg.value.clone(), FormatOf::Field(pg.field)),
@@ -281,7 +325,11 @@ impl Workbook {
     }
 
     /// Compute and write PivotTables, all or none.
-    pub(super) fn pivot_install(&mut self, batch: Vec<Pending>, overwrite: bool) -> Result<(), PivotError> {
+    pub(super) fn pivot_install(
+        &mut self,
+        batch: Vec<Pending>,
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let locale = self.locale;
         let mut placed = Vec::with_capacity(batch.len());
         for (sheet, index, mut pivot) in batch {
@@ -369,7 +417,11 @@ impl Workbook {
     }
 
     /// Every PivotTable built on `old`, moved onto `new`.
-    pub(super) fn pivot_rebound(&self, old: &Arc<PivotCache>, new: &Arc<PivotCache>) -> Vec<Pending> {
+    pub(super) fn pivot_rebound(
+        &self,
+        old: &Arc<PivotCache>,
+        new: &Arc<PivotCache>,
+    ) -> Vec<Pending> {
         let mut batch = Vec::new();
         for (si, sh) in self.sheets.iter().enumerate() {
             for (pi, p) in sh.pivots.iter().enumerate() {
@@ -453,7 +505,12 @@ impl Workbook {
 
     /// "Change Data Source": the PivotTable gets a cache of its own on the
     /// new source; fields are matched by name.
-    pub fn pivot_change_source(&mut self, id: u32, source: PivotSource, overwrite: bool) -> Result<(), PivotError> {
+    pub fn pivot_change_source(
+        &mut self,
+        id: u32,
+        source: PivotSource,
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let (si, pi) = self.pivot_position(id)?;
         let mut p = self.sheets[si].pivots[pi].clone();
         let mut cache = PivotCache::read(self, &source)?;
@@ -496,7 +553,12 @@ impl Workbook {
 
     /// "Move PivotTable": `dest` is where the top-left cell of the whole
     /// PivotTable goes, filters included.
-    pub fn pivot_move(&mut self, id: u32, dest: PivotDestination, overwrite: bool) -> Result<(), PivotError> {
+    pub fn pivot_move(
+        &mut self,
+        id: u32,
+        dest: PivotDestination,
+        overwrite: bool,
+    ) -> Result<(), PivotError> {
         let (si, pi) = self.pivot_position(id)?;
         let page_rows = self.sheets[si].pivots[pi].report.page_size().0;
         let above = if page_rows > 0 { page_rows + 1 } else { 0 };
@@ -535,13 +597,20 @@ impl Workbook {
         overwrite: bool,
     ) -> Result<(), PivotError> {
         let locale = self.locale;
-        let old = self.pivot(id).ok_or(PivotError::NoSuchPivot)?.1.cache.clone();
+        let old = self
+            .pivot(id)
+            .ok_or(PivotError::NoSuchPivot)?
+            .1
+            .cache
+            .clone();
         let periods = match area {
             Area::Rows | Area::Columns => old.auto_date_periods(field),
             _ => Vec::new(),
         };
         if periods.is_empty() {
-            return self.pivot_update(id, overwrite, |p| p.add_field(field, area, position, locale));
+            return self.pivot_update(id, overwrite, |p| {
+                p.add_field(field, area, position, locale)
+            });
         }
         let (cache, created) = old.with_date_groups(field, &periods, None, None, 1, locale)?;
         let base = cache
@@ -644,8 +713,14 @@ impl Workbook {
                 continue;
             }
             let at = match q.axis_of(field) {
-                Some(Area::Rows) => q.row_fields.iter().position(|a| *a == AxisField::Field(field)),
-                Some(Area::Columns) => q.col_fields.iter().position(|a| *a == AxisField::Field(field)),
+                Some(Area::Rows) => q
+                    .row_fields
+                    .iter()
+                    .position(|a| *a == AxisField::Field(field)),
+                Some(Area::Columns) => q
+                    .col_fields
+                    .iter()
+                    .position(|a| *a == AxisField::Field(field)),
                 _ => None,
             };
             if let (Some(area), Some(at)) = (q.axis_of(field), at) {
@@ -686,7 +761,11 @@ impl Workbook {
         };
         let mut batch = self.pivot_rebound(&old, &Arc::new(cache));
         if let Some(base) = base {
-            let periods: Vec<usize> = old.group_children(base).into_iter().filter(|f| by_range(*f)).collect();
+            let periods: Vec<usize> = old
+                .group_children(base)
+                .into_iter()
+                .filter(|f| by_range(*f))
+                .collect();
             for (si, pi, q) in &mut batch {
                 let Some(before) = pi.map(|pi| &self.sheets[*si].pivots[pi]) else {
                     continue;
@@ -704,8 +783,15 @@ impl Workbook {
     /// "Show Details" (double-click on a value): a new sheet, inserted
     /// before the PivotTable's, lists the source records behind the value.
     /// Returns the sheet and the range written, header row included.
-    pub fn pivot_show_details(&mut self, sheet: usize, row: u32, col: u32) -> Result<(usize, Rect), PivotError> {
-        let p = self.pivot_at(sheet, row, col).ok_or(PivotError::NotAValue)?;
+    pub fn pivot_show_details(
+        &mut self,
+        sheet: usize,
+        row: u32,
+        col: u32,
+    ) -> Result<(usize, Rect), PivotError> {
+        let p = self
+            .pivot_at(sheet, row, col)
+            .ok_or(PivotError::NotAValue)?;
         let body = p
             .location
             .filter(|b| b.contains(row, col))
@@ -719,7 +805,8 @@ impl Workbook {
             // Parents come before their children in the list of nodes.
             let mut inside = vec![false; tree.nodes.len()];
             for (n, node) in tree.nodes.iter().enumerate() {
-                inside[n] = n as u32 == target || (node.parent != NONE && inside[node.parent as usize]);
+                inside[n] =
+                    n as u32 == target || (node.parent != NONE && inside[node.parent as usize]);
             }
             inside
         };

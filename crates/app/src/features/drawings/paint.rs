@@ -8,12 +8,13 @@ use super::text::TextLook;
 use crate::grid::{Draw, FontResolver, GridLayout, Layer, pt_to_px};
 use crate::theme::{c, engine_color};
 use gpui::{
-    Bounds, Font, FontStyle, FontWeight, Hsla, IntoElement, PathBuilder, Pixels, Point, WindowTextSystem, WrappedLine,
-    canvas, point, prelude::*, px, size,
+    Bounds, Font, FontStyle, FontWeight, Hsla, IntoElement, PathBuilder, Pixels, Point,
+    WindowTextSystem, WrappedLine, canvas, point, prelude::*, px, size,
 };
 use opensheet_engine::Sheet;
 use opensheet_engine::drawing::{
-    Drawing, DrawingKind, Effects, Frame, LineEnd, Outline, Picture, PictureAdjust, Shape, ShapePreset, ShapeTool, TEXT_MARGIN,
+    Drawing, DrawingKind, Effects, Frame, LineEnd, Outline, Picture, PictureAdjust, Shape,
+    ShapePreset, ShapeTool, TEXT_MARGIN,
 };
 use opensheet_engine::style::Underline;
 
@@ -42,7 +43,10 @@ impl Pane {
 
     /// True when a box (x0, y0, x1, y1) shows in the pane.
     pub fn shows(&self, extent: (f32, f32, f32, f32)) -> bool {
-        extent.2 >= self.clip.0 && extent.0 <= self.clip.2 && extent.3 >= self.clip.1 && extent.1 <= self.clip.3
+        extent.2 >= self.clip.0
+            && extent.0 <= self.clip.2
+            && extent.3 >= self.clip.1
+            && extent.1 <= self.clip.3
     }
 }
 
@@ -56,7 +60,11 @@ pub fn panes(layout: &GridLayout) -> Vec<Pane> {
         if frozen > 0.0 {
             parts.push((header, header + frozen, header as f64));
         }
-        parts.push((header + frozen, end.max(header + frozen), header as f64 - scroll));
+        parts.push((
+            header + frozen,
+            end.max(header + frozen),
+            header as f64 - scroll,
+        ));
         parts
     };
     let columns = along(hw, layout.frozen_w, layout.width(), layout.scroll_x);
@@ -105,7 +113,13 @@ pub fn sheet_point(layout: &GridLayout, sheet: &Sheet, pane: &Pane, x: f32, y: f
 }
 
 /// Where a frame of the sheet is drawn in a pane.
-pub fn placed_frame(layout: &GridLayout, sheet: &Sheet, frame: Frame, turn: (f32, bool, bool), pane: &Pane) -> Placed {
+pub fn placed_frame(
+    layout: &GridLayout,
+    sheet: &Sheet,
+    frame: Frame,
+    turn: (f32, bool, bool),
+    pane: &Pane,
+) -> Placed {
     let (x0, y0) = zoomed(layout, sheet, frame.x, frame.y);
     let (x1, y1) = zoomed(layout, sheet, frame.x + frame.width, frame.y + frame.height);
     Placed {
@@ -144,7 +158,10 @@ pub fn extent_of(drawing: &Drawing, placed: &Placed, zoom: f32) -> (f32, f32, f3
     let effects = &drawing.effects;
     let mut room = 0.0f32;
     if let Some(shadow) = &effects.shadow {
-        room = room.max(px(shadow.distance + 2.0 * shadow.blur) + (shadow.size - 1.0).max(0.0) * width.max(height));
+        room = room.max(
+            px(shadow.distance + 2.0 * shadow.blur)
+                + (shadow.size - 1.0).max(0.0) * width.max(height),
+        );
     }
     if let Some(glow) = &effects.glow {
         room = room.max(px(glow.radius) + 2.0);
@@ -192,7 +209,14 @@ impl Brush<'_> {
 
     /// `dashes`: lengths of dashes and gaps in pixels; empty for a solid
     /// line.
-    pub(super) fn stroke(&self, line: &Polyline, width: f32, dashes: &[f32], color: Hsla, out: &mut Vec<Draw>) {
+    pub(super) fn stroke(
+        &self,
+        line: &Polyline,
+        width: f32,
+        dashes: &[f32],
+        color: Hsla,
+        out: &mut Vec<Draw>,
+    ) {
         if line.points.len() < 2 {
             return;
         }
@@ -217,7 +241,10 @@ impl Brush<'_> {
         let points: Vec<Pt> = (0..20)
             .map(|i| {
                 let angle = i as f32 / 20.0 * std::f32::consts::TAU;
-                (centre.0 + radius * angle.cos(), centre.1 + radius * angle.sin())
+                (
+                    centre.0 + radius * angle.cos(),
+                    centre.1 + radius * angle.sin(),
+                )
             })
             .collect();
         self.fill(&points, color, out);
@@ -236,8 +263,16 @@ pub fn text_look(shape: &Shape, zoom: f32, fonts: &FontResolver) -> TextLook {
             family: fonts.resolve(&shape.font.name),
             features: Default::default(),
             fallbacks: None,
-            weight: if shape.font.bold { FontWeight::BOLD } else { FontWeight::NORMAL },
-            style: if shape.font.italic { FontStyle::Italic } else { FontStyle::Normal },
+            weight: if shape.font.bold {
+                FontWeight::BOLD
+            } else {
+                FontWeight::NORMAL
+            },
+            style: if shape.font.italic {
+                FontStyle::Italic
+            } else {
+                FontStyle::Normal
+            },
         },
         size: (pt_to_px(shape.font.size_pt()) * zoom).max(1.0),
         color: engine_color(shape.font.color.unwrap_or(opensheet_engine::Color::BLACK)),
@@ -254,7 +289,12 @@ pub fn text_look(shape: &Shape, zoom: f32, fonts: &FontResolver) -> TextLook {
 /// place the rectangle is turned to, and lies on its side when the shape
 /// does, so that what is typed still wraps inside the shape. (Once typed,
 /// the text is drawn turned: `draw_turned_text`.)
-pub fn text_box(shape: &Shape, placed: &Placed, natural: (f32, f32), zoom: f32) -> (f32, f32, f32, f32) {
+pub fn text_box(
+    shape: &Shape,
+    placed: &Placed,
+    natural: (f32, f32),
+    zoom: f32,
+) -> (f32, f32, f32, f32) {
     let [left, top, right, bottom] = shape.text_rect(natural.0, natural.1);
     let mut width = ((right - left) * placed.width().abs() - 2.0 * TEXT_MARGIN.0 * zoom).max(1.0);
     let mut height = ((bottom - top) * placed.height().abs() - 2.0 * TEXT_MARGIN.1 * zoom).max(1.0);
@@ -262,7 +302,12 @@ pub fn text_box(shape: &Shape, placed: &Placed, natural: (f32, f32), zoom: f32) 
         std::mem::swap(&mut width, &mut height);
     }
     let (cx, cy) = placed.point((left + right) / 2.0, (top + bottom) / 2.0);
-    (cx - width / 2.0, cy - height / 2.0, cx + width / 2.0, cy + height / 2.0)
+    (
+        cx - width / 2.0,
+        cy - height / 2.0,
+        cx + width / 2.0,
+        cy + height / 2.0,
+    )
 }
 
 /// The outline of a shape on screen.
@@ -270,7 +315,14 @@ pub fn outline_of(shape: &Shape, placed: &Placed, natural: (f32, f32)) -> Vec<Po
     geometry::flatten(&shape.path(natural.0, natural.1), placed)
 }
 
-pub(super) fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
+pub(super) fn draw_shape(
+    shape: &Shape,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    text: Option<&FontResolver>,
+    out: &mut Vec<Draw>,
+) {
     let lines = outline_of(shape, placed, natural);
     if let (Some(fill), false) = (shape.fill, shape.preset.is_line()) {
         for line in lines.iter().filter(|line| line.closed) {
@@ -290,7 +342,12 @@ pub(super) fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), br
                 let count = line.points.len();
                 let ends = [
                     (outline.start, line.points[0], line.points[1], false),
-                    (outline.end, line.points[count - 1], line.points[count - 2], true),
+                    (
+                        outline.end,
+                        line.points[count - 1],
+                        line.points[count - 2],
+                        true,
+                    ),
                 ];
                 for (kind, tip, from, at_end) in ends {
                     let Some(head) = geometry::arrow_head(kind, tip, from, size) else {
@@ -317,7 +374,9 @@ pub(super) fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), br
         if let Some(equation) = &shape.math {
             // An equation, built up.
             super::equation::draw(shape, equation, placed, natural, brush, fonts, out);
-        } else if super::wordart::needs_outlines(shape) && super::wordart::draw_outlined(shape, placed, brush, fonts, out) {
+        } else if super::wordart::needs_outlines(shape)
+            && super::wordart::draw_outlined(shape, placed, brush, fonts, out)
+        {
             // Warped text, gradients, reflections, letters of several
             // sizes: drawn as outlines.
         } else if shape.has_text_effects() {
@@ -334,7 +393,10 @@ pub(super) fn draw_shape(shape: &Shape, placed: &Placed, natural: (f32, f32), br
                 origin,
                 line_height: look.line_height(),
                 align: look.align(),
-                bounds: Bounds::new(point(origin.x, brush.clip.origin.y), size(px(x1 - x0), brush.clip.size.height)),
+                bounds: Bounds::new(
+                    point(origin.x, brush.clip.origin.y),
+                    size(px(x1 - x0), brush.clip.size.height),
+                ),
             });
         } else {
             draw_turned_text(shape, &look, placed, natural, brush, out);
@@ -364,8 +426,18 @@ fn rows_of(lines: &[WrappedLine]) -> Vec<String> {
 /// the titles of their vertical axes, laid out where it would be in the
 /// shape before the turn, then turned about the middle of the shape. Such
 /// a row is neither slanted, underlined nor struck through.
-fn draw_turned_text(shape: &Shape, look: &TextLook, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
-    let level = Placed { rotation: 0.0, ..*placed };
+fn draw_turned_text(
+    shape: &Shape,
+    look: &TextLook,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    out: &mut Vec<Draw>,
+) {
+    let level = Placed {
+        rotation: 0.0,
+        ..*placed
+    };
     let (x0, y0, x1, y1) = text_box(shape, &level, natural, brush.zoom);
     let (lines, count) = look.wrap(&shape.text, x1 - x0, brush.ts);
     let line_height = f32::from(look.line_height());
@@ -376,7 +448,13 @@ fn draw_turned_text(shape: &Shape, look: &TextLook, placed: &Placed, natural: (f
         if row.is_empty() {
             continue;
         }
-        let (path, width, height) = crate::chart_view::turned_text(brush.ts, look.font.family.clone(), &row, look.size, bold);
+        let (path, width, height) = crate::chart_view::turned_text(
+            brush.ts,
+            look.font.family.clone(),
+            &row,
+            look.size,
+            bold,
+        );
         let left = match look.align() {
             gpui::TextAlign::Left => x0,
             gpui::TextAlign::Center => (x0 + x1 - width) / 2.0,
@@ -385,7 +463,10 @@ fn draw_turned_text(shape: &Shape, look: &TextLook, placed: &Placed, natural: (f
         let y = top + i as f32 * line_height + (line_height - height) / 2.0;
         out.push(Draw::Turned {
             path,
-            bounds: Bounds::new(brush.at((left.round(), y.round())), size(px(width), px(height))),
+            bounds: Bounds::new(
+                brush.at((left.round(), y.round())),
+                size(px(width), px(height)),
+            ),
             pivot,
             turn: placed.rotation.to_radians(),
             color: look.color,
@@ -402,8 +483,17 @@ const MAX_SHADOW_SIDE: f32 = 1200.0;
 /// canvas is `size` pixels plus `pad` on every side (the tail of a
 /// callout and half the outline hang outside the frame); `unit` is how
 /// many pixels a pixel of the sheet at 100 % takes.
-pub(super) fn shape_cover(shape: &Shape, natural: (f32, f32), size: (f32, f32), flips: (bool, bool), unit: f32) -> (Vec<f32>, usize, usize) {
-    let stroke = shape.outline.as_ref().map_or(0.0, |outline| (pt_to_px(outline.width) * unit).max(0.75));
+pub(super) fn shape_cover(
+    shape: &Shape,
+    natural: (f32, f32),
+    size: (f32, f32),
+    flips: (bool, bool),
+    unit: f32,
+) -> (Vec<f32>, usize, usize) {
+    let stroke = shape
+        .outline
+        .as_ref()
+        .map_or(0.0, |outline| (pt_to_px(outline.width) * unit).max(0.75));
     let pad = (stroke / 2.0 + size.1 * 0.14).ceil() + 1.0;
     let local = Placed {
         x0: pad,
@@ -414,8 +504,14 @@ pub(super) fn shape_cover(shape: &Shape, natural: (f32, f32), size: (f32, f32), 
         flip_h: flips.0,
         flip_v: flips.1,
     };
-    let lines: Vec<(Vec<Pt>, bool)> = outline_of(shape, &local, natural).into_iter().map(|line| (line.points, line.closed)).collect();
-    let (w, h) = ((size.0 + 2.0 * pad).ceil() as usize, (size.1 + 2.0 * pad).ceil() as usize);
+    let lines: Vec<(Vec<Pt>, bool)> = outline_of(shape, &local, natural)
+        .into_iter()
+        .map(|line| (line.points, line.closed))
+        .collect();
+    let (w, h) = (
+        (size.0 + 2.0 * pad).ceil() as usize,
+        (size.1 + 2.0 * pad).ceil() as usize,
+    );
     // A shape that is neither filled nor a line casts the shadow of its
     // outline only.
     let filled = shape.fill.is_some() && !shape.preset.is_line();
@@ -424,7 +520,14 @@ pub(super) fn shape_cover(shape: &Shape, natural: (f32, f32), size: (f32, f32), 
 
 /// The shadow and the glow of a shape, under it: its outline blurred
 /// (`render::under`), made once for each look and size.
-pub(super) fn draw_effects(drawing: &Drawing, shape: &Shape, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
+pub(super) fn draw_effects(
+    drawing: &Drawing,
+    shape: &Shape,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    out: &mut Vec<Draw>,
+) {
     let effects = Effects {
         shadow: drawing.effects.shadow,
         glow: drawing.effects.glow,
@@ -433,7 +536,10 @@ pub(super) fn draw_effects(drawing: &Drawing, shape: &Shape, placed: &Placed, na
     if effects.is_none() {
         return;
     }
-    let device = (placed.width().abs() * brush.scale, placed.height().abs() * brush.scale);
+    let device = (
+        placed.width().abs() * brush.scale,
+        placed.height().abs() * brush.scale,
+    );
     let fit = (MAX_SHADOW_SIDE / device.0.max(device.1).max(1.0)).min(1.0);
     let made_at = ((device.0 * fit).max(1.0), (device.1 * fit).max(1.0));
     let unit = brush.zoom * brush.scale * fit;
@@ -444,12 +550,38 @@ pub(super) fn draw_effects(drawing: &Drawing, shape: &Shape, placed: &Placed, na
     };
     // Everything the bitmap depends on.
     let mut key: Vec<u32> = dress.bits();
-    key.extend([natural.0, natural.1, made_at.0, made_at.1, unit, shape.adjust.unwrap_or(-1.0)].map(f32::to_bits));
-    key.extend(shape.outline.as_ref().map_or([0, 0], |outline| [1, outline.width.to_bits()]));
-    key.extend([shape.preset as u32, shape.fill.is_some() as u32, placed.flip_h as u32, placed.flip_v as u32]);
+    key.extend(
+        [
+            natural.0,
+            natural.1,
+            made_at.0,
+            made_at.1,
+            unit,
+            shape.adjust.unwrap_or(-1.0),
+        ]
+        .map(f32::to_bits),
+    );
+    key.extend(
+        shape
+            .outline
+            .as_ref()
+            .map_or([0, 0], |outline| [1, outline.width.to_bits()]),
+    );
+    key.extend([
+        shape.preset as u32,
+        shape.fill.is_some() as u32,
+        placed.flip_h as u32,
+        placed.flip_v as u32,
+    ]);
     let turn = placed.rotation;
     let made = picture::cached_image(drawing.id as u64, key, || {
-        let (cover, w, h) = shape_cover(shape, natural, made_at, (placed.flip_h, placed.flip_v), unit);
+        let (cover, w, h) = shape_cover(
+            shape,
+            natural,
+            made_at,
+            (placed.flip_h, placed.flip_v),
+            unit,
+        );
         let (bitmap, _) = super::render::under(&cover, w, h, &effects, turn, unit)?;
         let before = (bitmap.width as f32, bitmap.height as f32);
         let quarters = (turn / 90.0).round();
@@ -466,7 +598,10 @@ pub(super) fn draw_effects(drawing: &Drawing, shape: &Shape, placed: &Placed, na
     // The bitmap is centred on the frame; `before` is its size before
     // the turn, in the pixels it was made in.
     let (cx, cy) = placed.centre();
-    let (half_w, half_h) = (before.0 / (brush.scale * fit) / 2.0, before.1 / (brush.scale * fit) / 2.0);
+    let (half_w, half_h) = (
+        before.0 / (brush.scale * fit) / 2.0,
+        before.1 / (brush.scale * fit) / 2.0,
+    );
     let (x0, y0, x1, y1) = Placed {
         x0: cx - half_w,
         y0: cy - half_h,
@@ -492,7 +627,14 @@ pub fn dress_of(drawing: &Drawing, picture: &Picture, placed: &Placed) -> super:
     }
 }
 
-fn draw_picture(drawing: &Drawing, picture: &Picture, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
+fn draw_picture(
+    drawing: &Drawing,
+    picture: &Picture,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    out: &mut Vec<Draw>,
+) {
     // Its border, shadow, glow, reflection, bevel and turn in space are
     // made in pixels with it (`render.rs`).
     let dress = dress_of(drawing, picture, placed);
@@ -501,12 +643,26 @@ fn draw_picture(drawing: &Drawing, picture: &Picture, placed: &Placed, natural: 
     let soft = (pt_to_px(drawing.effects.soft_edge.max(0.0)) / shorter).min(0.5);
     // A vector picture that is shown as it is: from its document, sharp
     // at any zoom. Adjusted, cropped or softened, from its image.
-    let vector = if soft == 0.0 && picture.adjust == PictureAdjust::default() && dress.is_plain() && !picture.has_baked_effects() {
+    let vector = if soft == 0.0
+        && picture.adjust == PictureAdjust::default()
+        && dress.is_plain()
+        && !picture.has_baked_effects()
+    {
         super::icons::image_for(picture, placed, brush.scale)
     } else {
         None
     };
-    match vector.or_else(|| picture::image_as(picture, &picture.adjust, soft, natural, placed, brush.scale, Some(&dress))) {
+    match vector.or_else(|| {
+        picture::image_as(
+            picture,
+            &picture.adjust,
+            soft,
+            natural,
+            placed,
+            brush.scale,
+            Some(&dress),
+        )
+    }) {
         Some((image, (x0, y0, x1, y1))) => out.push(Draw::Image {
             image,
             bounds: Bounds::new(brush.at((x0, y0)), size(px(x1 - x0), px(y1 - y0))),
@@ -546,14 +702,30 @@ fn placed_at(frame: Frame, turn: (f32, bool, bool)) -> Placed {
 
 /// The pictures and shapes a drawing shows where it is drawn: itself, or
 /// the members of a group, each with the size it has at 100 %.
-pub fn leaves<'a>(drawing: &'a Drawing, placed: &Placed, zoom: f32) -> Vec<(&'a Drawing, Placed, (f32, f32))> {
-    let frame = Frame::new(placed.x0 as f64, placed.y0 as f64, placed.width() as f64, placed.height() as f64);
+pub fn leaves<'a>(
+    drawing: &'a Drawing,
+    placed: &Placed,
+    zoom: f32,
+) -> Vec<(&'a Drawing, Placed, (f32, f32))> {
+    let frame = Frame::new(
+        placed.x0 as f64,
+        placed.y0 as f64,
+        placed.width() as f64,
+        placed.height() as f64,
+    );
     drawing
         .leaves_turned(frame, (placed.rotation, placed.flip_h, placed.flip_v))
         .into_iter()
         .map(|leaf| {
-            let natural = ((leaf.frame.width as f32 / zoom).abs(), (leaf.frame.height as f32 / zoom).abs());
-            (leaf.drawing, placed_at(leaf.frame, (leaf.rotation, leaf.flip_h, leaf.flip_v)), natural)
+            let natural = (
+                (leaf.frame.width as f32 / zoom).abs(),
+                (leaf.frame.height as f32 / zoom).abs(),
+            );
+            (
+                leaf.drawing,
+                placed_at(leaf.frame, (leaf.rotation, leaf.flip_h, leaf.flip_v)),
+                natural,
+            )
         })
         .collect()
 }
@@ -562,25 +734,49 @@ pub fn leaves<'a>(drawing: &'a Drawing, placed: &Placed, zoom: f32) -> Vec<(&'a 
 /// `natural` is the size of the frame at 100 % (the proportions of the
 /// outline depend on it). The text of a shape is drawn when `text` gives
 /// the fonts: not while it is being typed in place.
-pub fn draw(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, out: &mut Vec<Draw>) {
+pub fn draw(
+    drawing: &Drawing,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    text: Option<&FontResolver>,
+    out: &mut Vec<Draw>,
+) {
     draw_except(drawing, placed, natural, brush, text, None, out);
 }
 
 /// `draw`, without the text of the member `typed` of a group: the field
 /// it is being typed in lies over it.
-pub fn draw_except(drawing: &Drawing, placed: &Placed, natural: (f32, f32), brush: &Brush, text: Option<&FontResolver>, typed: Option<u32>, out: &mut Vec<Draw>) {
+pub fn draw_except(
+    drawing: &Drawing,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    text: Option<&FontResolver>,
+    typed: Option<u32>,
+    out: &mut Vec<Draw>,
+) {
     match &drawing.kind {
         DrawingKind::Shape(shape) => {
             draw_effects(drawing, shape, placed, natural, brush, out);
             draw_shape(shape, placed, natural, brush, text, out);
         }
-        DrawingKind::Picture(picture) => draw_picture(drawing, picture, placed, natural, brush, out),
+        DrawingKind::Picture(picture) => {
+            draw_picture(drawing, picture, placed, natural, brush, out)
+        }
         // A graphic is drawn by `smartart::draw`, which is told the theme
         // its colours come from.
         DrawingKind::SmartArt(_) => {}
         DrawingKind::Group(_) => {
             for (member, inner, natural) in leaves(drawing, placed, brush.zoom) {
-                draw(member, &inner, natural, brush, text.filter(|_| typed != Some(member.id)), out);
+                draw(
+                    member,
+                    &inner,
+                    natural,
+                    brush,
+                    text.filter(|_| typed != Some(member.id)),
+                    out,
+                );
             }
         }
     }
@@ -592,10 +788,22 @@ const CROP_MARK: f32 = 14.0;
 /// A picture while it is being cropped: the whole image, pale where the
 /// frame cuts it off, and the black marks that move the edges of the
 /// frame. A turned picture shows its marks only.
-pub fn draw_cropping(picture: &Picture, placed: &Placed, natural: (f32, f32), brush: &Brush, out: &mut Vec<Draw>) {
-    let upright = geometry::normalise_angle(placed.rotation) < 0.5 && !placed.flip_h && !placed.flip_v;
+pub fn draw_cropping(
+    picture: &Picture,
+    placed: &Placed,
+    natural: (f32, f32),
+    brush: &Brush,
+    out: &mut Vec<Draw>,
+) {
+    let upright =
+        geometry::normalise_angle(placed.rotation) < 0.5 && !placed.flip_h && !placed.flip_v;
     if upright {
-        let frame = Frame::new(placed.x0 as f64, placed.y0 as f64, placed.width() as f64, placed.height() as f64);
+        let frame = Frame::new(
+            placed.x0 as f64,
+            placed.y0 as f64,
+            placed.width() as f64,
+            placed.height() as f64,
+        );
         let whole = placed_at(picture.adjust.uncropped(frame), (0.0, false, false));
         let adjust = PictureAdjust {
             crop: [0.0; 4],
@@ -607,7 +815,9 @@ pub fn draw_cropping(picture: &Picture, placed: &Placed, natural: (f32, f32), br
             natural.0 / kept(picture.adjust.crop[0], picture.adjust.crop[2]),
             natural.1 / kept(picture.adjust.crop[1], picture.adjust.crop[3]),
         );
-        if let Some((image, (x0, y0, x1, y1))) = picture::image_as(picture, &adjust, 0.0, full, &whole, brush.scale, None) {
+        if let Some((image, (x0, y0, x1, y1))) =
+            picture::image_as(picture, &adjust, 0.0, full, &whole, brush.scale, None)
+        {
             out.push(Draw::Image {
                 image,
                 bounds: Bounds::new(brush.at((x0, y0)), size(px(x1 - x0), px(y1 - y0))),
@@ -616,8 +826,18 @@ pub fn draw_cropping(picture: &Picture, placed: &Placed, natural: (f32, f32), br
         // What the frame leaves out, under a veil.
         let veil = c(0xFFFFFF).opacity(0.6);
         let (ix0, iy0, ix1, iy1) = (whole.x0, whole.y0, whole.x1, whole.y1);
-        let (fx0, fy0, fx1, fy1) = (placed.x0.max(ix0), placed.y0.max(iy0), placed.x1.min(ix1), placed.y1.min(iy1));
-        for (x0, y0, x1, y1) in [(ix0, iy0, ix1, fy0), (ix0, fy1, ix1, iy1), (ix0, fy0, fx0, fy1), (fx1, fy0, ix1, fy1)] {
+        let (fx0, fy0, fx1, fy1) = (
+            placed.x0.max(ix0),
+            placed.y0.max(iy0),
+            placed.x1.min(ix1),
+            placed.y1.min(iy1),
+        );
+        for (x0, y0, x1, y1) in [
+            (ix0, iy0, ix1, fy0),
+            (ix0, fy1, ix1, iy1),
+            (ix0, fy0, fx0, fy1),
+            (fx1, fy0, ix1, fy1),
+        ] {
             if x1 > x0 && y1 > y0 {
                 brush.fill(&[(x0, y0), (x1, y0), (x1, y1), (x0, y1)], veil, out);
             }
@@ -634,18 +854,37 @@ pub fn draw_cropping(picture: &Picture, placed: &Placed, natural: (f32, f32), br
         let (dx, dy) = (to.0 - from.0, to.1 - from.1);
         let distance = dx.hypot(dy).max(0.001);
         let reach = length.min(distance / 3.0);
-        (from.0 + dx / distance * reach, from.1 + dy / distance * reach)
+        (
+            from.0 + dx / distance * reach,
+            from.1 + dy / distance * reach,
+        )
     };
     let handles = placed.handles();
     for i in 0..8 {
         let at = handles[i];
         let (before, after) = (handles[(i + 7) % 8], handles[(i + 1) % 8]);
         let points = if i % 2 == 0 {
-            vec![along(at, before, CROP_MARK), at, along(at, after, CROP_MARK)]
+            vec![
+                along(at, before, CROP_MARK),
+                at,
+                along(at, after, CROP_MARK),
+            ]
         } else {
-            vec![along(at, before, CROP_MARK / 2.0), along(at, after, CROP_MARK / 2.0)]
+            vec![
+                along(at, before, CROP_MARK / 2.0),
+                along(at, after, CROP_MARK / 2.0),
+            ]
         };
-        brush.stroke(&Polyline { points, closed: false }, 4.0, &[], ink, out);
+        brush.stroke(
+            &Polyline {
+                points,
+                closed: false,
+            },
+            4.0,
+            &[],
+            ink,
+            out,
+        );
     }
 }
 
@@ -672,7 +911,10 @@ pub enum Grip {
 /// yellow ones that change how far its text is bent. They turn with the
 /// shape and, like its text, are not mirrored with it.
 pub fn warp_grips(drawing: &Drawing, placed: &Placed, zoom: f32) -> Vec<(Grip, Pt)> {
-    let Some((shape, warp)) = drawing.as_shape().and_then(|shape| Some((shape, shape.warp?))) else {
+    let Some((shape, warp)) = drawing
+        .as_shape()
+        .and_then(|shape| Some((shape, shape.warp?)))
+    else {
         return Vec::new();
     };
     let (width, height) = (placed.width().abs() as f64, placed.height().abs() as f64);
@@ -683,29 +925,47 @@ pub fn warp_grips(drawing: &Drawing, placed: &Placed, zoom: f32) -> Vec<(Grip, P
         .iter()
         .enumerate()
         .map(|(i, handle)| {
-            let level = (left + (frame.0 + handle.at.0) as f32, top + (frame.1 + handle.at.1) as f32);
-            (Grip::Warp(i as u8), geometry::rotate(level, placed.centre(), placed.rotation))
+            let level = (
+                left + (frame.0 + handle.at.0) as f32,
+                top + (frame.1 + handle.at.1) as f32,
+            );
+            (
+                Grip::Warp(i as u8),
+                geometry::rotate(level, placed.centre(), placed.rotation),
+            )
         })
         .collect()
 }
 
 /// The warp of a shape after one of its handles was dragged to a point
 /// of the screen.
-pub fn dragged_warp(drawing: &Drawing, placed: &Placed, zoom: f32, handle: u8, to: Pt) -> Option<opensheet_engine::textwarp::TextWarp> {
+pub fn dragged_warp(
+    drawing: &Drawing,
+    placed: &Placed,
+    zoom: f32,
+    handle: u8,
+    to: Pt,
+) -> Option<opensheet_engine::textwarp::TextWarp> {
     let shape = drawing.as_shape()?;
     let warp = shape.warp?;
     let (width, height) = (placed.width().abs() as f64, placed.height().abs() as f64);
     let (left, top) = (placed.x0.min(placed.x1), placed.y0.min(placed.y1));
     let frame = super::letters::text_frame(shape, width, height, zoom as f64);
     let level = placed.unturned(to);
-    let local = ((level.0 - left) as f64 - frame.0, (level.1 - top) as f64 - frame.1);
+    let local = (
+        (level.0 - left) as f64 - frame.0,
+        (level.1 - top) as f64 - frame.1,
+    );
     Some(warp.with_handle_at(handle as usize, local, frame.2 - frame.0, frame.3 - frame.1))
 }
 
 /// The handles of a selected drawing and where they are: the two ends of
 /// a line, or the eight handles of a frame and the one that turns it.
 pub fn grips(drawing: &Drawing, placed: &Placed) -> Vec<(Grip, Pt)> {
-    if drawing.as_shape().is_some_and(|shape| shape.preset.is_line()) {
+    if drawing
+        .as_shape()
+        .is_some_and(|shape| shape.preset.is_line())
+    {
         return vec![
             (Grip::LineEnd(false), placed.point(0.0, 0.0)),
             (Grip::LineEnd(true), placed.point(1.0, 1.0)),
@@ -737,7 +997,12 @@ pub fn draw_group_frame(placed: &Placed, brush: &Brush, out: &mut Vec<Draw>) {
 /// The members of a group where the group is drawn, bottom-most first:
 /// each with its place and the size it has at 100 %. (`leaves` goes into
 /// the groups among them; this does not.)
-pub fn members<'a>(group: &'a Drawing, sheet: &Sheet, layout: &GridLayout, pane: &Pane) -> Vec<(&'a Drawing, Placed, (f32, f32))> {
+pub fn members<'a>(
+    group: &'a Drawing,
+    sheet: &Sheet,
+    layout: &GridLayout,
+    pane: &Pane,
+) -> Vec<(&'a Drawing, Placed, (f32, f32))> {
     let Some(held) = group.as_group() else {
         return Vec::new();
     };
@@ -746,7 +1011,11 @@ pub fn members<'a>(group: &'a Drawing, sheet: &Sheet, layout: &GridLayout, pane:
         .filter(|member| !member.hidden)
         .map(|member| {
             let (frame, ..) = sheet.shown(member);
-            (member, placed(layout, sheet, member, pane), (frame.width as f32, frame.height as f32))
+            (
+                member,
+                placed(layout, sheet, member, pane),
+                (frame.width as f32, frame.height as f32),
+            )
         })
         .collect()
 }
@@ -807,7 +1076,14 @@ pub fn thumbnail(tool: ShapeTool, side: f32) -> impl IntoElement {
             };
             let mut items = Vec::new();
             draw_thumbnail(tool, side, &brush, &mut items);
-            crate::grid::paint_layers(vec![Layer { clip: bounds, items }], window, cx);
+            crate::grid::paint_layers(
+                vec![Layer {
+                    clip: bounds,
+                    items,
+                }],
+                window,
+                cx,
+            );
         },
     )
     .size(px(side))
@@ -833,8 +1109,22 @@ pub fn line_sample(width: f32, height: f32, outline: Outline) -> impl IntoElemen
             let middle = (height / 2.0).floor() + 0.5;
             let placed = Placed::plain(5.0, middle, width - 5.0, middle);
             let mut items = Vec::new();
-            draw_shape(&shape, &placed, (width - 10.0, 0.0), &brush, None, &mut items);
-            crate::grid::paint_layers(vec![Layer { clip: bounds, items }], window, cx);
+            draw_shape(
+                &shape,
+                &placed,
+                (width - 10.0, 0.0),
+                &brush,
+                None,
+                &mut items,
+            );
+            crate::grid::paint_layers(
+                vec![Layer {
+                    clip: bounds,
+                    items,
+                }],
+                window,
+                cx,
+            );
         },
     )
     .w(px(width))
@@ -863,7 +1153,10 @@ fn draw_thumbnail(tool: ShapeTool, side: f32, brush: &Brush, out: &mut Vec<Draw>
     } else {
         ((room * (width / height).max(0.62)).round(), room)
     };
-    let (x0, y0) = (((side - w) / 2.0).round() + 0.5, ((side - h) / 2.0).round() + 0.5);
+    let (x0, y0) = (
+        ((side - w) / 2.0).round() + 0.5,
+        ((side - h) / 2.0).round() + 0.5,
+    );
     let placed = Placed::plain(x0, y0, x0 + w - 1.0, y0 + h - 1.0);
     // A callout keeps room for its tail, which hangs below its frame.
     let placed = if tool == ShapeTool::Callout {
@@ -874,13 +1167,26 @@ fn draw_thumbnail(tool: ShapeTool, side: f32, brush: &Brush, out: &mut Vec<Draw>
     } else {
         placed
     };
-    draw_shape(&shape, &placed, (width.max(1.0), height.max(1.0)), brush, None, out);
+    draw_shape(
+        &shape,
+        &placed,
+        (width.max(1.0), height.max(1.0)),
+        brush,
+        None,
+        out,
+    );
     if tool == ShapeTool::TextBox {
         // What tells a text box from a rectangle: lines of text in it.
         for (i, length) in [0.7, 0.5].into_iter().enumerate() {
             let y = placed.y0 + placed.height() * (0.36 + 0.3 * i as f32);
             let line = Polyline {
-                points: vec![(placed.x0 + 3.0, y.round() + 0.5), (placed.x0 + 3.0 + (placed.width() - 6.0) * length, y.round() + 0.5)],
+                points: vec![
+                    (placed.x0 + 3.0, y.round() + 0.5),
+                    (
+                        placed.x0 + 3.0 + (placed.width() - 6.0) * length,
+                        y.round() + 0.5,
+                    ),
+                ],
                 closed: false,
             };
             brush.stroke(&line, 1.0, &[], engine_color(ink), out);
@@ -906,10 +1212,19 @@ mod tests {
         let line = Drawing::shape(ShapeTool::Arrow.shape(), (100.0, 50.0));
         assert_eq!(
             grips(&line, &placed),
-            vec![(Grip::LineEnd(false), (10.0, 10.0)), (Grip::LineEnd(true), (110.0, 60.0))]
+            vec![
+                (Grip::LineEnd(false), (10.0, 10.0)),
+                (Grip::LineEnd(true), (110.0, 60.0))
+            ]
         );
-        let flipped = Placed { flip_v: true, ..placed };
-        assert_eq!(grips(&line, &flipped)[0], (Grip::LineEnd(false), (10.0, 60.0)));
+        let flipped = Placed {
+            flip_v: true,
+            ..placed
+        };
+        assert_eq!(
+            grips(&line, &flipped)[0],
+            (Grip::LineEnd(false), (10.0, 60.0))
+        );
     }
 
     #[test]
@@ -926,23 +1241,51 @@ mod tests {
         assert!(x0 > 29.0 + TEXT_MARGIN.0 && x1 < 171.0 - TEXT_MARGIN.0 && y0 > 14.0 && y1 < 86.0);
         // Turned a little, the box keeps its size and its centre; turned
         // a quarter it lies on its side like the shape.
-        let tilted = Placed { rotation: 30.0, ..placed };
+        let tilted = Placed {
+            rotation: 30.0,
+            ..placed
+        };
         let (tx0, ty0, tx1, ty1) = text_box(&rectangle, &tilted, (200.0, 100.0), 1.0);
         assert!((tx1 - tx0 - (200.0 - 2.0 * TEXT_MARGIN.0)).abs() < 0.01);
-        assert!(((tx0 + tx1) / 2.0 - 100.0).abs() < 0.01 && ((ty0 + ty1) / 2.0 - 50.0).abs() < 0.01);
+        assert!(
+            ((tx0 + tx1) / 2.0 - 100.0).abs() < 0.01 && ((ty0 + ty1) / 2.0 - 50.0).abs() < 0.01
+        );
         for quarter in [90.0, 270.0, 100.0] {
-            let turned = Placed { rotation: quarter, ..placed };
+            let turned = Placed {
+                rotation: quarter,
+                ..placed
+            };
             let (tx0, ty0, tx1, ty1) = text_box(&rectangle, &turned, (200.0, 100.0), 1.0);
-            assert!((tx1 - tx0 - (100.0 - 2.0 * TEXT_MARGIN.1)).abs() < 0.01, "{quarter}");
-            assert!((ty1 - ty0 - (200.0 - 2.0 * TEXT_MARGIN.0)).abs() < 0.01, "{quarter}");
+            assert!(
+                (tx1 - tx0 - (100.0 - 2.0 * TEXT_MARGIN.1)).abs() < 0.01,
+                "{quarter}"
+            );
+            assert!(
+                (ty1 - ty0 - (200.0 - 2.0 * TEXT_MARGIN.0)).abs() < 0.01,
+                "{quarter}"
+            );
         }
-        let upside_down = Placed { rotation: 180.0, ..placed };
+        let upside_down = Placed {
+            rotation: 180.0,
+            ..placed
+        };
         let (tx0, _, tx1, _) = text_box(&rectangle, &upside_down, (200.0, 100.0), 1.0);
         assert!((tx1 - tx0 - (200.0 - 2.0 * TEXT_MARGIN.0)).abs() < 0.01);
         // Margins grow with the zoom, and a box never has no room at all.
-        let small = text_box(&rectangle, &Placed::plain(0.0, 0.0, 10.0, 4.0), (10.0, 4.0), 2.0);
+        let small = text_box(
+            &rectangle,
+            &Placed::plain(0.0, 0.0, 10.0, 4.0),
+            (10.0, 4.0),
+            2.0,
+        );
         assert!(small.2 - small.0 >= 1.0 && small.3 - small.1 >= 1.0);
-        assert_eq!(stroke_width(&Outline::solid(opensheet_engine::Color::BLACK, 3.0), 1.0), 4.0);
-        assert_eq!(stroke_width(&Outline::solid(opensheet_engine::Color::BLACK, 0.25), 1.0), 0.75);
+        assert_eq!(
+            stroke_width(&Outline::solid(opensheet_engine::Color::BLACK, 3.0), 1.0),
+            4.0
+        );
+        assert_eq!(
+            stroke_width(&Outline::solid(opensheet_engine::Color::BLACK, 0.25), 1.0),
+            0.75
+        );
     }
 }

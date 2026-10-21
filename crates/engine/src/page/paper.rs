@@ -118,7 +118,13 @@ const TRANSLATED: [[&str; 5]; 6] = [
     ["Tabloid", "Tabloïd", "Tabloide", "Tabloid", "Tabloid"],
     ["Legal", "Légal", "Oficio", "Legal", "Legale"],
     ["Statement", "Relevé", "Estamento", "Statement", "Statement"],
-    ["Executive", "Exécutive", "Ejecutivo", "Executive", "Executive"],
+    [
+        "Executive",
+        "Exécutive",
+        "Ejecutivo",
+        "Executive",
+        "Executive",
+    ],
     ["Envelope", "Enveloppe", "Sobre", "Umschlag", "Busta"],
 ];
 
@@ -253,14 +259,30 @@ mod tests {
         assert_eq!(PaperSize::ENVELOPE_10.name(Locale::fr()), "Enveloppe #10");
         assert_eq!(PaperSize(38).name(Locale::de()), "Umschlag 6 3/4");
         assert_eq!(PaperSize::A4.name(Locale::es()), "A4");
-        assert_eq!(PaperSize::LETTER.dimensions_text(Locale::en()), "8.5\" x 11\"");
-        assert_eq!(PaperSize::A4.dimensions_text(Locale::en()), "8.27\" x 11.69\"");
-        assert_eq!(PaperSize::A4.dimensions_text(Locale::fr()), "21 cm x 29,7 cm");
-        assert_eq!(PaperSize::LETTER.dimensions_text(Locale::fr()), "21,59 cm x 27,94 cm");
+        assert_eq!(
+            PaperSize::LETTER.dimensions_text(Locale::en()),
+            "8.5\" x 11\""
+        );
+        assert_eq!(
+            PaperSize::A4.dimensions_text(Locale::en()),
+            "8.27\" x 11.69\""
+        );
+        assert_eq!(
+            PaperSize::A4.dimensions_text(Locale::fr()),
+            "21 cm x 29,7 cm"
+        );
+        assert_eq!(
+            PaperSize::LETTER.dimensions_text(Locale::fr()),
+            "21,59 cm x 27,94 cm"
+        );
         // An unknown printer form falls back to Letter.
         assert_eq!(PaperSize(256).size_pt(), (612.0, 792.0));
         // Codes are unique and sorted.
-        assert!(PaperSize::all().windows(2).all(|w| w[0].size.0 < w[1].size.0));
+        assert!(
+            PaperSize::all()
+                .windows(2)
+                .all(|w| w[0].size.0 < w[1].size.0)
+        );
         for p in PaperSize::COMMON {
             assert!(p.info().is_some());
         }

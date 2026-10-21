@@ -8,7 +8,8 @@
 use serde_json::Value as J;
 
 use opensheet_engine::drawing::{
-    Dash, Drawing, DrawingKind, Frame, ImageFormat, Outline, Placement, Shape, ShapePreset, ShapeTool, TextAlign, TextAnchor, ZOrder,
+    Dash, Drawing, DrawingKind, Frame, ImageFormat, Outline, Placement, Shape, ShapePreset,
+    ShapeTool, TextAlign, TextAnchor, ZOrder,
 };
 use opensheet_engine::protect::Action;
 use opensheet_engine::style::{Color, Font, Underline};
@@ -73,7 +74,10 @@ fn drawing<'h>(h: &'h Host, call: &Call) -> Res<(usize, &'h Drawing)> {
 
 /// The geometric shape, line or text box behind an object.
 fn shape<'h>(h: &'h Host, call: &Call) -> Res<&'h Shape> {
-    drawing(h, call)?.1.as_shape().ok_or_else(|| call.fail("This is not a geometric shape, a line or a text box."))
+    drawing(h, call)?
+        .1
+        .as_shape()
+        .ok_or_else(|| call.fail("This is not a geometric shape, a line or a text box."))
 }
 
 /// Change the drawing a call is made on. A protected sheet refuses
@@ -95,7 +99,9 @@ fn edit(h: &mut Host, call: &Call, change: impl FnOnce(&mut Drawing) -> Res<()>)
 
 fn edit_shape(h: &mut Host, call: &Call, change: impl FnOnce(&mut Shape) -> Res<()>) -> Res<Ret> {
     shape(h, call)?;
-    edit(h, call, |drawing| drawing.as_shape_mut().map_or(Ok(()), change))
+    edit(h, call, |drawing| {
+        drawing.as_shape_mut().map_or(Ok(()), change)
+    })
 }
 
 /// The fonts of the text of a shape: its own, and those of its runs.
@@ -109,7 +115,8 @@ fn edit_font(h: &mut Host, call: &Call, change: impl Fn(&mut Font)) -> Res<Ret> 
 
 fn frame(h: &Host, call: &Call) -> Res<Frame> {
     let (sheet, held) = drawing(h, call)?;
-    h.wb.drawing_frame(sheet, held.id).ok_or_else(|| call.gone())
+    h.wb.drawing_frame(sheet, held.id)
+        .ok_or_else(|| call.gone())
 }
 
 /// Move or resize, in points: `change` gets the frame in points.
@@ -117,14 +124,27 @@ fn set_frame(h: &mut Host, call: &Call, change: impl FnOnce(&mut Frame)) -> Res<
     let (sheet, held) = drawing(h, call)?;
     let (id, locked) = (held.id, held.locked);
     let px = frame(h, call)?;
-    let mut points = Frame::new(px.x / PX_PER_POINT, px.y / PX_PER_POINT, px.width / PX_PER_POINT, px.height / PX_PER_POINT);
+    let mut points = Frame::new(
+        px.x / PX_PER_POINT,
+        px.y / PX_PER_POINT,
+        px.width / PX_PER_POINT,
+        px.height / PX_PER_POINT,
+    );
     change(&mut points);
     let sane = |n: f64| n.is_finite() && (0.0..=1_000_000.0).contains(&n);
-    if ![points.x, points.y, points.width, points.height].into_iter().all(sane) {
+    if ![points.x, points.y, points.width, points.height]
+        .into_iter()
+        .all(sane)
+    {
         return Err(call.invalid());
     }
     h.permit(call, &Action::EditObject { sheet, locked })?;
-    let new = Frame::new(points.x * PX_PER_POINT, points.y * PX_PER_POINT, points.width * PX_PER_POINT, points.height * PX_PER_POINT);
+    let new = Frame::new(
+        points.x * PX_PER_POINT,
+        points.y * PX_PER_POINT,
+        points.width * PX_PER_POINT,
+        points.height * PX_PER_POINT,
+    );
     h.wb.set_drawing_frame(sheet, id, new);
     Ok(Ret::Nothing)
 }
@@ -146,8 +166,15 @@ fn format_name(format: ImageFormat) -> &'static str {
 
 /// Put a new shape on a sheet, where a click of its tool would.
 fn insert(h: &mut Host, call: &Call, sheet: usize, tool: ShapeTool, frame: Frame) -> Res<u32> {
-    h.permit(call, &Action::EditObject { sheet, locked: true })?;
-    h.wb.add_shape(sheet, tool, frame).ok_or_else(|| call.gone())
+    h.permit(
+        call,
+        &Action::EditObject {
+            sheet,
+            locked: true,
+        },
+    )?;
+    h.wb.add_shape(sheet, tool, frame)
+        .ok_or_else(|| call.gone())
 }
 
 fn default_frame(tool: ShapeTool) -> Frame {
@@ -159,14 +186,24 @@ pub(super) fn add_geometric(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret>
     // Reading a member of the enum that OpenSheet does not draw already
     // failed with its name.
     let name = enum_value(call, 0, "GeometricShapeType")?.ok_or_else(|| call.invalid())?;
-    let tool = GEOMETRIC.iter().find(|(n, _)| *n == name).map(|(_, tool)| *tool).ok_or_else(|| call.invalid())?;
+    let tool = GEOMETRIC
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, tool)| *tool)
+        .ok_or_else(|| call.invalid())?;
     let id = insert(h, call, sheet, tool, default_frame(tool))?;
     Ok(Ret::Object(shape_object(h, sheet, id)))
 }
 
 pub(super) fn add_text_box(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
     let text = call.opt_str(0)?.unwrap_or_default();
-    let id = insert(h, call, sheet, ShapeTool::TextBox, default_frame(ShapeTool::TextBox))?;
+    let id = insert(
+        h,
+        call,
+        sheet,
+        ShapeTool::TextBox,
+        default_frame(ShapeTool::TextBox),
+    )?;
     h.wb.update_drawing(sheet, id, |drawing| {
         if let Some(shape) = drawing.as_shape_mut() {
             shape.text = text.to_string();
@@ -178,12 +215,22 @@ pub(super) fn add_text_box(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> 
 pub(super) fn add_line(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
     let point = |index: usize| -> Res<f64> {
         let n = call.num(index)?;
-        if n.is_finite() && (0.0..=1_000_000.0).contains(&n) { Ok(n * PX_PER_POINT) } else { Err(call.invalid()) }
+        if n.is_finite() && (0.0..=1_000_000.0).contains(&n) {
+            Ok(n * PX_PER_POINT)
+        } else {
+            Err(call.invalid())
+        }
     };
     let (x0, y0, x1, y1) = (point(0)?, point(1)?, point(2)?, point(3)?);
     match enum_value(call, 4, "ConnectorType")? {
         None | Some("Straight") => {}
-        Some(other) => return Err(call.unsupported(format!("ExcelScript.ConnectorType.{}{}", other[..1].to_lowercase(), &other[1..]))),
+        Some(other) => {
+            return Err(call.unsupported(format!(
+                "ExcelScript.ConnectorType.{}{}",
+                other[..1].to_lowercase(),
+                &other[1..]
+            )));
+        }
     }
     let frame = Frame::new(x0.min(x1), y0.min(y1), (x1 - x0).abs(), (y1 - y0).abs());
     let id = insert(h, call, sheet, ShapeTool::Line, frame)?;
@@ -200,9 +247,18 @@ pub(super) fn add_image(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
     let text = call.str(0)?;
     // A data URL is accepted too: what follows its comma is the image.
     let encoded = text.split_once("base64,").map_or(text, |(_, rest)| rest);
-    let data = base64_decode(encoded).ok_or_else(|| call.fail("The image is not valid base64 text."))?;
-    h.permit(call, &Action::EditObject { sheet, locked: true })?;
-    let id = h.wb.add_picture(sheet, data, (0, 0)).ok_or_else(|| call.fail("The image is not a PNG, JPEG, GIF or BMP picture."))?;
+    let data =
+        base64_decode(encoded).ok_or_else(|| call.fail("The image is not valid base64 text."))?;
+    h.permit(
+        call,
+        &Action::EditObject {
+            sheet,
+            locked: true,
+        },
+    )?;
+    let id =
+        h.wb.add_picture(sheet, data, (0, 0))
+            .ok_or_else(|| call.fail("The image is not a PNG, JPEG, GIF or BMP picture."))?;
     Ok(Ret::Object(shape_object(h, sheet, id)))
 }
 
@@ -210,15 +266,28 @@ pub(super) fn add_image(h: &mut Host, call: &Call, sheet: usize) -> Res<Ret> {
 pub(super) fn all(h: &Host, sheet: usize) -> Ret {
     let mut held: Vec<&Drawing> = h.wb.sheets[sheet].drawings.iter().collect();
     held.sort_by_key(|drawing| (drawing.z == 0, drawing.z));
-    Ret::Object(J::from(held.into_iter().map(|drawing| shape_object(h, sheet, drawing.id)).collect::<Vec<J>>()))
+    Ret::Object(J::from(
+        held.into_iter()
+            .map(|drawing| shape_object(h, sheet, drawing.id))
+            .collect::<Vec<J>>(),
+    ))
 }
 
 /// `getShape(key)`: by name or by ID.
 pub(super) fn find(h: &Host, call: &Call, sheet: usize) -> Res<Ret> {
     let key = call.str(0)?;
     let drawings = &h.wb.sheets[sheet].drawings;
-    let found = drawings.iter().find(|drawing| drawing.name.eq_ignore_ascii_case(key)).or_else(|| drawings.iter().find(|drawing| drawing.id.to_string() == key));
-    Ok(Ret::maybe(found.map(|drawing| shape_object(h, sheet, drawing.id))))
+    let found = drawings
+        .iter()
+        .find(|drawing| drawing.name.eq_ignore_ascii_case(key))
+        .or_else(|| {
+            drawings
+                .iter()
+                .find(|drawing| drawing.id.to_string() == key)
+        });
+    Ok(Ret::maybe(
+        found.map(|drawing| shape_object(h, sheet, drawing.id)),
+    ))
 }
 
 // ---- the classes -------------------------------------------------------------------------
@@ -440,7 +509,9 @@ pub(super) const SHAPE_FILL: ApiClass = class!("ShapeFill", "The fill of a shape
 
 /// The outline of a shape, drawn in black when it had none.
 fn outline(shape: &mut Shape) -> &mut Outline {
-    shape.outline.get_or_insert(Outline::solid(Color::BLACK, 1.0))
+    shape
+        .outline
+        .get_or_insert(Outline::solid(Color::BLACK, 1.0))
 }
 
 pub(super) const SHAPE_LINE: ApiClass = class!("ShapeLineFormat", "The line of a shape: a line itself, or the outline of a geometric shape or a text box.", {

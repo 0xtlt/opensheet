@@ -7,7 +7,9 @@ use super::pane::{Bottom, CodeEditorPane, Page, RenameDialog, ScriptRef};
 use super::run::testing::FakeEngine;
 use super::run::{OutputKind, Runs};
 use super::*;
-use gpui::{Entity, Modifiers, Pixels, Point, Render, TestAppContext, VisualTestContext, point, px};
+use gpui::{
+    Entity, Modifiers, Pixels, Point, Render, TestAppContext, VisualTestContext, point, px,
+};
 use opensheet_engine::protect::SheetProtection;
 use opensheet_engine::vba::VbaProject;
 use opensheet_engine::{Rect, Value, Workbook};
@@ -31,7 +33,9 @@ fn redraw(cx: &mut VisualTestContext) {
 }
 
 fn at(cx: &mut VisualTestContext, name: &'static str) -> Point<Pixels> {
-    cx.debug_bounds(name).unwrap_or_else(|| panic!("{name} is not drawn")).center()
+    cx.debug_bounds(name)
+        .unwrap_or_else(|| panic!("{name} is not drawn"))
+        .center()
 }
 
 fn click(cx: &mut VisualTestContext, name: &'static str) {
@@ -42,7 +46,11 @@ fn click(cx: &mut VisualTestContext, name: &'static str) {
 
 /// Click a control of the ribbon, found by the anchor it registers.
 fn click_ribbon(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, id: &'static str) {
-    let position = app.update(cx, |app, _| app.anchors.borrow().get(id).map(|bounds| bounds.center())).unwrap_or_else(|| panic!("{id} is not on the ribbon"));
+    let position = app
+        .update(cx, |app, _| {
+            app.anchors.borrow().get(id).map(|bounds| bounds.center())
+        })
+        .unwrap_or_else(|| panic!("{id} is not on the ribbon"));
     cx.simulate_click(position, Modifiers::none());
     redraw(cx);
 }
@@ -52,7 +60,13 @@ fn the_pane(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<CodeEd
 }
 
 fn dialog<V: Render>(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<V> {
-    app.update(cx, |app, _| app.front_modal_view().expect("a dialog is open").downcast::<V>().ok().expect("the dialog"))
+    app.update(cx, |app, _| {
+        app.front_modal_view()
+            .expect("a dialog is open")
+            .downcast::<V>()
+            .ok()
+            .expect("the dialog")
+    })
 }
 
 fn modals(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> usize {
@@ -69,7 +83,12 @@ fn press_alert_button(cx: &mut VisualTestContext, index: usize) {
     redraw(cx);
 }
 
-fn value(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, sheet: usize, cell: (u32, u32)) -> Value {
+fn value(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    sheet: usize,
+    cell: (u32, u32),
+) -> Value {
     app.update(cx, |app, _| app.wb.value_at(sheet, cell.0, cell.1))
 }
 
@@ -110,9 +129,19 @@ fn editor_shown(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> St
     })
 }
 
-fn output(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<(OutputKind, String, Option<u32>)> {
+fn output(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+) -> Vec<(OutputKind, String, Option<u32>)> {
     app.update(cx, |app, _| {
-        app.ext::<Runs>().map(|runs| runs.output.iter().map(|line| (line.kind, line.text.clone(), line.line)).collect()).unwrap_or_default()
+        app.ext::<Runs>()
+            .map(|runs| {
+                runs.output
+                    .iter()
+                    .map(|line| (line.kind, line.text.clone(), line.line))
+                    .collect()
+            })
+            .unwrap_or_default()
     })
 }
 
@@ -133,17 +162,26 @@ fn the_tab_shows_new_script_all_scripts_and_the_gallery(cx: &mut TestAppContext)
     // A tile opens the page of its script in the Code Editor.
     click(cx, "au-tile-0");
     let pane = the_pane(&app, cx);
-    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Script(ScriptRef::Mine("Tidy".to_string())));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.page.clone()),
+        Page::Script(ScriptRef::Mine("Tidy".to_string()))
+    );
     assert!(app.update(cx, |app, _| app.pane_open(PANE_ID)));
     click(cx, "au-tile-1");
-    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Script(ScriptRef::Sample(0)));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.page.clone()),
+        Page::Script(ScriptRef::Sample(0))
+    );
 
     // All Scripts shows the list; New Script opens the editor on a new one.
     click_ribbon(&app, cx, "au-all");
     assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::List);
     assert!(cx.debug_bounds("ce-script-0").is_some() && cx.debug_bounds("ce-sample-5").is_some());
     click_ribbon(&app, cx, "au-new");
-    assert_eq!(pane.update(cx, |pane, _| (pane.page.clone(), pane.open.clone())), (Page::Editor, Some("Script".to_string())));
+    assert_eq!(
+        pane.update(cx, |pane, _| (pane.page.clone(), pane.open.clone())),
+        (Page::Editor, Some("Script".to_string()))
+    );
     assert_eq!(editor_text(&pane, cx), Script::new("Script").body);
     assert!(scripts::exists("Script"));
     // The commands are no longer the placeholders of the ribbon.
@@ -158,32 +196,62 @@ fn typing_in_the_editor(cx: &mut TestAppContext) {
     click_ribbon_new(&app, cx);
     let pane = the_pane(&app, cx);
     // The keys go to the editor, not to the grid.
-    pane.update(cx, |pane, cx| pane.editor.update(cx, |editor, cx| editor.set_text("", cx)));
+    pane.update(cx, |pane, cx| {
+        pane.editor.update(cx, |editor, cx| editor.set_text("", cx))
+    });
     cx.simulate_input("function main() {");
     cx.simulate_keystrokes("enter");
     cx.simulate_input("let a = [1");
-    assert_eq!(editor_shown(&pane, cx), "function main() {\n  let a = [1|]\n}");
+    assert_eq!(
+        editor_shown(&pane, cx),
+        "function main() {\n  let a = [1|]\n}"
+    );
     // The closing bracket is stepped over, not doubled.
     cx.simulate_input("];");
-    assert_eq!(editor_shown(&pane, cx), "function main() {\n  let a = [1];|\n}");
+    assert_eq!(
+        editor_shown(&pane, cx),
+        "function main() {\n  let a = [1];|\n}"
+    );
     cx.simulate_keystrokes("enter");
     cx.simulate_input("log(\"hi");
-    assert_eq!(editor_shown(&pane, cx), "function main() {\n  let a = [1];\n  log(\"hi|\")\n}");
-    assert_eq!(app.update(cx, |app, _| app.wb.sheets[0].cells.len()), 0, "nothing was typed into the sheet");
+    assert_eq!(
+        editor_shown(&pane, cx),
+        "function main() {\n  let a = [1];\n  log(\"hi|\")\n}"
+    );
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.sheets[0].cells.len()),
+        0,
+        "nothing was typed into the sheet"
+    );
 
     // Tab and ⇧Tab on a selection of lines.
     cx.simulate_keystrokes("shift-up");
     cx.simulate_keystrokes("tab");
-    assert_eq!(editor_text(&pane, cx), "function main() {\n    let a = [1];\n    log(\"hi\")\n}");
+    assert_eq!(
+        editor_text(&pane, cx),
+        "function main() {\n    let a = [1];\n    log(\"hi\")\n}"
+    );
     cx.simulate_keystrokes("shift-tab shift-tab");
-    assert_eq!(editor_text(&pane, cx), "function main() {\nlet a = [1];\nlog(\"hi\")\n}");
+    assert_eq!(
+        editor_text(&pane, cx),
+        "function main() {\nlet a = [1];\nlog(\"hi\")\n}"
+    );
 
     // The editor has its own undo: the workbook's is not touched.
     cx.simulate_keystrokes("cmd-z cmd-z");
-    assert_eq!(editor_text(&pane, cx), "function main() {\n    let a = [1];\n    log(\"hi\")\n}");
+    assert_eq!(
+        editor_text(&pane, cx),
+        "function main() {\n    let a = [1];\n    log(\"hi\")\n}"
+    );
     cx.simulate_keystrokes("cmd-shift-z");
-    assert_eq!(editor_text(&pane, cx), "function main() {\n  let a = [1];\n  log(\"hi\")\n}");
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)), None);
+    assert_eq!(
+        editor_text(&pane, cx),
+        "function main() {\n  let a = [1];\n  log(\"hi\")\n}"
+    );
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)),
+        None
+    );
 
     // ⌘/ comments the line of the caret, ⌘A and typing replace everything.
     cx.simulate_keystrokes("cmd-up cmd-/");
@@ -192,7 +260,10 @@ fn typing_in_the_editor(cx: &mut TestAppContext) {
     cx.simulate_input("x");
     assert_eq!(editor_shown(&pane, cx), "x|");
     // The status line follows the caret.
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()), (1, 2));
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()),
+        (1, 2)
+    );
 }
 
 fn click_ribbon_new(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) {
@@ -212,7 +283,10 @@ fn saving_and_the_mark_of_unsaved_changes(cx: &mut TestAppContext) {
     redraw(cx);
     assert!(pane.update(cx, |pane, cx| pane.unsaved(cx)));
     // The file still holds what was saved.
-    assert_eq!(scripts::load("Script").unwrap().body, Script::new("Script").body);
+    assert_eq!(
+        scripts::load("Script").unwrap().body,
+        Script::new("Script").body
+    );
 
     // ⌘S in the editor saves the script, not the workbook.
     cx.simulate_keystrokes("cmd-s");
@@ -258,13 +332,18 @@ fn leaving_a_changed_script_asks_first(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-down");
     cx.simulate_input(" three");
     redraw(cx);
-    pane.update_in(cx, |pane, window, cx| pane.show_script(ScriptRef::Sample(1), window, cx));
+    pane.update_in(cx, |pane, window, cx| {
+        pane.show_script(ScriptRef::Sample(1), window, cx)
+    });
     redraw(cx);
     assert_eq!(modals(&app, cx), 1);
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(scripts::load("Tidy").unwrap().body, "log one three");
-    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Script(ScriptRef::Sample(1)));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.page.clone()),
+        Page::Script(ScriptRef::Sample(1))
+    );
 }
 
 #[gpui::test]
@@ -283,13 +362,22 @@ fn unsaved_text_outlives_the_pane(cx: &mut TestAppContext) {
     redraw(cx);
     assert!(app.update(cx, |app, _| pane(app).is_none()));
     // The pane that comes next takes the text up, still unsaved.
-    app.update_in(cx, |app, window, cx| app.run_command(Cmd::AllScripts, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        app.run_command(Cmd::AllScripts, window, cx)
+    });
     redraw(cx);
     // (The question of the changed script: stay in the editor.)
     cx.simulate_keystrokes("escape");
     redraw(cx);
     let pane = the_pane(&app, cx);
-    assert_eq!(pane.update(cx, |pane, cx| (pane.page.clone(), pane.open.clone(), pane.unsaved(cx))), (Page::Editor, Some("Tidy".to_string()), true));
+    assert_eq!(
+        pane.update(cx, |pane, cx| (
+            pane.page.clone(),
+            pane.open.clone(),
+            pane.unsaved(cx)
+        )),
+        (Page::Editor, Some("Tidy".to_string()), true)
+    );
     assert_eq!(editor_text(&pane, cx), "log one two");
     assert_eq!(scripts::load("Tidy").unwrap().body, "log one");
     // Saved, there is nothing left to take up.
@@ -298,9 +386,14 @@ fn unsaved_text_outlives_the_pane(cx: &mut TestAppContext) {
         let wb = Workbook::new(app.wb.locale);
         app.set_workbook(wb, None, "Third".to_string(), cx);
     });
-    app.update_in(cx, |app, window, cx| app.run_command(Cmd::AllScripts, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        app.run_command(Cmd::AllScripts, window, cx)
+    });
     redraw(cx);
-    assert_eq!(the_pane(&app, cx).update(cx, |pane, _| pane.page.clone()), Page::List);
+    assert_eq!(
+        the_pane(&app, cx).update(cx, |pane, _| pane.page.clone()),
+        Page::List
+    );
 }
 
 #[gpui::test]
@@ -317,16 +410,27 @@ fn problems_appear_after_a_pause_and_lead_to_their_line(cx: &mut TestAppContext)
     cx.executor().advance_clock(Duration::from_millis(600));
     redraw(cx);
     // …but once the typing pauses: on its line and in the list.
-    let problems = pane.update(cx, |pane, _| pane.problems.iter().map(|p| (p.line, p.message.clone())).collect::<Vec<_>>());
+    let problems = pane.update(cx, |pane, _| {
+        pane.problems
+            .iter()
+            .map(|p| (p.line, p.message.clone()))
+            .collect::<Vec<_>>()
+    });
     assert_eq!(problems.len(), 1);
     assert_eq!(problems[0].0, Some(4));
     assert_eq!(pane.update(cx, |pane, _| pane.bottom), Bottom::Problems);
 
     // A click on the problem puts the caret on its line.
     cx.simulate_keystrokes("cmd-up");
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()), (1, 1));
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()),
+        (1, 1)
+    );
     click(cx, "ce-problem-0");
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position().0), 4);
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position().0),
+        4
+    );
     // Typing goes on there.
     cx.simulate_keystrokes("cmd-shift-right backspace");
     cx.simulate_input("log four");
@@ -334,13 +438,19 @@ fn problems_appear_after_a_pause_and_lead_to_their_line(cx: &mut TestAppContext)
     redraw(cx);
     assert!(pane.update(cx, |pane, _| pane.problems.is_empty()));
     assert_eq!(pane.update(cx, |pane, _| pane.bottom), Bottom::Output);
-    assert_eq!(editor_text(&pane, cx), "log one\nlog two\nlog three\nlog four");
+    assert_eq!(
+        editor_text(&pane, cx),
+        "log one\nlog two\nlog three\nlog four"
+    );
 
     // A script opened with a problem shows it at once.
     cx.simulate_keystrokes("cmd-s");
     script("Broken", "syntax error");
     let pane = edit(&app, cx, "Broken");
-    assert_eq!(pane.update(cx, |pane, _| (pane.open.clone(), pane.problems.len())), (Some("Broken".to_string()), 1));
+    assert_eq!(
+        pane.update(cx, |pane, _| (pane.open.clone(), pane.problems.len())),
+        (Some("Broken".to_string()), 1)
+    );
 }
 
 // ------------------------------------------------------------------ running
@@ -352,7 +462,10 @@ fn a_script_runs_as_one_undo_step_and_the_window_follows(cx: &mut TestAppContext
         app.wb.set_cell_text(0, 0, 0, "1").unwrap();
         app.commit("setup", cx);
     });
-    script("Report", "set A1 5\nbold A1\nlog hello\nwarn careful\nadd-sheet\nset B2 =Sheet1!A1*2\nselect B2:C3\nreturn 42");
+    script(
+        "Report",
+        "set A1 5\nbold A1\nlog hello\nwarn careful\nadd-sheet\nset B2 =Sheet1!A1*2\nselect B2:C3\nreturn 42",
+    );
     let pane = edit(&app, cx, "Report");
     click(cx, "ce-run");
 
@@ -363,23 +476,48 @@ fn a_script_runs_as_one_undo_step_and_the_window_follows(cx: &mut TestAppContext
     assert_eq!(value(&app, cx, 1, (1, 1)), Value::Number(10.0));
     // The window went to the sheet the script put in front and to its
     // selection.
-    assert_eq!(app.update(cx, |app, _| (app.sheet, app.sel().ranges.clone())), (1, vec![Rect::new(1, 1, 2, 2)]));
+    assert_eq!(
+        app.update(cx, |app, _| (app.sheet, app.sel().ranges.clone())),
+        (1, vec![Rect::new(1, 1, 2, 2)])
+    );
 
     // The output: the logs with their level and line, the value returned.
     let lines = output(&app, cx);
-    assert_eq!(lines[0], (OutputKind::Log(LogLevel::Log), "hello".to_string(), Some(3)));
-    assert_eq!(lines[1], (OutputKind::Log(LogLevel::Warn), "careful".to_string(), Some(4)));
+    assert_eq!(
+        lines[0],
+        (OutputKind::Log(LogLevel::Log), "hello".to_string(), Some(3))
+    );
+    assert_eq!(
+        lines[1],
+        (
+            OutputKind::Log(LogLevel::Warn),
+            "careful".to_string(),
+            Some(4)
+        )
+    );
     assert!(lines[2].1.ends_with("42") && lines[2].0 == OutputKind::Note);
     assert_eq!(lines.len(), 4);
     assert_eq!(pane.update(cx, |pane, _| pane.bottom), Bottom::Output);
     assert!(cx.debug_bounds("ce-output-0").is_some());
 
     // One step, named as Excel names the command; undo takes all back.
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)), Some("Run Script".to_string()));
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)),
+        Some("Run Script".to_string())
+    );
     app.update(cx, |app, cx| app.undo(cx));
     assert_eq!(value(&app, cx, 0, (0, 0)), Value::Number(1.0));
-    assert_eq!(app.update(cx, |app, _| (app.wb.sheets.len(), app.wb.style_at(0, 0, 0).font.bold)), (1, false));
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)), Some("setup".to_string()));
+    assert_eq!(
+        app.update(cx, |app, _| (
+            app.wb.sheets.len(),
+            app.wb.style_at(0, 0, 0).font.bold
+        )),
+        (1, false)
+    );
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)),
+        Some("setup".to_string())
+    );
     app.update(cx, |app, cx| app.redo(cx));
     assert_eq!(value(&app, cx, 1, (1, 1)), Value::Number(10.0));
 }
@@ -397,17 +535,33 @@ fn a_script_that_fails_changes_nothing(cx: &mut TestAppContext) {
     click(cx, "ce-run");
     assert_eq!(value(&app, cx, 0, (0, 0)), Value::Number(1.0));
     assert_eq!(app.update(cx, |app, _| app.wb.sheets.len()), 1);
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)), Some("setup".to_string()));
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)),
+        Some("setup".to_string())
+    );
     // What it logged before failing, then the error with its line.
     let lines = output(&app, cx);
-    assert_eq!(lines[0], (OutputKind::Log(LogLevel::Log), "before".to_string(), Some(1)));
+    assert_eq!(
+        lines[0],
+        (
+            OutputKind::Log(LogLevel::Log),
+            "before".to_string(),
+            Some(1)
+        )
+    );
     assert_eq!(lines[1], (OutputKind::Error, "Boom".to_string(), Some(4)));
     assert_eq!(lines.len(), 2);
     // The caret is on the line (and the column) of the error.
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()), (4, 3));
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()),
+        (4, 3)
+    );
     // A click on a line of the output goes to its line of the script.
     click(cx, "ce-output-0");
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position().0), 1);
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position().0),
+        1
+    );
 
     // A script that runs too long says so in plain words.
     script("Slow", "timeout");
@@ -426,9 +580,16 @@ fn a_script_cannot_be_started_twice_and_can_be_stopped(cx: &mut TestAppContext) 
     // Started: until the other thread is given time, it runs.
     pane.update_in(cx, |pane, window, cx| pane.run(window, cx));
     assert!(app.update(cx, |app, _| run::is_running(app)));
-    assert_eq!(app.update(cx, |app, _| app.ext::<Runs>().and_then(|runs| runs.running.as_ref().map(|r| r.name.clone()))), Some("Slow".to_string()));
+    assert_eq!(
+        app.update(cx, |app, _| app
+            .ext::<Runs>()
+            .and_then(|runs| runs.running.as_ref().map(|r| r.name.clone()))),
+        Some("Slow".to_string())
+    );
     // A second start is refused.
-    assert!(!app.update_in(cx, |app, window, cx| run::start(app, "Other", "set B1 1", window, cx)));
+    assert!(!app.update_in(cx, |app, window, cx| run::start(
+        app, "Other", "set B1 1", window, cx
+    )));
     // The pane says so and offers to stop, instead of Run. (Drawn by
     // hand: an event would give the other thread its time.)
     cx.update(|window, cx| {
@@ -442,7 +603,10 @@ fn a_script_cannot_be_started_twice_and_can_be_stopped(cx: &mut TestAppContext) 
     assert!(!app.update(cx, |app, _| run::is_running(app)));
     redraw(cx);
     assert_eq!(value(&app, cx, 0, (0, 0)), Value::Empty);
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)), None);
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)),
+        None
+    );
     let lines = output(&app, cx);
     assert_eq!((lines.len(), lines[0].0), (1, OutputKind::Note));
 
@@ -466,7 +630,10 @@ fn what_the_user_changes_meanwhile_wins(cx: &mut TestAppContext) {
     // The result of the script is refused, the typed cell is there.
     assert_eq!(value(&app, cx, 0, (0, 0)), Value::Empty);
     assert_eq!(value(&app, cx, 0, (3, 3)), Value::Text("mine".into()));
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)), Some("typing".to_string()));
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)),
+        Some("typing".to_string())
+    );
     let lines = output(&app, cx);
     assert_eq!(lines.last().map(|line| line.0), Some(OutputKind::Error));
     assert!(!app.update(cx, |app, _| run::is_running(app)));
@@ -485,7 +652,10 @@ fn a_protected_sheet_is_not_changed_by_a_script(cx: &mut TestAppContext) {
     edit(&app, cx, "Write");
     click(cx, "ce-run");
     assert_eq!(value(&app, cx, 0, (0, 0)), Value::Number(1.0));
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)), Some("protect".to_string()));
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)),
+        Some("protect".to_string())
+    );
     let lines = output(&app, cx);
     assert_eq!(lines.last().map(|line| line.0), Some(OutputKind::Error));
     assert!(lines.last().unwrap().1.contains("protected"));
@@ -495,16 +665,23 @@ fn a_protected_sheet_is_not_changed_by_a_script(cx: &mut TestAppContext) {
     edit(&app, cx, "Read");
     click(cx, "ce-run");
     assert_eq!(output(&app, cx)[0].1, "fine");
-    assert_eq!(output(&app, cx).last().map(|line| line.0), Some(OutputKind::Note));
+    assert_eq!(
+        output(&app, cx).last().map(|line| line.0),
+        Some(OutputKind::Note)
+    );
 }
 
 #[gpui::test]
-fn a_script_runs_from_its_page_and_what_is_typed_in_a_cell_is_stored_first(cx: &mut TestAppContext) {
+fn a_script_runs_from_its_page_and_what_is_typed_in_a_cell_is_stored_first(
+    cx: &mut TestAppContext,
+) {
     let (app, cx) = open(cx);
     script("Fill", "set B1 7\nlog done");
     app.update_in(cx, |app, window, cx| {
         let pane = open_pane(app, cx);
-        pane.update(cx, |pane, cx| pane.show_script(ScriptRef::Mine("Fill".to_string()), window, cx));
+        pane.update(cx, |pane, cx| {
+            pane.show_script(ScriptRef::Mine("Fill".to_string()), window, cx)
+        });
     });
     redraw(cx);
     // An entry is being typed in A1.
@@ -522,7 +699,10 @@ fn a_script_runs_from_its_page_and_what_is_typed_in_a_cell_is_stored_first(cx: &
     assert!(cx.debug_bounds("ce-output-0").is_some());
     // Two steps: the entry, then the script.
     app.update(cx, |app, cx| app.undo(cx));
-    assert_eq!((value(&app, cx, 0, (0, 0)), value(&app, cx, 0, (0, 1))), (Value::Number(12.0), Value::Empty));
+    assert_eq!(
+        (value(&app, cx, 0, (0, 0)), value(&app, cx, 0, (0, 1))),
+        (Value::Number(12.0), Value::Empty)
+    );
 }
 
 // -------------------------------------------------------- scripts as files
@@ -534,17 +714,28 @@ fn rename_delete_and_make_a_copy(cx: &mut TestAppContext) {
     script("Other", "log two");
     let pane = app.update_in(cx, |app, window, cx| {
         let pane = open_pane(app, cx);
-        pane.update(cx, |pane, cx| pane.show_script(ScriptRef::Mine("Tidy".to_string()), window, cx));
+        pane.update(cx, |pane, cx| {
+            pane.show_script(ScriptRef::Mine("Tidy".to_string()), window, cx)
+        });
         pane
     });
     redraw(cx);
     // The "…" menu: Rename, Delete, Make a Copy, then Export.
     let labels = pane.update(cx, |pane, cx| {
-        pane.menu_entries(&ScriptRef::Mine("Tidy".to_string()), cx).iter().map(|e| (e.label.to_string(), e.disabled)).collect::<Vec<_>>()
+        pane.menu_entries(&ScriptRef::Mine("Tidy".to_string()), cx)
+            .iter()
+            .map(|e| (e.label.to_string(), e.disabled))
+            .collect::<Vec<_>>()
     });
     assert_eq!(
         labels,
-        [("Rename".to_string(), false), ("Delete".to_string(), false), ("Make a Copy".to_string(), false), (String::new(), false), ("Export…".to_string(), false)]
+        [
+            ("Rename".to_string(), false),
+            ("Delete".to_string(), false),
+            ("Make a Copy".to_string(), false),
+            (String::new(), false),
+            ("Export…".to_string(), false)
+        ]
     );
     click(cx, "ce-more");
     assert!(app.update(cx, |app, _| app.popup.is_some()));
@@ -555,29 +746,47 @@ fn rename_delete_and_make_a_copy(cx: &mut TestAppContext) {
     pane.update_in(cx, |pane, window, cx| pane.ask_rename("Tidy", window, cx));
     redraw(cx);
     let rename = dialog::<RenameDialog>(&app, cx);
-    rename.update(cx, |dialog, cx| dialog.name.update(cx, |input, cx| input.set_text("other", cx)));
+    rename.update(cx, |dialog, cx| {
+        dialog
+            .name
+            .update(cx, |input, cx| input.set_text("other", cx))
+    });
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(modals(&app, cx), 1);
     assert!(rename.update(cx, |dialog, _| dialog.problem.is_some()));
     assert!(scripts::exists("Tidy"));
     // A free one is taken: the file is renamed and the page follows.
-    rename.update(cx, |dialog, cx| dialog.name.update(cx, |input, cx| input.set_text("Clean up", cx)));
+    rename.update(cx, |dialog, cx| {
+        dialog
+            .name
+            .update(cx, |input, cx| input.set_text("Clean up", cx))
+    });
     cx.simulate_keystrokes("enter");
     redraw(cx);
     assert_eq!(modals(&app, cx), 0);
     assert!(!scripts::exists("Tidy") && scripts::exists("Clean up"));
-    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Script(ScriptRef::Mine("Clean up".to_string())));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.page.clone()),
+        Page::Script(ScriptRef::Mine("Clean up".to_string()))
+    );
     // Escape leaves the name alone.
-    pane.update_in(cx, |pane, window, cx| pane.ask_rename("Clean up", window, cx));
+    pane.update_in(cx, |pane, window, cx| {
+        pane.ask_rename("Clean up", window, cx)
+    });
     redraw(cx);
     cx.simulate_keystrokes("escape");
     redraw(cx);
     assert!(modals(&app, cx) == 0 && scripts::exists("Clean up"));
 
     // Make a copy: a second file, shown on its page.
-    pane.update(cx, |pane, cx| pane.make_copy(&ScriptRef::Mine("Clean up".to_string()), cx));
-    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Script(ScriptRef::Mine("Clean up - Copy".to_string())));
+    pane.update(cx, |pane, cx| {
+        pane.make_copy(&ScriptRef::Mine("Clean up".to_string()), cx)
+    });
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.page.clone()),
+        Page::Script(ScriptRef::Mine("Clean up - Copy".to_string()))
+    );
     assert_eq!(scripts::load("Clean up - Copy").unwrap().body, "log one");
 
     // Delete asks; Cancel keeps the script, Delete removes its file.
@@ -605,14 +814,24 @@ fn a_renamed_or_deleted_script_leaves_the_editor_in_step(cx: &mut TestAppContext
     cx.simulate_input("!");
     // Renamed while it is edited: the editor goes on, under the new name.
     assert!(pane.update(cx, |pane, cx| pane.rename("Tidy", "Neat", cx)));
-    assert_eq!(pane.update(cx, |pane, _| pane.open.clone()), Some("Neat".to_string()));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.open.clone()),
+        Some("Neat".to_string())
+    );
     cx.simulate_keystrokes("cmd-s");
     redraw(cx);
     assert_eq!(scripts::load("Neat").unwrap().body, "log one!");
     assert!(!scripts::exists("Tidy"));
     // Deleted: nothing is left open, nothing to ask about.
     pane.update(cx, |pane, cx| pane.delete("Neat", cx));
-    assert_eq!(pane.update(cx, |pane, cx| (pane.page.clone(), pane.open.clone(), pane.unsaved(cx))), (Page::List, None, false));
+    assert_eq!(
+        pane.update(cx, |pane, cx| (
+            pane.page.clone(),
+            pane.open.clone(),
+            pane.unsaved(cx)
+        )),
+        (Page::List, None, false)
+    );
 }
 
 #[gpui::test]
@@ -621,11 +840,22 @@ fn scripts_are_imported_and_exported(cx: &mut TestAppContext) {
     let outside = scripts::default_folder().join("outside");
     std::fs::create_dir_all(&outside).unwrap();
     let file = outside.join("From Excel.osts");
-    std::fs::write(&file, Script { body: "log imported".to_string(), ..Script::new("x") }.to_osts()).unwrap();
+    std::fs::write(
+        &file,
+        Script {
+            body: "log imported".to_string(),
+            ..Script::new("x")
+        }
+        .to_osts(),
+    )
+    .unwrap();
     let pane = app.update(cx, |app, cx| open_pane(app, cx));
     pane.update(cx, |pane, cx| pane.import(&file, cx));
     redraw(cx);
-    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Script(ScriptRef::Mine("From Excel".to_string())));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.page.clone()),
+        Page::Script(ScriptRef::Mine("From Excel".to_string()))
+    );
     assert_eq!(scripts::load("From Excel").unwrap().body, "log imported");
     // What is not a script is refused, in words.
     let bad = outside.join("bad.osts");
@@ -638,36 +868,63 @@ fn scripts_are_imported_and_exported(cx: &mut TestAppContext) {
     cx.simulate_keystrokes("cmd-down");
     cx.simulate_input(" twice");
     let target = outside.join("out.osts");
-    pane.update(cx, |pane, cx| pane.export(&ScriptRef::Mine("From Excel".to_string()), &target, cx));
+    pane.update(cx, |pane, cx| {
+        pane.export(&ScriptRef::Mine("From Excel".to_string()), &target, cx)
+    });
     let back = Script::from_osts("out", &std::fs::read_to_string(&target).unwrap()).unwrap();
     assert_eq!(back.body, "log imported twice");
     // A sample can be exported too.
     let sample = outside.join("sample.osts");
-    pane.update(cx, |pane, cx| pane.export(&ScriptRef::Sample(0), &sample, cx));
-    assert!(Script::from_osts("sample", &std::fs::read_to_string(&sample).unwrap()).unwrap().body.contains("getUsedRange"));
+    pane.update(cx, |pane, cx| {
+        pane.export(&ScriptRef::Sample(0), &sample, cx)
+    });
+    assert!(
+        Script::from_osts("sample", &std::fs::read_to_string(&sample).unwrap())
+            .unwrap()
+            .body
+            .contains("getUsedRange")
+    );
 }
 
 #[gpui::test]
 fn samples_are_listed_run_and_copied_to_be_edited(cx: &mut TestAppContext) {
     let (app, cx) = open(cx);
-    app.update_in(cx, |app, window, cx| app.run_command(Cmd::AllScripts, window, cx));
+    app.update_in(cx, |app, window, cx| {
+        app.run_command(Cmd::AllScripts, window, cx)
+    });
     redraw(cx);
     let pane = the_pane(&app, cx);
     // No script of the user's yet, the six samples.
     assert!(cx.debug_bounds("ce-script-0").is_none());
     assert!(cx.debug_bounds("ce-sample-0").is_some() && cx.debug_bounds("ce-sample-5").is_some());
     click(cx, "ce-sample-3");
-    assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Script(ScriptRef::Sample(3)));
+    assert_eq!(
+        pane.update(cx, |pane, _| pane.page.clone()),
+        Page::Script(ScriptRef::Sample(3))
+    );
     // A sample cannot be renamed or deleted.
-    let disabled = pane.update(cx, |pane, cx| pane.menu_entries(&ScriptRef::Sample(3), cx).iter().map(|e| e.disabled).collect::<Vec<_>>());
+    let disabled = pane.update(cx, |pane, cx| {
+        pane.menu_entries(&ScriptRef::Sample(3), cx)
+            .iter()
+            .map(|e| e.disabled)
+            .collect::<Vec<_>>()
+    });
     assert_eq!(disabled, [true, true, false, false, false]);
     // It runs from its page.
     click(cx, "ce-run");
-    assert_eq!(app.update(cx, |app, _| app.ext::<Runs>().map(|runs| runs.output_of.clone())), Some(SAMPLES[3].name().to_string()));
+    assert_eq!(
+        app.update(cx, |app, _| app
+            .ext::<Runs>()
+            .map(|runs| runs.output_of.clone())),
+        Some(SAMPLES[3].name().to_string())
+    );
     // Edit copies it among the user's scripts and opens the copy.
     click(cx, "ce-edit");
     let name = SAMPLES[3].name().to_string();
-    assert_eq!(pane.update(cx, |pane, _| (pane.page.clone(), pane.open.clone())), (Page::Editor, Some(name.clone())));
+    assert_eq!(
+        pane.update(cx, |pane, _| (pane.page.clone(), pane.open.clone())),
+        (Page::Editor, Some(name.clone()))
+    );
     assert_eq!(scripts::load(&name).unwrap().body, SAMPLES[3].body);
     assert_eq!(editor_text(&pane, cx), SAMPLES[3].body);
     // Back to the list (nothing changed, nothing asked): the copy is there.
@@ -695,7 +952,11 @@ const MODULE: &str = "Option Explicit\n\nSub FormatReport()\n    Range(\"A1\").F
 fn with_macros(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<u8> {
     let project = build_project(&[
         ("ThisWorkbook", ModuleKind::Document, ""),
-        ("Sheet1", ModuleKind::Document, "Sub Refresh()\n    Me.Calculate\nEnd Sub\n"),
+        (
+            "Sheet1",
+            ModuleKind::Document,
+            "Sub Refresh()\n    Me.Calculate\nEnd Sub\n",
+        ),
         ("Module1", ModuleKind::Standard, MODULE),
     ]);
     let bin = project.clone();
@@ -734,7 +995,9 @@ fn a_workbook_with_macros_says_so_once(cx: &mut TestAppContext) {
     // Closed, it stays closed for this workbook…
     assert!(app.update(cx, |app, cx| message_bar(app, cx).is_some()));
     click(cx, "macro-bar-close");
-    assert!(app.update(cx, |app, _| app.ext::<MacroUi>().is_some_and(|ui| ui.bar_closed)));
+    assert!(app.update(cx, |app, _| {
+        app.ext::<MacroUi>().is_some_and(|ui| ui.bar_closed)
+    }));
     app.update(cx, |app, cx| app.select_cell(3, 3, cx));
     redraw(cx);
     assert!(app.update(cx, |app, cx| message_bar(app, cx).is_none()));
@@ -753,10 +1016,21 @@ fn the_macro_dialog_lists_and_shows_macros_and_does_not_run_them(cx: &mut TestAp
     cx.simulate_keystrokes("alt-f8");
     redraw(cx);
     let view = dialog::<MacroDialog>(&app, cx);
-    let names = view.update(cx, |view, _| view.macros.iter().map(|m| m.name.clone()).collect::<Vec<_>>());
+    let names = view.update(cx, |view, _| {
+        view.macros
+            .iter()
+            .map(|m| m.name.clone())
+            .collect::<Vec<_>>()
+    });
     assert_eq!(names, ["ClearReport", "FormatReport", "Sheet1.Refresh"]);
     // The first macro is proposed.
-    assert_eq!(view.update(cx, |view, cx| (view.name.read(cx).text().to_string(), view.selected(cx))), ("ClearReport".to_string(), Some(0)));
+    assert_eq!(
+        view.update(cx, |view, cx| (
+            view.name.read(cx).text().to_string(),
+            view.selected(cx)
+        )),
+        ("ClearReport".to_string(), Some(0))
+    );
 
     // Run and Step Into: the one message, and nothing ran.
     click(cx, "macro-run");
@@ -768,7 +1042,10 @@ fn the_macro_dialog_lists_and_shows_macros_and_does_not_run_them(cx: &mut TestAp
     assert_eq!(modals(&app, cx), 2);
     // Its other button shows the Automate tab.
     press_alert_button(cx, 0);
-    assert_eq!(app.update(cx, |app, _| (app.modals.len(), app.ribbon_tab)), (1, TAB));
+    assert_eq!(
+        app.update(cx, |app, _| (app.modals.len(), app.ribbon_tab)),
+        (1, TAB)
+    );
     assert_eq!(value(&app, cx, 0, (0, 0)), Value::Number(7.0));
     assert!(!app.update(cx, |app, _| app.wb.modified));
 
@@ -778,7 +1055,10 @@ fn the_macro_dialog_lists_and_shows_macros_and_does_not_run_them(cx: &mut TestAp
         assert_eq!(modals(&app, cx), 1, "{disabled}");
     }
     // A name that is no macro leaves nothing to run or edit.
-    view.update(cx, |view, cx| view.name.update(cx, |input, cx| input.set_text("Nothing", cx)));
+    view.update(cx, |view, cx| {
+        view.name
+            .update(cx, |input, cx| input.set_text("Nothing", cx))
+    });
     redraw(cx);
     assert_eq!(view.update(cx, |view, cx| view.selected(cx)), None);
     click(cx, "macro-run");
@@ -793,18 +1073,31 @@ fn the_macro_dialog_lists_and_shows_macros_and_does_not_run_them(cx: &mut TestAp
     assert_eq!(modals(&app, cx), 1);
     let viewer = dialog::<VbaViewer>(&app, cx);
     assert_eq!(viewer.update(cx, |viewer, _| viewer.module), 2);
-    assert_eq!(viewer.update(cx, |viewer, cx| viewer.editor.read(cx).text().to_string()), MODULE);
-    assert_eq!(viewer.update(cx, |viewer, cx| viewer.editor.read(cx).caret_position().0), 3);
+    assert_eq!(
+        viewer.update(cx, |viewer, cx| viewer.editor.read(cx).text().to_string()),
+        MODULE
+    );
+    assert_eq!(
+        viewer.update(cx, |viewer, cx| viewer.editor.read(cx).caret_position().0),
+        3
+    );
     // The code can be looked at, not changed.
     let code = at(cx, "vba-code");
     cx.simulate_click(code, Modifiers::none());
     cx.simulate_input("x");
     cx.simulate_keystrokes("backspace enter cmd-v");
-    assert_eq!(viewer.update(cx, |viewer, cx| viewer.editor.read(cx).text().to_string()), MODULE);
+    assert_eq!(
+        viewer.update(cx, |viewer, cx| viewer.editor.read(cx).text().to_string()),
+        MODULE
+    );
     // The other modules of the project are a click away.
     viewer.update(cx, |viewer, cx| viewer.show(1, cx));
     redraw(cx);
-    assert!(viewer.update(cx, |viewer, cx| viewer.editor.read(cx).text().to_string()).starts_with("Sub Refresh()"));
+    assert!(
+        viewer
+            .update(cx, |viewer, cx| viewer.editor.read(cx).text().to_string())
+            .starts_with("Sub Refresh()")
+    );
     cx.simulate_keystrokes("escape");
     redraw(cx);
     assert_eq!(modals(&app, cx), 0);
@@ -822,7 +1115,9 @@ fn the_macro_dialog_of_a_workbook_without_macros_is_empty(cx: &mut TestAppContex
     redraw(cx);
     click_ribbon(&app, cx, "vw-macros");
     let view = dialog::<MacroDialog>(&app, cx);
-    assert!(view.update(cx, |view, cx| view.macros.is_empty() && view.selected(cx).is_none() && view.trouble.is_none()));
+    assert!(view.update(cx, |view, cx| view.macros.is_empty()
+        && view.selected(cx).is_none()
+        && view.trouble.is_none()));
     // Nothing to run: Return does nothing, Escape closes.
     cx.simulate_keystrokes("enter");
     redraw(cx);
@@ -841,7 +1136,8 @@ fn the_macro_dialog_of_a_workbook_without_macros_is_empty(cx: &mut TestAppContex
     });
     let view = app.update_in(cx, |app, window, cx| macros::open_dialog(app, window, cx));
     redraw(cx);
-    assert!(view.update(cx, |view, _| view.macros.is_empty() && view.trouble.is_some()));
+    assert!(view.update(cx, |view, _| view.macros.is_empty()
+        && view.trouble.is_some()));
 }
 
 #[gpui::test]
@@ -857,7 +1153,10 @@ fn saving_without_the_macros_asks_excel_s_question(cx: &mut TestAppContext) {
     assert!(!app.update(cx, |app, cx| asks_before_saving(app, &xlsm, cx)));
     app.update(cx, |app, cx| app.write_unasked(xlsm.clone(), cx));
     let back = opensheet_io::load(&xlsm, opensheet_engine::Locale::en()).unwrap();
-    assert_eq!(back.vba.project.as_ref().map(|p| p.bin.to_vec()), Some(project.clone()));
+    assert_eq!(
+        back.vba.project.as_ref().map(|p| p.bin.to_vec()),
+        Some(project.clone())
+    );
     assert_eq!(back.sheets[0].code_name.as_deref(), Some("Sheet1"));
 
     // As a macro-free workbook: the question, "No" proposed.
@@ -895,14 +1194,19 @@ fn saving_without_the_macros_asks_excel_s_question(cx: &mut TestAppContext) {
 fn new_script(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<CodeEditorPane> {
     click_ribbon_new(app, cx);
     let pane = the_pane(app, cx);
-    pane.update(cx, |pane, cx| pane.editor.update(cx, |editor, cx| editor.set_text("", cx)));
+    pane.update(cx, |pane, cx| {
+        pane.editor.update(cx, |editor, cx| editor.set_text("", cx))
+    });
     cx.simulate_input("function main(workbook: ExcelScript.Workbook) {");
     cx.simulate_keystrokes("enter");
     pane
 }
 
 /// The names the list of completions shows, and the selected one.
-fn proposed(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> Option<(Vec<String>, usize)> {
+fn proposed(
+    pane: &Entity<CodeEditorPane>,
+    cx: &mut VisualTestContext,
+) -> Option<(Vec<String>, usize)> {
     pane.update(cx, |pane, cx| pane.editor.read(cx).proposed())
 }
 
@@ -912,7 +1216,12 @@ fn hinted(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> Option<S
 
 /// The line of the caret, with `|` at the caret.
 fn caret_line(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> String {
-    editor_shown(pane, cx).lines().find(|line| line.contains('|')).unwrap_or_default().trim().to_string()
+    editor_shown(pane, cx)
+        .lines()
+        .find(|line| line.contains('|'))
+        .unwrap_or_default()
+        .trim()
+        .to_string()
 }
 
 #[gpui::test]
@@ -922,19 +1231,45 @@ fn a_dot_opens_the_list_typing_filters_it_and_return_takes_an_entry(cx: &mut Tes
     assert_eq!(proposed(&pane, cx), None);
     cx.simulate_input("workbook.");
     let (names, selected) = proposed(&pane, cx).expect("the list is open");
-    assert!(names.contains(&"getActiveWorksheet".to_string()) && names.contains(&"getTables".to_string()));
+    assert!(
+        names.contains(&"getActiveWorksheet".to_string())
+            && names.contains(&"getTables".to_string())
+    );
     assert_eq!(selected, 0);
     // The list is drawn, with the first entries.
     redraw(cx);
-    assert!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(0)).is_some());
-    assert!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(40)).is_none());
+    assert!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(0))
+            .is_some()
+    );
+    assert!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(40))
+            .is_none()
+    );
 
     // Each letter narrows the list; the signature stands beside the entry.
     cx.simulate_input("getA");
-    assert_eq!(proposed(&pane, cx), Some((vec!["getActiveCell".to_string(), "getActiveWorksheet".to_string(), "getApplication".to_string()], 0)));
+    assert_eq!(
+        proposed(&pane, cx),
+        Some((
+            vec![
+                "getActiveCell".to_string(),
+                "getActiveWorksheet".to_string(),
+                "getApplication".to_string()
+            ],
+            0
+        ))
+    );
     cx.simulate_input("ctiveW");
-    assert_eq!(proposed(&pane, cx), Some((vec!["getActiveWorksheet".to_string()], 0)));
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposed_detail()).as_deref(), Some("(): Worksheet"));
+    assert_eq!(
+        proposed(&pane, cx),
+        Some((vec!["getActiveWorksheet".to_string()], 0))
+    );
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).proposed_detail())
+            .as_deref(),
+        Some("(): Worksheet")
+    );
     // Backspace widens it again.
     cx.simulate_keystrokes("backspace backspace backspace backspace backspace backspace");
     assert_eq!(proposed(&pane, cx).map(|(names, _)| names.len()), Some(3));
@@ -953,13 +1288,22 @@ fn a_dot_opens_the_list_typing_filters_it_and_return_takes_an_entry(cx: &mut Tes
     // The chain goes on: the members of what the call returns; Tab takes
     // an entry too.
     cx.simulate_input("().");
-    assert!(proposed(&pane, cx).is_some_and(|(names, _)| names.contains(&"getRange".to_string()) && !names.contains(&"getActiveWorksheet".to_string())));
+    assert!(
+        proposed(&pane, cx).is_some_and(|(names, _)| names.contains(&"getRange".to_string())
+            && !names.contains(&"getActiveWorksheet".to_string()))
+    );
     cx.simulate_input("getRangeB");
     cx.simulate_keystrokes("tab");
-    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet().getRangeByIndexes|");
+    assert_eq!(
+        caret_line(&pane, cx),
+        "workbook.getActiveWorksheet().getRangeByIndexes|"
+    );
     // One undo step takes the entry back, leaving what was typed.
     cx.simulate_keystrokes("cmd-z");
-    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet().getRangeB|");
+    assert_eq!(
+        caret_line(&pane, cx),
+        "workbook.getActiveWorksheet().getRangeB|"
+    );
 }
 
 #[gpui::test]
@@ -975,7 +1319,10 @@ fn the_list_never_holds_typing_back(cx: &mut TestAppContext) {
     assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Editor);
     // The next letter opens it again.
     cx.simulate_input("T");
-    assert_eq!(proposed(&pane, cx).map(|(names, _)| names), Some(vec!["getTable".to_string(), "getTables".to_string()]));
+    assert_eq!(
+        proposed(&pane, cx).map(|(names, _)| names),
+        Some(vec!["getTable".to_string(), "getTables".to_string()])
+    );
     // What matches nothing closes the list; the letters are typed all the same.
     cx.simulate_input("zz");
     assert_eq!(proposed(&pane, cx), None);
@@ -1007,25 +1354,54 @@ fn enums_and_variables_are_completed(cx: &mut TestAppContext) {
     cx.simulate_input("let sheet = workbook.getActiveWorksheet();");
     cx.simulate_keystrokes("enter");
     cx.simulate_input("sheet.getRange(\"A1\").getFormat().setHorizontalAlignment(ExcelScript.");
-    assert!(proposed(&pane, cx).is_some_and(|(names, _)| names.contains(&"HorizontalAlignment".to_string()) && names.contains(&"ChartType".to_string())));
+    assert!(proposed(&pane, cx).is_some_and(|(names, _)| {
+        names.contains(&"HorizontalAlignment".to_string())
+            && names.contains(&"ChartType".to_string())
+    }));
     cx.simulate_input("Hor");
-    assert_eq!(proposed(&pane, cx).map(|(names, _)| names[0].clone()), Some("HorizontalAlignment".to_string()));
+    assert_eq!(
+        proposed(&pane, cx).map(|(names, _)| names[0].clone()),
+        Some("HorizontalAlignment".to_string())
+    );
     cx.simulate_keystrokes("enter");
     cx.simulate_input(".");
-    assert_eq!(proposed(&pane, cx).map(|(names, _)| names[..4].to_vec()), Some(vec!["general".to_string(), "left".to_string(), "center".to_string(), "right".to_string()]));
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposed_detail()).as_deref(), Some("= \"General\""));
+    assert_eq!(
+        proposed(&pane, cx).map(|(names, _)| names[..4].to_vec()),
+        Some(vec![
+            "general".to_string(),
+            "left".to_string(),
+            "center".to_string(),
+            "right".to_string()
+        ])
+    );
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).proposed_detail())
+            .as_deref(),
+        Some("= \"General\"")
+    );
     cx.simulate_input("c");
     cx.simulate_keystrokes("enter");
-    assert_eq!(caret_line(&pane, cx), "sheet.getRange(\"A1\").getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center|)");
+    assert_eq!(
+        caret_line(&pane, cx),
+        "sheet.getRange(\"A1\").getFormat().setHorizontalAlignment(ExcelScript.HorizontalAlignment.center|)"
+    );
     // A click on an entry takes it.
     cx.simulate_keystrokes("end enter");
     cx.simulate_input("sheet.getAutoFilter().");
     redraw(cx);
     let (names, _) = proposed(&pane, cx).expect("the list is open");
-    let index = names.iter().position(|name| name == "clearCriteria").expect("clearCriteria");
-    let row = pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(index)).expect("the entry is drawn");
+    let index = names
+        .iter()
+        .position(|name| name == "clearCriteria")
+        .expect("clearCriteria");
+    let row = pane
+        .update(cx, |pane, cx| pane.editor.read(cx).proposal_row(index))
+        .expect("the entry is drawn");
     cx.simulate_click(row, Modifiers::none());
-    assert_eq!(caret_line(&pane, cx), "sheet.getAutoFilter().clearCriteria|");
+    assert_eq!(
+        caret_line(&pane, cx),
+        "sheet.getAutoFilter().clearCriteria|"
+    );
     assert_eq!(proposed(&pane, cx), None);
 }
 
@@ -1037,31 +1413,58 @@ fn the_parameters_show_inside_the_parentheses_of_a_call(cx: &mut TestAppContext)
     assert_eq!(hinted(&pane, cx), None);
     cx.simulate_keystrokes("escape");
     cx.simulate_input("(");
-    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell([row: number], column: number): Range"));
+    assert_eq!(
+        hinted(&pane, cx).as_deref(),
+        Some("getCell([row: number], column: number): Range")
+    );
     cx.simulate_input("3, ");
-    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell(row: number, [column: number]): Range"));
+    assert_eq!(
+        hinted(&pane, cx).as_deref(),
+        Some("getCell(row: number, [column: number]): Range")
+    );
     // Back over the comma with the arrow keys: the first parameter again.
     cx.simulate_keystrokes("left left");
-    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell([row: number], column: number): Range"));
+    assert_eq!(
+        hinted(&pane, cx).as_deref(),
+        Some("getCell([row: number], column: number): Range")
+    );
     // Escape hides the hint; past the closing parenthesis there is none.
     cx.simulate_keystrokes("escape");
     assert_eq!(hinted(&pane, cx), None);
     cx.simulate_keystrokes("end");
     assert_eq!(hinted(&pane, cx), None);
-    assert_eq!(caret_line(&pane, cx), "workbook.getActiveWorksheet().getCell(3, )|");
+    assert_eq!(
+        caret_line(&pane, cx),
+        "workbook.getActiveWorksheet().getCell(3, )|"
+    );
     // The hint and the list together, in an argument.
     cx.simulate_keystrokes("left");
     cx.simulate_input("workbook.getT");
-    assert_eq!(hinted(&pane, cx).as_deref(), Some("getCell(row: number, [column: number]): Range"));
-    assert_eq!(proposed(&pane, cx).map(|(names, _)| names), Some(vec!["getTable".to_string(), "getTables".to_string()]));
+    assert_eq!(
+        hinted(&pane, cx).as_deref(),
+        Some("getCell(row: number, [column: number]): Range")
+    );
+    assert_eq!(
+        proposed(&pane, cx).map(|(names, _)| names),
+        Some(vec!["getTable".to_string(), "getTables".to_string()])
+    );
     redraw(cx);
-    assert!(pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(1)).is_some());
+    assert!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).proposal_row(1))
+            .is_some()
+    );
 }
 
 #[gpui::test]
 fn a_viewer_of_vba_proposes_nothing(cx: &mut TestAppContext) {
     let (_, cx) = open(cx);
-    let editor = cx.new(|cx| super::editor::CodeEditor::viewer("Sub A()\n  workbook.\nEnd Sub", super::syntax::Language::Vba, cx));
+    let editor = cx.new(|cx| {
+        super::editor::CodeEditor::viewer(
+            "Sub A()\n  workbook.\nEnd Sub",
+            super::syntax::Language::Vba,
+            cx,
+        )
+    });
     assert_eq!(editor.update(cx, |editor, _| editor.proposed()), None);
 }
 
@@ -1072,12 +1475,17 @@ use super::editor::Bar;
 const FIND_TEXT: &str = "function main(workbook: ExcelScript.Workbook) {\n  let range = workbook.getActiveWorksheet().getRange(\"A1\");\n  range.setValue(1);\n  let Range2 = range;\n}\n";
 
 /// The bar shown, how many matches, and the one the selection is on.
-fn found(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> (Option<Bar>, usize, Option<usize>) {
+fn found(
+    pane: &Entity<CodeEditorPane>,
+    cx: &mut VisualTestContext,
+) -> (Option<Bar>, usize, Option<usize>) {
     pane.update(cx, |pane, cx| pane.editor.read(cx).found())
 }
 
 fn selected(pane: &Entity<CodeEditorPane>, cx: &mut VisualTestContext) -> String {
-    pane.update(cx, |pane, cx| pane.editor.read(cx).buffer().selected_text().to_string())
+    pane.update(cx, |pane, cx| {
+        pane.editor.read(cx).buffer().selected_text().to_string()
+    })
 }
 
 #[gpui::test]
@@ -1094,12 +1502,19 @@ fn find_next_and_previous_with_case_and_whole_words(cx: &mut TestAppContext) {
     assert_eq!(found(&pane, cx), (Some(Bar::Find), 5, Some(0)));
     assert_eq!(selected(&pane, cx), "range");
     assert!(cx.debug_bounds("ce-find-count").is_some());
-    assert_eq!(editor_text(&pane, cx), FIND_TEXT, "the query went to the bar, not to the script");
+    assert_eq!(
+        editor_text(&pane, cx),
+        FIND_TEXT,
+        "the query went to the bar, not to the script"
+    );
 
     // Return goes to the next match, ⇧Return to the one before, round
     // the ends of the text.
     cx.simulate_keystrokes("enter");
-    assert_eq!((found(&pane, cx).2, selected(&pane, cx)), (Some(1), "Range".to_string()));
+    assert_eq!(
+        (found(&pane, cx).2, selected(&pane, cx)),
+        (Some(1), "Range".to_string())
+    );
     cx.simulate_keystrokes("enter enter enter enter");
     assert_eq!(found(&pane, cx).2, Some(0));
     cx.simulate_keystrokes("shift-enter");
@@ -1125,7 +1540,10 @@ fn find_next_and_previous_with_case_and_whole_words(cx: &mut TestAppContext) {
     assert_eq!(found(&pane, cx).0, None);
     assert_eq!(pane.update(cx, |pane, _| pane.page.clone()), Page::Editor);
     cx.simulate_keystrokes("cmd-up cmd-g");
-    assert_eq!((found(&pane, cx).2, selected(&pane, cx)), (Some(0), "range".to_string()));
+    assert_eq!(
+        (found(&pane, cx).2, selected(&pane, cx)),
+        (Some(0), "range".to_string())
+    );
     cx.simulate_keystrokes("cmd-g cmd-g");
     assert_eq!(found(&pane, cx).2, Some(2));
     cx.simulate_keystrokes("cmd-shift-g");
@@ -1154,7 +1572,10 @@ fn replace_one_and_replace_all_as_one_undo_step(cx: &mut TestAppContext) {
     cx.simulate_input("cells");
     cx.simulate_keystrokes("enter");
     assert!(editor_text(&pane, cx).contains("let cells = workbook"));
-    assert_eq!((found(&pane, cx).1, selected(&pane, cx)), (2, "range".to_string()));
+    assert_eq!(
+        (found(&pane, cx).1, selected(&pane, cx)),
+        (2, "range".to_string())
+    );
     // The Replace button does the same.
     click(cx, "ce-find-replace");
     assert!(editor_text(&pane, cx).contains("cells.setValue(1);"));
@@ -1187,18 +1608,30 @@ fn go_to_line(cx: &mut TestAppContext) {
         cx.simulate_input("3");
         cx.simulate_keystrokes("enter");
         assert_eq!(found(&pane, cx).0, None);
-        assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()).0, 3);
+        assert_eq!(
+            pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position())
+                .0,
+            3
+        );
         cx.simulate_keystrokes("cmd-up");
     }
     // A line beyond the last is the last; what is no number goes nowhere.
     cx.simulate_keystrokes("cmd-l");
     cx.simulate_input("99");
     cx.simulate_keystrokes("enter");
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()).0, 6);
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position())
+            .0,
+        6
+    );
     cx.simulate_keystrokes("cmd-l");
     cx.simulate_input("x");
     cx.simulate_keystrokes("enter");
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position()).0, 6);
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position())
+            .0,
+        6
+    );
     // The keys are back in the text.
     cx.simulate_input("// end");
     assert!(editor_text(&pane, cx).ends_with("// end"));
@@ -1211,11 +1644,19 @@ fn what_the_checker_warns_about_does_not_keep_a_script_from_running(cx: &mut Tes
     let pane = edit(&app, cx, "Warned");
     redraw(cx);
     // In the list, as a warning, and a click leads to its line.
-    let problems = pane.update(cx, |pane, _| pane.problems.iter().map(|p| (p.kind, p.line)).collect::<Vec<_>>());
+    let problems = pane.update(cx, |pane, _| {
+        pane.problems
+            .iter()
+            .map(|p| (p.kind, p.line))
+            .collect::<Vec<_>>()
+    });
     assert_eq!(problems, [(opensheet_script::ErrorKind::Check, Some(2))]);
     assert_eq!(pane.update(cx, |pane, _| pane.bottom), Bottom::Problems);
     click(cx, "ce-problem-0");
-    assert_eq!(pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position().0), 2);
+    assert_eq!(
+        pane.update(cx, |pane, cx| pane.editor.read(cx).caret_position().0),
+        2
+    );
     // Run is there and runs.
     click(cx, "ce-run");
     assert_eq!(value(&app, cx, 0, (0, 0)), Value::Number(5.0));

@@ -97,7 +97,11 @@ impl TextGradient {
     /// A gradient through some colours; `None` with fewer than two.
     /// Stops are put in order; of too many, those in the middle go.
     pub fn new(kind: GradientKind, stops: &[GradientStop]) -> Option<TextGradient> {
-        let mut sorted: Vec<GradientStop> = stops.iter().copied().filter(|stop| stop.at.is_finite()).collect();
+        let mut sorted: Vec<GradientStop> = stops
+            .iter()
+            .copied()
+            .filter(|stop| stop.at.is_finite())
+            .collect();
         if sorted.len() < 2 {
             return None;
         }
@@ -121,7 +125,13 @@ impl TextGradient {
 
     /// From one colour to another.
     pub fn between(from: Color, to: Color, kind: GradientKind) -> TextGradient {
-        let stops = [GradientStop { at: 0.0, color: from }, GradientStop { at: 1.0, color: to }];
+        let stops = [
+            GradientStop {
+                at: 0.0,
+                color: from,
+            },
+            GradientStop { at: 1.0, color: to },
+        ];
         // The slots that are not used hold the first stop, as in `new`.
         TextGradient {
             stops: [stops[0], stops[1], stops[0], stops[0], stops[0], stops[0]],
@@ -144,7 +154,10 @@ impl TextGradient {
     /// The colour a fraction of the way through the gradient (0xRRGGBB).
     pub fn color_at(&self, at: f32) -> Color {
         let stops = self.stops();
-        let after = stops.iter().position(|stop| stop.at >= at).unwrap_or(stops.len());
+        let after = stops
+            .iter()
+            .position(|stop| stop.at >= at)
+            .unwrap_or(stops.len());
         if after == 0 {
             return stops[0].color.plain();
         }
@@ -152,9 +165,17 @@ impl TextGradient {
             return stops[after - 1].color.plain();
         }
         let (a, b) = (stops[after - 1], stops[after]);
-        let t = if b.at > a.at { (at - a.at) / (b.at - a.at) } else { 0.0 };
+        let t = if b.at > a.at {
+            (at - a.at) / (b.at - a.at)
+        } else {
+            0.0
+        };
         let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t).round() as u8;
-        Color::rgb(mix(a.color.r(), b.color.r()), mix(a.color.g(), b.color.g()), mix(a.color.b(), b.color.b()))
+        Color::rgb(
+            mix(a.color.r(), b.color.r()),
+            mix(a.color.g(), b.color.g()),
+            mix(a.color.b(), b.color.b()),
+        )
     }
 }
 
@@ -267,7 +288,13 @@ impl Shape {
                 prefix -= 1;
             }
             let room = old.len().min(new.len()) - prefix;
-            let mut suffix = old.iter().rev().zip(new.iter().rev()).take(room).take_while(|(a, b)| a == b).count();
+            let mut suffix = old
+                .iter()
+                .rev()
+                .zip(new.iter().rev())
+                .take(room)
+                .take_while(|(a, b)| a == b)
+                .count();
             while !self.text.is_char_boundary(old.len() - suffix) {
                 suffix -= 1;
             }
@@ -297,7 +324,11 @@ impl Shape {
 
     /// Change the look of a range of the text (bytes; the whole text when
     /// it covers it or is empty).
-    pub fn format_text(&mut self, range: Range<usize>, change: &dyn Fn(&mut Font, &mut TextEffects)) {
+    pub fn format_text(
+        &mut self,
+        range: Range<usize>,
+        change: &dyn Fn(&mut Font, &mut TextEffects),
+    ) {
         let whole = range.is_empty() || (range.start == 0 && range.end >= self.text.len());
         if whole {
             change(&mut self.font, &mut self.effects);
@@ -311,7 +342,11 @@ impl Shape {
         for (covered, font, effects) in self.text_runs() {
             // Cut the run where the range starts and ends inside it.
             let mut cuts = vec![covered.start, covered.end];
-            cuts.extend([range.start, range.end].into_iter().filter(|at| *at > covered.start && *at < covered.end));
+            cuts.extend(
+                [range.start, range.end]
+                    .into_iter()
+                    .filter(|at| *at > covered.start && *at < covered.end),
+            );
             cuts.sort_unstable();
             for pair in cuts.windows(2) {
                 let mut run = TextRun {
@@ -336,7 +371,9 @@ impl Shape {
         let mut merged: Vec<TextRun> = Vec::with_capacity(self.runs.len());
         for run in self.runs.drain(..).filter(|run| run.len > 0) {
             match merged.last_mut() {
-                Some(last) if last.font == run.font && last.effects == run.effects => last.len += run.len,
+                Some(last) if last.font == run.font && last.effects == run.effects => {
+                    last.len += run.len
+                }
                 _ => merged.push(run),
             }
         }
@@ -428,7 +465,11 @@ impl WordArtStyle {
             // Fill: text colour 1; outline: white; hard shadow: accent 5.
             11 => (TEXT_1, line(BACKGROUND_1, 0.75), Some(hard(ACCENT_5))),
             // Fill: accent 1; outline: white; hard shadow: accent 1.
-            12 => (ACCENT_1, line(BACKGROUND_1, 0.75), Some(hard(ACCENT_1_PALE))),
+            12 => (
+                ACCENT_1,
+                line(BACKGROUND_1, 0.75),
+                Some(hard(ACCENT_1_PALE)),
+            ),
             // Fill: white; outline: accent 1 (the glow is left out).
             13 => (BACKGROUND_1, line(ACCENT_1, 1.5), None),
             // Pattern fill: accent 1; hard shadow: accent 1.
@@ -500,7 +541,12 @@ mod tests {
         shape.format_text(0..5, &|font, _| font.italic = true);
         shape.format_text(0..0, &|font, _| font.color = Some(Color(0xFF0000)));
         assert_eq!(lens(&shape), vec![5, 6]);
-        assert!(shape.runs.iter().all(|run| run.font.color == Some(Color(0xFF0000)) && run.font.bold));
+        assert!(
+            shape
+                .runs
+                .iter()
+                .all(|run| run.font.color == Some(Color(0xFF0000)) && run.font.bold)
+        );
         assert!(shape.runs[0].font.italic && !shape.runs[1].font.italic);
         // A range inside one run cuts it in three.
         shape.format_text(1..3, &|_, effects| effects.hollow = true);
@@ -535,7 +581,10 @@ mod tests {
         assert_eq!(lens(&shape), vec![2, 3]);
         shape.set_text(String::new());
         assert!(shape.runs.is_empty());
-        assert_eq!(shape.text_runs(), vec![(0..0, shape.font.clone(), shape.effects)]);
+        assert_eq!(
+            shape.text_runs(),
+            vec![(0..0, shape.font.clone(), shape.effects)]
+        );
     }
 
     #[test]
@@ -545,7 +594,12 @@ mod tests {
         assert!(shape.text_box && shape.fill.is_none() && shape.outline.is_none() && !shape.wrap);
         assert_eq!(shape.font.size_pt(), WORDART_SIZE_PT);
         assert_eq!(shape.font.color, Some(BACKGROUND_1));
-        assert!(shape.font.color.is_some_and(|color| color.is_themed() && color.value() == 0xFFFFFF));
+        assert!(
+            shape
+                .font
+                .color
+                .is_some_and(|color| color.is_themed() && color.value() == 0xFFFFFF)
+        );
         assert_eq!(shape.effects.outline.map(|line| line.color), Some(ACCENT_1));
         assert!(shape.effects.shadow.is_some() && shape.has_text_effects());
         // A style changes the look of letters, not their font.
@@ -556,7 +610,13 @@ mod tests {
         let mut effects = TextEffects::default();
         WordArtStyle(2).apply(&mut font, &mut effects);
         assert!(font.bold && font.size == Font::default().size);
-        assert_eq!(effects.outline, Some(TextOutline { color: ACCENT_2, width: 0.5 }));
+        assert_eq!(
+            effects.outline,
+            Some(TextOutline {
+                color: ACCENT_2,
+                width: 0.5
+            })
+        );
         // A shadow falls where its angle says.
         let (dx, dy) = TextShadow::offset(90.0).shift();
         assert!(dx.abs() < 1e-4 && (dy - 3.0).abs() < 1e-4);

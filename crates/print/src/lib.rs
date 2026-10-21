@@ -23,19 +23,21 @@ mod svg;
 mod ttf;
 
 pub use fonts::{Face, FontDb};
-pub use ttf::OutlineStep;
 pub use image::{Image, Pixels};
 pub use pdf::DocInfo;
-pub use scene::{Canvas, LineCap, LineJoin, Op, Paint, Path, RectF, Scene, Segment, Stroke, TextStyle};
+pub use scene::{
+    Canvas, LineCap, LineJoin, Op, Paint, Path, RectF, Scene, Segment, Stroke, TextStyle,
+};
 pub use svg::{png_file, scene_svg};
+pub use ttf::OutlineStep;
 
 use opensheet_engine::chart::Chart;
 use opensheet_engine::condfmt::Adornment;
 use opensheet_engine::datetime;
 use opensheet_engine::drawing::Drawing;
 use opensheet_engine::page::{
-    HeaderFooter, HfContext, PX_TO_PT, Page, PaginateOptions, Pagination, PrintComments, PrintErrors, axis_offset,
-    paginate,
+    HeaderFooter, HfContext, PX_TO_PT, Page, PaginateOptions, Pagination, PrintComments,
+    PrintErrors, axis_offset, paginate,
 };
 use opensheet_engine::refs::Rect;
 use opensheet_engine::workbook::Workbook;
@@ -52,10 +54,24 @@ use opensheet_engine::workbook::Workbook;
 /// the canvas is restored for it.
 pub trait ObjectPainter {
     /// Paint a chart of the sheet.
-    fn paint_chart(&self, wb: &Workbook, sheet: usize, chart: &Chart, size: (f64, f64), canvas: &mut Canvas);
+    fn paint_chart(
+        &self,
+        wb: &Workbook,
+        sheet: usize,
+        chart: &Chart,
+        size: (f64, f64),
+        canvas: &mut Canvas,
+    );
 
     /// Paint a picture or a shape. Does nothing unless overridden.
-    fn paint_drawing(&self, wb: &Workbook, sheet: usize, drawing: &Drawing, size: (f64, f64), canvas: &mut Canvas) {
+    fn paint_drawing(
+        &self,
+        wb: &Workbook,
+        sheet: usize,
+        drawing: &Drawing,
+        size: (f64, f64),
+        canvas: &mut Canvas,
+    ) {
         let _ = (wb, sheet, drawing, size, canvas);
     }
 
@@ -190,7 +206,11 @@ impl PrintPlan {
     pub fn page(&self, index: usize) -> Option<(usize, &Pagination, &Page)> {
         let planned = self.pages.get(index).filter(|planned| !planned.notes)?;
         let part = self.sheets.get(planned.part)?;
-        Some((part.sheet, &part.pagination, part.pagination.pages.get(planned.page)?))
+        Some((
+            part.sheet,
+            &part.pagination,
+            part.pagination.pages.get(planned.page)?,
+        ))
     }
 
     /// The sheet a page of the job belongs to.
@@ -202,7 +222,9 @@ impl PrintPlan {
     /// Paper width and height of a page in points.
     pub fn paper(&self, index: usize) -> Option<(f64, f64)> {
         let planned = self.pages.get(index)?;
-        self.sheets.get(planned.part).map(|part| part.pagination.paper)
+        self.sheets
+            .get(planned.part)
+            .map(|part| part.pagination.paper)
     }
 }
 
@@ -214,7 +236,12 @@ pub fn plan(wb: &Workbook, job: &PrintJob) -> PrintPlan {
         PrintWhat::Sheet(sheet) => (vec![*sheet], None),
         PrintWhat::Sheets(sheets) => (sheets.clone(), None),
         // Hidden sheets are not part of what the workbook prints.
-        PrintWhat::Workbook => ((0..wb.sheets.len()).filter(|i| wb.sheets[*i].is_visible()).collect(), None),
+        PrintWhat::Workbook => (
+            (0..wb.sheets.len())
+                .filter(|i| wb.sheets[*i].is_visible())
+                .collect(),
+            None,
+        ),
         PrintWhat::Selection { sheet, ranges } => (vec![*sheet], Some(ranges)),
     };
     let mut out = PrintPlan {
@@ -240,7 +267,9 @@ pub fn plan(wb: &Workbook, job: &PrintJob) -> PrintPlan {
             next_number = Some(last + 1 + notes.len() as i32);
         }
         let part = out.sheets.len();
-        let pages = |count: usize, notes: bool| (0..count).map(move |page| PlannedPage { part, page, notes });
+        let pages = |count: usize, notes: bool| {
+            (0..count).map(move |page| PlannedPage { part, page, notes })
+        };
         out.pages.extend(pages(pagination.pages.len(), false));
         out.pages.extend(pages(notes.len(), true));
         out.sheets.push(PlannedSheet {

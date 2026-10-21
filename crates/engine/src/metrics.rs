@@ -221,7 +221,6 @@ impl FontMetrics {
     }
 }
 
-
 /// A column width as Excel shows it in the Column Width dialog and counts
 /// it in `CELL("width")`: the number of digits of the default font that
 /// fit between the paddings of the cell (5 pixels in all), to 1/100.
@@ -312,7 +311,12 @@ mod tests {
         assert_eq!(col_width_in_chars(72.0, 8.0), 8.38);
         assert_eq!(col_width_in_chars(0.0, 7.0), 0.0);
         assert_eq!(col_width_in_chars(3.0, 7.0), 0.0);
-        for (chars, digit, px) in [(8.43, 7.0, 64.0), (20.0, 7.0, 145.0), (10.0, 8.0, 85.0), (0.0, 7.0, 0.0)] {
+        for (chars, digit, px) in [
+            (8.43, 7.0, 64.0),
+            (20.0, 7.0, 145.0),
+            (10.0, 8.0, 85.0),
+            (0.0, 7.0, 0.0),
+        ] {
             assert_eq!(chars_to_col_width(chars, digit), px);
         }
         assert_eq!(chars_to_col_width(1e9, 7.0), MAX_COL_PX);

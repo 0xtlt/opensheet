@@ -36,12 +36,16 @@ fn value(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, name: &str) -> Valu
 }
 
 fn front<V: 'static>(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Entity<V> {
-    let view = app.update(cx, |app, _| app.front_modal_view()).expect("a dialog is open");
+    let view = app
+        .update(cx, |app, _| app.front_modal_view())
+        .expect("a dialog is open");
     view.downcast::<V>().ok().expect("the dialog expected")
 }
 
 fn alert_text(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> String {
-    app.update(cx, |app, cx| app.front_alert(cx)).map(|(_, message)| message).unwrap_or_default()
+    app.update(cx, |app, cx| app.front_alert(cx))
+        .map(|(_, message)| message)
+        .unwrap_or_default()
 }
 
 fn close(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) {
@@ -50,11 +54,29 @@ fn close(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) {
 }
 
 fn ranges(app: &Entity<ExcelApp>, cx: &mut VisualTestContext) -> Vec<(String, Vec<Rect>, bool)> {
-    app.update(cx, |app, _| app.wb.sheets[0].protected_ranges.iter().map(|range| (range.name.clone(), range.ranges.clone(), range.password.is_some())).collect())
+    app.update(cx, |app, _| {
+        app.wb.sheets[0]
+            .protected_ranges
+            .iter()
+            .map(|range| {
+                (
+                    range.name.clone(),
+                    range.ranges.clone(),
+                    range.password.is_some(),
+                )
+            })
+            .collect()
+    })
 }
 
 /// New… in the open list: a title, cells and a password (typed twice).
-fn new_range(app: &Entity<ExcelApp>, cx: &mut VisualTestContext, title: Option<&str>, cells: &str, password: &str) {
+fn new_range(
+    app: &Entity<ExcelApp>,
+    cx: &mut VisualTestContext,
+    title: Option<&str>,
+    cells: &str,
+    password: &str,
+) {
     front::<EditRanges>(app, cx).update_in(cx, |list, window, cx| {
         list.edit(None, window, cx);
     });
@@ -88,7 +110,11 @@ fn allow_edit_ranges_from_the_dialogs(cx: &mut TestAppContext) {
     new_range(&app, cx, Some("Budget"), "=$E$1:$E$4,$G$1", "pw");
     // A title taken, cells that are none: the dialog stays.
     new_range(&app, cx, Some("budget"), "=$A$9", "");
-    assert!(alert_text(&app, cx).contains("already exists"), "{}", alert_text(&app, cx));
+    assert!(
+        alert_text(&app, cx).contains("already exists"),
+        "{}",
+        alert_text(&app, cx)
+    );
     close(&app, cx);
     front::<RangeDialog>(&app, cx).update(cx, |dialog, cx| dialog.set("Other", "nowhere", "", cx));
     cx.simulate_keystrokes("enter");
@@ -102,8 +128,18 @@ fn allow_edit_ranges_from_the_dialogs(cx: &mut TestAppContext) {
     redraw(cx);
     assert!(!app.update(cx, |app, _| app.modal_open()));
     let rect = |name: &str| Rect::parse(name).unwrap();
-    assert_eq!(ranges(&app, cx), [("Range1".to_string(), vec![rect("B2:C3")], false), ("Budget".to_string(), vec![rect("E1:E4"), rect("G1")], true)]);
-    assert_eq!(app.update(cx, |app, _| app.wb.undo_label().map(str::to_string)).as_deref(), Some("Allow Edit Ranges"));
+    assert_eq!(
+        ranges(&app, cx),
+        [
+            ("Range1".to_string(), vec![rect("B2:C3")], false),
+            ("Budget".to_string(), vec![rect("E1:E4"), rect("G1")], true)
+        ]
+    );
+    assert_eq!(
+        app.update(cx, |app, _| app.wb.undo_label().map(str::to_string))
+            .as_deref(),
+        Some("Allow Edit Ranges")
+    );
 
     // Modify and Delete, then Undo brings the list back.
     run(&app, cx, Cmd::AllowEditRanges);
@@ -112,7 +148,8 @@ fn allow_edit_ranges_from_the_dialogs(cx: &mut TestAppContext) {
         list.edit(Some(0), window, cx);
     });
     redraw(cx);
-    front::<RangeDialog>(&app, cx).update(cx, |dialog, cx| dialog.set("Inputs", "=$B$2:$C$5", "", cx));
+    front::<RangeDialog>(&app, cx)
+        .update(cx, |dialog, cx| dialog.set("Inputs", "=$B$2:$C$5", "", cx));
     cx.simulate_keystrokes("enter");
     redraw(cx);
     list.update(cx, |list, cx| {
@@ -121,7 +158,10 @@ fn allow_edit_ranges_from_the_dialogs(cx: &mut TestAppContext) {
     });
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    assert_eq!(ranges(&app, cx), [("Inputs".to_string(), vec![rect("B2:C5")], false)]);
+    assert_eq!(
+        ranges(&app, cx),
+        [("Inputs".to_string(), vec![rect("B2:C5")], false)]
+    );
     cx.simulate_keystrokes("cmd-z");
     assert_eq!(ranges(&app, cx).len(), 2);
     // Cancel changes nothing.
@@ -158,7 +198,11 @@ fn a_protected_sheet_lets_its_ranges_be_edited(cx: &mut TestAppContext) {
     select(&app, cx, "A1");
     cx.simulate_input("x");
     redraw(cx);
-    assert!(alert_text(&app, cx).contains("protected sheet"), "{}", alert_text(&app, cx));
+    assert!(
+        alert_text(&app, cx).contains("protected sheet"),
+        "{}",
+        alert_text(&app, cx)
+    );
     close(&app, cx);
     assert_eq!(value(&app, cx, "A1"), Value::Empty);
 
@@ -170,7 +214,11 @@ fn a_protected_sheet_lets_its_ranges_be_edited(cx: &mut TestAppContext) {
     unlock.update(cx, |dialog, cx| dialog.set_password("wrong", cx));
     cx.simulate_keystrokes("enter");
     redraw(cx);
-    assert!(alert_text(&app, cx).contains("password"), "{}", alert_text(&app, cx));
+    assert!(
+        alert_text(&app, cx).contains("password"),
+        "{}",
+        alert_text(&app, cx)
+    );
     close(&app, cx);
     cx.simulate_input("5");
     redraw(cx);

@@ -11,12 +11,13 @@ mod paginate;
 mod paper;
 
 pub use header_footer::{
-    HeaderFooter, HfContext, HfFormat, HfPicture, HfRun, HfSection, HfSections, HfSlot, HfVariant, Script, expand,
-    from_dialog_text, lines, plain_text, presets, to_dialog_text,
+    HeaderFooter, HfContext, HfFormat, HfPicture, HfRun, HfSection, HfSections, HfSlot, HfVariant,
+    Script, expand, from_dialog_text, lines, plain_text, presets, to_dialog_text,
 };
 pub use paginate::{
-    CELL_PADDING, INDENT_WIDTH, PX_TO_PT, Page, PageBreak, PageLayout, PaginateOptions, Pagination, PrintRange,
-    SheetPages, Span, TextMeasure, axis_offset, paginate, sheet_pages, visible_col_width, visible_row_height,
+    CELL_PADDING, INDENT_WIDTH, PX_TO_PT, Page, PageBreak, PageLayout, PaginateOptions, Pagination,
+    PrintRange, SheetPages, Span, TextMeasure, axis_offset, paginate, sheet_pages,
+    visible_col_width, visible_row_height,
 };
 pub use paper::{PaperInfo, PaperSize};
 
@@ -201,18 +202,22 @@ impl Margins {
 
     /// The preset these margins are, if any (to tick it in the gallery).
     pub fn preset(&self) -> Option<MarginPreset> {
-        [MarginPreset::Normal, MarginPreset::Wide, MarginPreset::Narrow]
-            .into_iter()
-            .find(|p| {
-                let m = Margins::from_preset(*p);
-                let close = |a: f64, b: f64| (a - b).abs() < 0.005;
-                close(m.left, self.left)
-                    && close(m.right, self.right)
-                    && close(m.top, self.top)
-                    && close(m.bottom, self.bottom)
-                    && close(m.header, self.header)
-                    && close(m.footer, self.footer)
-            })
+        [
+            MarginPreset::Normal,
+            MarginPreset::Wide,
+            MarginPreset::Narrow,
+        ]
+        .into_iter()
+        .find(|p| {
+            let m = Margins::from_preset(*p);
+            let close = |a: f64, b: f64| (a - b).abs() < 0.005;
+            close(m.left, self.left)
+                && close(m.right, self.right)
+                && close(m.top, self.top)
+                && close(m.bottom, self.bottom)
+                && close(m.header, self.header)
+                && close(m.footer, self.footer)
+        })
     }
 }
 
@@ -325,7 +330,11 @@ impl PageSetup {
         if self.print_area.is_empty() {
             return None;
         }
-        let parts: Vec<String> = self.print_area.iter().map(|r| absolute_ref(sheet_name, *r)).collect();
+        let parts: Vec<String> = self
+            .print_area
+            .iter()
+            .map(|r| absolute_ref(sheet_name, *r))
+            .collect();
         Some(parts.join(","))
     }
 
@@ -383,7 +392,11 @@ fn absolute_ref(sheet_name: &str, r: Rect) -> String {
     if r.is_whole_rows() && !r.is_whole_cols() {
         out.push_str(&format!("${}:${}", r.r0 + 1, r.r1 + 1));
     } else if r.is_whole_cols() && !r.is_whole_rows() {
-        out.push_str(&format!("${}:${}", col_to_letters(r.c0), col_to_letters(r.c1)));
+        out.push_str(&format!(
+            "${}:${}",
+            col_to_letters(r.c0),
+            col_to_letters(r.c1)
+        ));
     } else {
         out.push_str(&format!("${}${}", col_to_letters(r.c0), r.r0 + 1));
         if !r.is_single() {
@@ -605,7 +618,12 @@ impl Workbook {
 
     /// "Print Titles": the rows repeated at the top and the columns
     /// repeated at the left of every page, as (first, last).
-    pub fn set_print_titles(&mut self, sheet: usize, rows: Option<(u32, u32)>, cols: Option<(u32, u32)>) -> bool {
+    pub fn set_print_titles(
+        &mut self,
+        sheet: usize,
+        rows: Option<(u32, u32)>,
+        cols: Option<(u32, u32)>,
+    ) -> bool {
         let order = |v: Option<(u32, u32)>| v.map(|(a, b)| (a.min(b), a.max(b)));
         self.update_page_setup(sheet, |p| {
             p.title_rows = order(rows);
@@ -826,7 +844,8 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
                 if r.is_whole_cols() {
                     return Some(*r);
                 }
-                shift_span(r.r0, r.r1, insert, at, count, MAX_ROWS).map(|(a, b)| Rect::new(a, r.c0, b, r.c1))
+                shift_span(r.r0, r.r1, insert, at, count, MAX_ROWS)
+                    .map(|(a, b)| Rect::new(a, r.c0, b, r.c1))
             })
             .collect();
     } else {
@@ -846,7 +865,8 @@ pub(crate) fn on_structural_edit(sheet: &mut Sheet, edit: StructuralEdit, edited
                 if r.is_whole_rows() {
                     return Some(*r);
                 }
-                shift_span(r.c0, r.c1, insert, at, count, MAX_COLS).map(|(a, b)| Rect::new(r.r0, a, r.r1, b))
+                shift_span(r.c0, r.c1, insert, at, count, MAX_COLS)
+                    .map(|(a, b)| Rect::new(r.r0, a, r.r1, b))
             })
             .collect();
     }
@@ -862,13 +882,29 @@ pub(crate) fn on_sheet_renamed(_sheet: &mut Sheet, _old: &str, _new: &str) {}
 pub(crate) fn on_sheet_duplicated(_wb: &mut Workbook, _copy: usize, _original: &str) {}
 
 /// See `features::on_sheet_deleted`.
-pub(crate) fn on_sheet_deleted(_wb: &mut crate::workbook::Workbook, _deleted: &crate::workbook::Sheet, _order: &[&str]) {}
+pub(crate) fn on_sheet_deleted(
+    _wb: &mut crate::workbook::Workbook,
+    _deleted: &crate::workbook::Sheet,
+    _order: &[&str],
+) {
+}
 
 /// See `features::on_sheet_moved`.
-pub(crate) fn on_sheet_moved(_wb: &mut crate::workbook::Workbook, _moved: &str, _before: &[&str], _after: &[&str]) {}
+pub(crate) fn on_sheet_moved(
+    _wb: &mut crate::workbook::Workbook,
+    _moved: &str,
+    _before: &[&str],
+    _after: &[&str],
+) {
+}
 
 /// See `features::on_cells_shifted`.
-pub(crate) fn on_cells_shifted(_wb: &mut crate::workbook::Workbook, _sheet: usize, _shift: crate::features::CellShift) {}
+pub(crate) fn on_cells_shifted(
+    _wb: &mut crate::workbook::Workbook,
+    _sheet: usize,
+    _shift: crate::features::CellShift,
+) {
+}
 
 #[cfg(test)]
 mod tests;

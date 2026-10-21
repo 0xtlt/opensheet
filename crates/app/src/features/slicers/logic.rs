@@ -57,7 +57,10 @@ pub(super) fn button_width(width: f32, columns: u32, scrolling: bool) -> f32 {
 /// The width a slicer needs for its buttons to be `button` wide.
 pub(super) fn width_for_buttons(button: f32, columns: u32, scrolling: bool) -> f32 {
     let columns = columns.max(1) as f32;
-    button * columns + (columns - 1.0) * COLUMN_GAP + 2.0 * PAD + if scrolling { SCROLL_W + 2.0 } else { 0.0 }
+    button * columns
+        + (columns - 1.0) * COLUMN_GAP
+        + 2.0 * PAD
+        + if scrolling { SCROLL_W + 2.0 } else { 0.0 }
 }
 
 /// Lay a slicer out. `first_row` is where it is scrolled to; it comes
@@ -74,12 +77,21 @@ pub(super) fn slicer_layout(
     let columns = columns.max(1);
     let header = show_header.then_some((0.0, 0.0, w, HEADER_H.min(h)));
     let top = if show_header { HEADER_H + 4.0 } else { PAD };
-    let body = (PAD, top.min(h), (w - PAD).max(PAD), (h - PAD).max(top.min(h)));
+    let body = (
+        PAD,
+        top.min(h),
+        (w - PAD).max(PAD),
+        (h - PAD).max(top.min(h)),
+    );
     let step = button_height.max(4.0) + GAP;
     let rows = (items as u32).div_ceil(columns);
     let rows_shown = (((body.3 - body.1 + GAP) / step).floor() as u32).max(1);
     let scrolling = rows > rows_shown;
-    let first_row = if scrolling { first_row.min(rows - rows_shown) } else { 0 };
+    let first_row = if scrolling {
+        first_row.min(rows - rows_shown)
+    } else {
+        0
+    };
     let bw = button_width(w, columns, scrolling);
     let mut buttons = Vec::new();
     for row in first_row..(first_row + rows_shown + 1).min(rows) {
@@ -99,13 +111,23 @@ pub(super) fn slicer_layout(
     let scroll = scrolling.then(|| {
         let track = (body.2 - SCROLL_W, body.1, body.2, body.3);
         let length = track.3 - track.1;
-        let thumb = (length * rows_shown as f32 / rows as f32).max(16.0).min(length);
+        let thumb = (length * rows_shown as f32 / rows as f32)
+            .max(16.0)
+            .min(length);
         let at = (length - thumb) * first_row as f32 / (rows - rows_shown) as f32;
-        (track, (track.0, track.1 + at, track.2, track.1 + at + thumb))
+        (
+            track,
+            (track.0, track.1 + at, track.2, track.1 + at + thumb),
+        )
     });
     let tool = |k: f32| {
         let x1 = w - PAD - k * (TOOL + 2.0);
-        (x1 - TOOL, (HEADER_H - TOOL) / 2.0, x1, (HEADER_H + TOOL) / 2.0)
+        (
+            x1 - TOOL,
+            (HEADER_H - TOOL) / 2.0,
+            x1,
+            (HEADER_H + TOOL) / 2.0,
+        )
     };
     SlicerLayout {
         header,
@@ -126,7 +148,10 @@ impl SlicerLayout {
         if !inside(self.body, x, y) {
             return None;
         }
-        self.buttons.iter().find(|(_, b)| inside(*b, x, y)).map(|(index, _)| *index)
+        self.buttons
+            .iter()
+            .find(|(_, b)| inside(*b, x, y))
+            .map(|(index, _)| *index)
     }
 
     /// The first row shown when the thumb of the scroll bar was dragged
@@ -140,7 +165,9 @@ impl SlicerLayout {
         if free <= 0.0 {
             return from;
         }
-        (from as f32 + dy / free * hidden).round().clamp(0.0, hidden) as u32
+        (from as f32 + dy / free * hidden)
+            .round()
+            .clamp(0.0, hidden) as u32
     }
 }
 
@@ -178,7 +205,11 @@ pub(super) fn picked(items: &[SlicerItem], index: usize, pick: Pick) -> Vec<u32>
         }
     };
     // Nothing selected shows everything, as does everything selected.
-    if chosen.len() == items.len() { Vec::new() } else { chosen }
+    if chosen.len() == items.len() {
+        Vec::new()
+    } else {
+        chosen
+    }
 }
 
 /// The colours of one state of a button.
@@ -255,8 +286,13 @@ fn shade(color: u32, amount: f64) -> u32 {
 
 /// The family ("Light", "Dark", "Other") and the number of a style name.
 pub(super) fn style_parts(name: &str) -> (&str, usize) {
-    let rest = name.strip_prefix("TimeSlicerStyle").or_else(|| name.strip_prefix("SlicerStyle")).unwrap_or("Light1");
-    let split = rest.find(|ch: char| ch.is_ascii_digit()).unwrap_or(rest.len());
+    let rest = name
+        .strip_prefix("TimeSlicerStyle")
+        .or_else(|| name.strip_prefix("SlicerStyle"))
+        .unwrap_or("Light1");
+    let split = rest
+        .find(|ch: char| ch.is_ascii_digit())
+        .unwrap_or(rest.len());
     let (family, number) = rest.split_at(split);
     (family, number.parse().unwrap_or(1))
 }
@@ -451,13 +487,34 @@ pub(super) fn timeline_layout(shape: &TimelineShape) -> TimelineLayout {
     });
     let labels = shape.selection_label || shape.time_level;
     let level_w = 96.0;
-    let selection_label = shape.selection_label.then_some((TL_PAD, y, (w - TL_PAD - level_w).max(TL_PAD), y + TL_LABEL_H));
-    let level = shape.time_level.then_some(((w - TL_PAD - level_w).max(TL_PAD), y, w - TL_PAD, y + TL_LABEL_H));
+    let selection_label = shape.selection_label.then_some((
+        TL_PAD,
+        y,
+        (w - TL_PAD - level_w).max(TL_PAD),
+        y + TL_LABEL_H,
+    ));
+    let level = shape.time_level.then_some((
+        (w - TL_PAD - level_w).max(TL_PAD),
+        y,
+        w - TL_PAD,
+        y + TL_LABEL_H,
+    ));
     if labels {
         y += TL_LABEL_H;
     }
-    let bottom = h - 4.0 - if shape.scrollbar { TL_SCROLL_H + 4.0 } else { 0.0 };
-    let band = (TL_PAD, y.min(bottom), (w - TL_PAD).max(TL_PAD), bottom.max(y.min(bottom)));
+    let bottom = h
+        - 4.0
+        - if shape.scrollbar {
+            TL_SCROLL_H + 4.0
+        } else {
+            0.0
+        };
+    let band = (
+        TL_PAD,
+        y.min(bottom),
+        (w - TL_PAD).max(TL_PAD),
+        bottom.max(y.min(bottom)),
+    );
     let tile = tile_width(shape.level);
     let total = tile * shape.periods as f32;
     let max_scroll = (total - (band.2 - band.0)).max(0.0);
@@ -467,7 +524,10 @@ pub(super) fn timeline_layout(shape: &TimelineShape) -> TimelineLayout {
         let length = track.2 - track.0;
         let thumb = (length * length / total).max(20.0).min(length);
         let at = (length - thumb) * scroll / max_scroll;
-        (track, (track.0 + at, track.1, track.0 + at + thumb, track.3))
+        (
+            track,
+            (track.0 + at, track.1, track.0 + at + thumb, track.3),
+        )
     });
     let groups_y = band.1 + 2.0;
     TimelineLayout {
@@ -478,7 +538,10 @@ pub(super) fn timeline_layout(shape: &TimelineShape) -> TimelineLayout {
         band,
         groups_y,
         names_y: groups_y + TL_TEXT_H,
-        bar: (groups_y + 2.0 * TL_TEXT_H + 2.0, groups_y + 2.0 * TL_TEXT_H + 2.0 + TL_BAR_H),
+        bar: (
+            groups_y + 2.0 * TL_TEXT_H + 2.0,
+            groups_y + 2.0 * TL_TEXT_H + 2.0 + TL_BAR_H,
+        ),
         tile,
         scroll,
         max_scroll,
@@ -494,7 +557,9 @@ impl TimelineLayout {
 
     /// The period at a horizontal position, clamped to the band's.
     pub fn period_at(&self, x: f32, count: usize) -> usize {
-        let at = ((x - self.band.0 + self.scroll) / self.tile).floor().max(0.0) as usize;
+        let at = ((x - self.band.0 + self.scroll) / self.tile)
+            .floor()
+            .max(0.0) as usize;
         at.min(count.saturating_sub(1))
     }
 
@@ -513,7 +578,10 @@ impl TimelineLayout {
 }
 
 /// The periods (indices, both included) a selection of days covers.
-pub(super) fn selected_periods(periods: &[Period], selection: Option<(f64, f64)>) -> Option<(usize, usize)> {
+pub(super) fn selected_periods(
+    periods: &[Period],
+    selection: Option<(f64, f64)>,
+) -> Option<(usize, usize)> {
     let (start, end) = selection?;
     let first = periods.iter().position(|p| p.end >= start)?;
     let last = periods.iter().rposition(|p| p.start <= end)?;
@@ -536,7 +604,10 @@ pub(super) fn scroll_to_show(layout: &TimelineLayout, index: usize) -> f32 {
 pub(super) fn style_title(name: &str, locale: &Locale) -> String {
     let timeline = name.starts_with("Time");
     let (family, number) = style_parts(name);
-    let lang = ["en", "fr", "es", "de", "it"].iter().position(|id| *id == locale.id).unwrap_or(0);
+    let lang = ["en", "fr", "es", "de", "it"]
+        .iter()
+        .position(|id| *id == locale.id)
+        .unwrap_or(0);
     let pattern: [&str; 5] = match (timeline, family) {
         (false, "Dark") => [
             "Slicer Style Dark {}",
@@ -622,7 +693,12 @@ mod tests {
         assert_eq!(layout.scrolled(0, 1000.0), 3);
         assert_eq!(layout.scrolled(3, -1000.0), 0);
         // Without its header the buttons start at the top.
-        assert_eq!(slicer_layout((192.0, 252.0), false, 1, 25.0, 4, 0).buttons[0].1.1, 8.0);
+        assert_eq!(
+            slicer_layout((192.0, 252.0), false, 1, 25.0, 4, 0).buttons[0]
+                .1
+                .1,
+            8.0
+        );
         let w = width_for_buttons(60.0, 3, false);
         assert!((button_width(w, 3, false) - 60.0).abs() < 0.01);
     }
@@ -650,17 +726,35 @@ mod tests {
         assert_eq!(first.header_rule, accent(1));
         assert_eq!(first.tile(false, true).fill, 0xFFFFFF);
         assert_ne!(first.tile(true, true).fill, first.tile(true, false).fill);
-        assert_eq!(slicer_look(&theme, "SlicerStyleLight3").header_rule, accent(3));
+        assert_eq!(
+            slicer_look(&theme, "SlicerStyleLight3").header_rule,
+            accent(3)
+        );
         let dark = slicer_look(&theme, "SlicerStyleDark2");
-        assert_eq!((dark.selected.fill, dark.selected.text), (accent(2), 0xFFFFFF));
+        assert_eq!(
+            (dark.selected.fill, dark.selected.text),
+            (accent(2), 0xFFFFFF)
+        );
         assert!(dark.header_fill.is_some());
         assert_eq!(slicer_look(&theme, "nonsense"), first);
-        assert_eq!(timeline_look(&theme, "TimeSlicerStyleLight2").selected, accent(2));
+        assert_eq!(
+            timeline_look(&theme, "TimeSlicerStyleLight2").selected,
+            accent(2)
+        );
         // Another theme, other colours.
         let facet = Theme::builtin("Facet").expect("the Facet theme");
-        assert_ne!(slicer_look(&facet, "SlicerStyleLight1").header_rule, first.header_rule);
-        assert_eq!(style_title("SlicerStyleOther2", Locale::en()), "Slicer Style Other 2");
-        assert_eq!(style_title("TimeSlicerStyleDark4", Locale::fr()), "Style de chronologie foncé\u{a0}4");
+        assert_ne!(
+            slicer_look(&facet, "SlicerStyleLight1").header_rule,
+            first.header_rule
+        );
+        assert_eq!(
+            style_title("SlicerStyleOther2", Locale::en()),
+            "Slicer Style Other 2"
+        );
+        assert_eq!(
+            style_title("TimeSlicerStyleDark4", Locale::fr()),
+            "Style de chronologie foncé\u{a0}4"
+        );
     }
 
     #[test]

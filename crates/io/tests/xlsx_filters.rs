@@ -328,7 +328,10 @@ fn sheet_filters_from_excel() {
     ] {
         let wb = load(&excel_package(none));
         assert!(wb.sheets[0].auto_filter.is_none(), "{none}");
-        let advanced = wb.sheets[0].advanced_filter.as_ref().expect("an Advanced Filter");
+        let advanced = wb.sheets[0]
+            .advanced_filter
+            .as_ref()
+            .expect("an Advanced Filter");
         assert_eq!(advanced.range, rect("A1:C6"), "{none}");
         assert_eq!(rows(&wb.sheets[0].filtered_rows), [2, 4], "{none}");
         assert_eq!(rows(&wb.sheets[0].hidden_rows), [7], "{none}");

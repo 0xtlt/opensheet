@@ -137,9 +137,14 @@ fn direction_name(direction: Direction) -> &'static str {
 }
 
 fn direction_named(name: &str) -> Option<Direction> {
-    [Direction::Down, Direction::Right, Direction::Up, Direction::Left]
-        .into_iter()
-        .find(|direction| direction_name(*direction) == name)
+    [
+        Direction::Down,
+        Direction::Right,
+        Direction::Up,
+        Direction::Left,
+    ]
+    .into_iter()
+    .find(|direction| direction_name(*direction) == name)
 }
 
 impl Settings {
@@ -151,7 +156,10 @@ impl Settings {
         line("user-name", &self.user_name);
         line("default-font", &self.default_font);
         line("default-font-size", &self.default_font_size.to_string());
-        line("sheets-in-new-workbook", &self.sheets_in_new_workbook.to_string());
+        line(
+            "sheets-in-new-workbook",
+            &self.sheets_in_new_workbook.to_string(),
+        );
         line("move-after-return", flag(self.move_after_return));
         line("move-direction", direction_name(self.move_direction));
         line("fixed-decimal", flag(self.fixed_decimal));
@@ -173,18 +181,31 @@ impl Settings {
         }
         for set in &self.theme_colors {
             // Its name, then its twelve colours in the order of a theme part.
-            let colors: Vec<String> = set.part_order().iter().map(|rgb| format!("{rgb:06X}")).collect();
-            line("theme-colors", &format!("{}\t{}", set.name, colors.join(" ")));
+            let colors: Vec<String> = set
+                .part_order()
+                .iter()
+                .map(|rgb| format!("{rgb:06X}"))
+                .collect();
+            line(
+                "theme-colors",
+                &format!("{}\t{}", set.name, colors.join(" ")),
+            );
         }
         for pair in &self.theme_fonts {
-            line("theme-fonts", &format!("{}\t{}\t{}", pair.name, pair.major, pair.minor));
+            line(
+                "theme-fonts",
+                &format!("{}\t{}\t{}", pair.name, pair.major, pair.minor),
+            );
         }
         line("tables-expand", flag(self.tables_expand));
         line("tables-fill-formulas", flag(self.tables_fill_formulas));
         line("show-sheet-tabs", flag(self.show_sheet_tabs));
         line("developer-tab", flag(self.developer_tab));
         line("recalculate-before-save", flag(self.recalc_before_save));
-        line("background-error-checking", flag(self.background_error_checking));
+        line(
+            "background-error-checking",
+            flag(self.background_error_checking),
+        );
         line("check-error-values", flag(self.check_error_values));
         for pen in &self.pens {
             line("pen", &pen.to_setting());
@@ -220,20 +241,35 @@ impl Settings {
                 "user-name" => settings.user_name = value.to_string(),
                 "default-font" => settings.default_font = value.to_string(),
                 "default-font-size" => {
-                    if let Some(size) = value.parse::<f32>().ok().filter(|size| (1.0..=409.0).contains(size)) {
+                    if let Some(size) = value
+                        .parse::<f32>()
+                        .ok()
+                        .filter(|size| (1.0..=409.0).contains(size))
+                    {
                         settings.default_font_size = size;
                     }
                 }
                 "sheets-in-new-workbook" => {
-                    if let Some(count) = value.parse::<u32>().ok().filter(|count| (1..=255).contains(count)) {
+                    if let Some(count) = value
+                        .parse::<u32>()
+                        .ok()
+                        .filter(|count| (1..=255).contains(count))
+                    {
                         settings.sheets_in_new_workbook = count;
                     }
                 }
                 "move-after-return" => set(&mut settings.move_after_return),
-                "move-direction" => settings.move_direction = direction_named(value).unwrap_or(settings.move_direction),
+                "move-direction" => {
+                    settings.move_direction =
+                        direction_named(value).unwrap_or(settings.move_direction)
+                }
                 "fixed-decimal" => set(&mut settings.fixed_decimal),
                 "decimal-places" => {
-                    if let Some(places) = value.parse::<i32>().ok().filter(|places| (-300..=300).contains(places)) {
+                    if let Some(places) = value
+                        .parse::<i32>()
+                        .ok()
+                        .filter(|places| (-300..=300).contains(places))
+                    {
                         settings.decimal_places = places;
                     }
                 }
@@ -242,8 +278,14 @@ impl Settings {
                     settings.replacements.get_or_insert_with(Vec::new);
                 }
                 "replace" => {
-                    if let Some((from, to)) = value.split_once('\t').filter(|(from, to)| !from.trim().is_empty() && !to.trim().is_empty()) {
-                        settings.replacements.get_or_insert_with(Vec::new).push((from.trim().to_string(), to.trim().to_string()));
+                    if let Some((from, to)) = value
+                        .split_once('\t')
+                        .filter(|(from, to)| !from.trim().is_empty() && !to.trim().is_empty())
+                    {
+                        settings
+                            .replacements
+                            .get_or_insert_with(Vec::new)
+                            .push((from.trim().to_string(), to.trim().to_string()));
                     }
                 }
                 "correct-two-capitals" => set(&mut settings.correct_two_capitals),
@@ -259,9 +301,13 @@ impl Settings {
                 "theme-colors" => settings.theme_colors.extend(theme_colors_of(value)),
                 "theme-fonts" => {
                     let mut parts = value.split('\t').map(str::trim);
-                    if let (Some(name), Some(major), Some(minor), None) = (parts.next(), parts.next(), parts.next(), parts.next()) {
+                    if let (Some(name), Some(major), Some(minor), None) =
+                        (parts.next(), parts.next(), parts.next(), parts.next())
+                    {
                         if ![name, major, minor].iter().any(|part| part.is_empty()) {
-                            settings.theme_fonts.push(ThemeFonts::new(name, major, minor));
+                            settings
+                                .theme_fonts
+                                .push(ThemeFonts::new(name, major, minor));
                         }
                     }
                 }
@@ -291,7 +337,11 @@ impl Settings {
 /// twelve colours in hexadecimal.
 fn theme_colors_of(value: &str) -> Option<ThemeColors> {
     let (name, colors) = value.split_once('\t')?;
-    let colors: Vec<u32> = colors.split_whitespace().filter_map(|rgb| u32::from_str_radix(rgb, 16).ok()).filter(|rgb| *rgb <= 0xFF_FFFF).collect();
+    let colors: Vec<u32> = colors
+        .split_whitespace()
+        .filter_map(|rgb| u32::from_str_radix(rgb, 16).ok())
+        .filter(|rgb| *rgb <= 0xFF_FFFF)
+        .collect();
     let colors: [u32; 12] = colors.try_into().ok()?;
     Some(ThemeColors::from_part_order(name.trim(), colors)).filter(|set| !set.name.is_empty())
 }
@@ -301,7 +351,10 @@ fn theme_colors_of(value: &str) -> Option<ThemeColors> {
 pub fn clean_list<'a>(entries: impl Iterator<Item = &'a str>) -> Vec<String> {
     let mut list: Vec<String> = Vec::new();
     for entry in entries.map(str::trim).filter(|entry| !entry.is_empty()) {
-        if !list.iter().any(|known| known.to_lowercase() == entry.to_lowercase()) {
+        if !list
+            .iter()
+            .any(|known| known.to_lowercase() == entry.to_lowercase())
+        {
             list.push(entry.to_string());
         }
     }
@@ -391,12 +444,18 @@ mod tests {
         settings.translate_from = "fr".to_string();
         settings.translate_to = "pt-BR".to_string();
         settings.replace_text = false;
-        settings.replacements = Some(vec![("(c)".to_string(), "©".to_string()), ("teh".to_string(), "the = it".to_string())]);
+        settings.replacements = Some(vec![
+            ("(c)".to_string(), "©".to_string()),
+            ("teh".to_string(), "the = it".to_string()),
+        ]);
         settings.correct_two_capitals = false;
         settings.capitalize_sentences = false;
         settings.capitalize_days = false;
         settings.link_addresses = false;
-        settings.custom_lists = vec![vec!["North".to_string(), "East".to_string()], vec!["a b".to_string(), "c, d".to_string(), "e".to_string()]];
+        settings.custom_lists = vec![
+            vec!["North".to_string(), "East".to_string()],
+            vec!["a b".to_string(), "c, d".to_string(), "e".to_string()],
+        ];
         settings.tables_expand = false;
         settings.tables_fill_formulas = false;
         let mut colors = opensheet_engine::theme::Theme::office().colors;
@@ -416,10 +475,15 @@ mod tests {
         };
         assert_eq!(Settings::from_text(&emptied.to_text()), emptied);
         // A colour set needs its twelve colours, a font pair its two fonts.
-        let broken = Settings::from_text("theme-colors = A\t000000 FFFFFF\ntheme-fonts = B\tArial\ntheme-colors = \t\n");
+        let broken = Settings::from_text(
+            "theme-colors = A\t000000 FFFFFF\ntheme-fonts = B\tArial\ntheme-colors = \t\n",
+        );
         assert!(broken.theme_colors.is_empty() && broken.theme_fonts.is_empty());
         // Entries of a list are trimmed; empty ones and repeats are dropped.
-        assert_eq!(Settings::from_text("custom-list = a\t\t A \tb \n").custom_lists, vec![vec!["a".to_string(), "b".to_string()]]);
+        assert_eq!(
+            Settings::from_text("custom-list = a\t\t A \tb \n").custom_lists,
+            vec![vec!["a".to_string(), "b".to_string()]]
+        );
     }
 
     #[test]

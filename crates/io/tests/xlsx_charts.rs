@@ -1202,7 +1202,10 @@ const CONTENT: &[(&str, &[&str])] = &[
         &["c:formatCode", "c:ptCount", "c:pt", "c:extLst"],
     ),
     ("c:strRef", &["c:f", "c:strCache", "c:extLst"]),
-    ("c:multiLvlStrRef", &["c:f", "c:multiLvlStrCache", "c:extLst"]),
+    (
+        "c:multiLvlStrRef",
+        &["c:f", "c:multiLvlStrCache", "c:extLst"],
+    ),
     ("c:multiLvlStrCache", &["c:ptCount", "c:lvl", "c:extLst"]),
     ("c:lvl", &["c:pt"]),
     ("c:numRef", &["c:f", "c:numCache", "c:extLst"]),
@@ -2157,10 +2160,7 @@ fn charts_from_other_applications() {
     // The stroke of the line: accent 3, a quarter darker, which stays a
     // colour of the theme (with the value cells give that variant, a unit
     // away from the 7C7C7C of a chart).
-    assert_eq!(
-        combo.series[1].color,
-        Some(wb.theme().accent(3, -0.25))
-    );
+    assert_eq!(combo.series[1].color, Some(wb.theme().accent(3, -0.25)));
     assert_eq!(combo.series[1].color.map(|c| c.value()), Some(0x7B7B7B));
     assert_eq!(
         combo
@@ -5646,7 +5646,12 @@ fn untouched_charts_keep_the_colours_of_their_theme() {
     let (kept, reread) = saved(THEME, "foreign-charts-saved.xlsx");
     assert_eq!(kept, columns);
     assert!(columns.contains("schemeClr"));
-    assert_eq!(reread.theme().rgb(opensheet_engine::style::ThemeSlot::Accent1), 0x4472C4);
+    assert_eq!(
+        reread
+            .theme()
+            .rgb(opensheet_engine::style::ThemeSlot::Accent1),
+        0x4472C4
+    );
     let original = load(&foreign_package(&[("xl/theme/theme1.xml", THEME)]));
     assert_same_content(
         "columns",
@@ -5874,7 +5879,11 @@ fn layouts_and_fonts_of_an_excel_chart_survive_a_change() {
     let chart_part = format!(
         "<c:plotArea><c:layout><c:manualLayout><c:layoutTarget val=\"inner\"/><c:xMode val=\"edge\"/><c:yMode val=\"edge\"/><c:x val=\"0.25\"/><c:y val=\"0.25\"/><c:w val=\"0.5\"/><c:h val=\"0.375\"/></c:manualLayout></c:layout><c:barChart><c:barDir val=\"col\"/><c:grouping val=\"clustered\"/><c:varyColors val=\"0\"/>{}{}<c:dLbls>{shown}</c:dLbls><c:gapWidth val=\"219\"/><c:overlap val=\"-27\"/><c:axId val=\"11\"/><c:axId val=\"12\"/></c:barChart>{}{value_axis}{BLANK}</c:plotArea>{legend}",
         column(0, 'C', &labels),
-        column(1, 'D', &labels.replace("<c:idx val=\"1\"/>", "<c:idx val=\"9\"/>")),
+        column(
+            1,
+            'D',
+            &labels.replace("<c:idx val=\"1\"/>", "<c:idx val=\"9\"/>")
+        ),
         excel_axis("cat", 'b', (11, 12, "autoZero")),
     );
     let xml = excel_part(&chart_part).replacen(
@@ -6002,7 +6011,10 @@ fn categories_on_several_levels_go_through_a_file() {
     assert!(xml.contains("<c:noMultiLvlLbl val=\"0\"/>"));
     let back = load(&bytes);
     let read = &back.sheets[0].charts[0];
-    assert_eq!(refs(&read.series[0]), ("Sheet1!$C$2:$C$6".into(), Some("Sheet1!$A$2:$B$6".into())));
+    assert_eq!(
+        refs(&read.series[0]),
+        ("Sheet1!$C$2:$C$6".into(), Some("Sheet1!$A$2:$B$6".into()))
+    );
     let data = back.chart_data(0, read);
     assert_eq!(data.categories, ["Q1", "Q2", "Q3", "Q1", "Q2"]);
     assert_eq!(data.outer_levels, [["2024", "", "", "2025", ""]]);
