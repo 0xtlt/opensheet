@@ -3,6 +3,11 @@
 What changed in each version of OpenSheet, for someone who uses it. The section of a version
 is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
 
+## 0.2.3 - 2026-10-22
+
+- **Security update**: the dependencies are updated, which fixes the rustls and rustls-webpki
+  advisories, and OpenSheet builds with Rust 1.99.1.
+
 ## 0.2.2 - 2026-10-15
 
 - **The icon turns green**: a forest-green tile with a yellow selection.
