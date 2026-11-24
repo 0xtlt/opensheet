@@ -47,6 +47,10 @@ const ICONS: &[(&str, &str)] = &[
     ("close", r#"<path d="M4 4l8 8M12 4l-8 8"/>"#),
     ("check", r#"<path d="M3.5 8.5l3 3 6-7"/>"#),
     (
+        "checkbox",
+        r#"<rect x="2.5" y="2.5" width="11" height="11" rx="2"/><path d="M5 8.2l2 2 4-4.6"/>"#,
+    ),
+    (
         "search",
         r#"<circle cx="7" cy="7" r="4"/><path d="M10 10l3.5 3.5"/>"#,
     ),

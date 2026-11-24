@@ -8,6 +8,7 @@ pub mod cell_style;
 pub mod chart;
 pub mod chart_layout;
 pub mod chart_trend;
+pub mod checkbox;
 pub mod comment;
 pub mod condfmt;
 pub mod consolidate;

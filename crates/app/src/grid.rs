@@ -153,6 +153,17 @@ impl Axis {
         self.start(self.count)
     }
 
+    /// Number of tracks along the axis.
+    pub fn count(&self) -> u32 {
+        self.count
+    }
+
+    /// Show only the first `count` tracks (the limited grid of the View
+    /// tab); at least one.
+    pub fn set_count(&mut self, count: u32) {
+        self.count = count.clamp(1, self.count);
+    }
+
     /// The track containing position `pos` (clamped to the axis).
     pub fn index_at(&self, pos: f64) -> u32 {
         if pos <= 0.0 {
@@ -228,6 +239,10 @@ pub struct GridLayout {
     /// include it.
     pub margin_w: f32,
     pub margin_h: f32,
+    /// Blank room the sheet scrolls to past its last column / row (where
+    /// a limited grid keeps its + buttons).
+    pub room_w: f32,
+    pub room_h: f32,
     pub scroll_x: f64,
     pub scroll_y: f64,
     pub frozen_rows: u32,
@@ -295,6 +310,8 @@ impl GridLayout {
             header_h,
             margin_w: 0.0,
             margin_h: 0.0,
+            room_w: 0.0,
+            room_h: 0.0,
             scroll_x,
             scroll_y,
             frozen_rows: sheet.frozen_rows,
@@ -332,11 +349,11 @@ impl GridLayout {
     }
 
     pub fn max_scroll_x(&self) -> f64 {
-        (self.cols.total() - self.view_w() as f64).max(0.0)
+        (self.cols.total() + self.room_w as f64 - self.view_w() as f64).max(0.0)
     }
 
     pub fn max_scroll_y(&self) -> f64 {
-        (self.rows.total() - self.view_h() as f64).max(0.0)
+        (self.rows.total() + self.room_h as f64 - self.view_h() as f64).max(0.0)
     }
 
     /// Left edge of a column in element coordinates (may be off-screen).
@@ -390,15 +407,17 @@ impl GridLayout {
     pub fn rect_px(&self, rect: Rect) -> (f32, f32, f32, f32) {
         let x0 = self.col_x(rect.c0);
         let y0 = self.row_y(rect.r0);
-        let x1 = if rect.c1 + 1 >= MAX_COLS {
+        let x1 = if rect.c1 + 1 >= MAX_COLS && self.cols.count() >= MAX_COLS {
             1.0e7
         } else {
-            self.col_x(rect.c1) + self.col_w(rect.c1)
+            let c1 = rect.c1.min(self.cols.count() - 1);
+            self.col_x(c1) + self.col_w(c1)
         };
-        let y1 = if rect.r1 + 1 >= MAX_ROWS {
+        let y1 = if rect.r1 + 1 >= MAX_ROWS && self.rows.count() >= MAX_ROWS {
             1.0e7
         } else {
-            self.row_y(rect.r1) + self.row_h(rect.r1)
+            let r1 = rect.r1.min(self.rows.count() - 1);
+            self.row_y(r1) + self.row_h(r1)
         };
         // A range straddling the frozen boundary keeps its frozen start.
         (x0.max(-1.0e6), y0.max(-1.0e6), x1.min(1.0e7), y1.min(1.0e7))
@@ -429,7 +448,7 @@ impl GridLayout {
             .index_at(self.frozen_w as f64 + self.scroll_x)
             .max(self.frozen_cols);
         let last = self.cols.index_at(self.view_w() as f64 + self.scroll_x);
-        first..(last + 1).min(MAX_COLS)
+        first..(last + 1).min(self.cols.count())
     }
 
     pub fn scrolled_rows(&self) -> Range<u32> {
@@ -438,7 +457,37 @@ impl GridLayout {
             .index_at(self.frozen_h as f64 + self.scroll_y)
             .max(self.frozen_rows);
         let last = self.rows.index_at(self.view_h() as f64 + self.scroll_y);
-        first..(last + 1).min(MAX_ROWS)
+        first..(last + 1).min(self.rows.count())
+    }
+
+    /// Right edge of the last column and bottom edge of the last row, in
+    /// element coordinates: past the width / height of the element unless
+    /// the grid is limited (`Axis::set_count`).
+    pub fn cells_end(&self) -> (f32, f32) {
+        let end = |count: u32, max: u32, at: f32, size: f32, view: f32| {
+            if count >= max {
+                view
+            } else {
+                (at + size).min(view)
+            }
+        };
+        let (c, r) = (self.cols.count() - 1, self.rows.count() - 1);
+        (
+            end(
+                self.cols.count(),
+                MAX_COLS,
+                self.col_x(c),
+                self.col_w(c),
+                self.width(),
+            ),
+            end(
+                self.rows.count(),
+                MAX_ROWS,
+                self.row_y(r),
+                self.row_h(r),
+                self.height(),
+            ),
+        )
     }
 
     /// Number of fully visible scrolled rows (for Page Up / Down).
@@ -718,6 +767,63 @@ struct PaneCtx<'a> {
     zones: RefCell<Vec<Zone>>,
 }
 
+/// Where the box of a checkbox cell goes in the cell box (x0, y0, x1, y1):
+/// a square the size of the text, placed as the cell aligns its value
+/// (centred unless told otherwise, as TRUE and FALSE are).
+pub fn checkbox_box(style: &Style, cell: (f32, f32, f32, f32), zoom: f32) -> (f32, f32, f32, f32) {
+    let (x0, y0, x1, y1) = cell;
+    let side = (pt_to_px(style.font.size_pt()) * zoom)
+        .round()
+        .clamp(8.0, (y1 - y0 - 2.0).max(8.0));
+    let pad = (3.0 * zoom).round();
+    let indent = style.indent as f32 * 9.0 * zoom;
+    let x = match style.h_align {
+        HAlign::Left | HAlign::Fill | HAlign::Justify => x0 + pad + indent,
+        HAlign::Right => x1 - pad - indent - side,
+        _ => x0 + ((x1 - x0 - side) / 2.0).round(),
+    };
+    let y = match style.v_align {
+        VAlign::Top => y0 + pad.min(2.0),
+        VAlign::Center => y0 + ((y1 - y0 - side) / 2.0).round(),
+        VAlign::Bottom => y1 - side - (2.0 * zoom).round().max(2.0),
+    };
+    (x, y, x + side, y + side)
+}
+
+/// A ticked box is filled with the colour of the font and holds a white
+/// tick; an empty one is an outline of it.
+fn paint_checkbox(
+    layout: &GridLayout,
+    items: &mut Vec<Draw>,
+    b: (f32, f32, f32, f32),
+    ticked: bool,
+    color: Hsla,
+) {
+    let radius = ((b.2 - b.0) * 0.18).round().max(2.0);
+    let bounds = layout.bounds_px(b.0, b.1, b.2, b.3);
+    if !ticked {
+        items.push(Draw::Quad(quad(
+            bounds,
+            px(radius),
+            gpui::transparent_black(),
+            px(1.0),
+            color,
+            BorderStyle::Solid,
+        )));
+        return;
+    }
+    items.push(Draw::Quad(fill(bounds, color).corner_radii(px(radius))));
+    let s = b.2 - b.0;
+    let at = |fx: f32, fy: f32| layout.to_window(b.0 + s * fx, b.1 + s * fy);
+    let mut path = gpui::PathBuilder::stroke(px((s * 0.13).max(1.5)));
+    path.move_to(at(0.24, 0.52));
+    path.line_to(at(0.43, 0.71));
+    path.line_to(at(0.77, 0.30));
+    if let Ok(path) = path.build() {
+        items.push(Draw::Path(path, c(0xFFFFFF)));
+    }
+}
+
 fn solid(layout: &GridLayout, x0: f32, y0: f32, x1: f32, y1: f32, color: Hsla) -> Draw {
     Draw::Quad(fill(layout.bounds_px(x0, y0, x1, y1), color))
 }
@@ -864,6 +970,9 @@ impl<'a> PaneCtx<'a> {
         let sheet = self.sheet;
         let wb = self.input.wb;
         let zoom = layout.zoom;
+        // A limited grid ends after its last row and column.
+        let (end_x, end_y) = layout.cells_end();
+        let clip = (clip.0, clip.1, clip.2.min(end_x), clip.3.min(end_y));
         let clip_bounds = layout.bounds_px(clip.0, clip.1, clip.2, clip.3);
         let mut items: Vec<Draw> = Vec::new();
         if rows.is_empty() || cols.is_empty() || clip.2 <= clip.0 || clip.3 <= clip.1 {
@@ -1137,6 +1246,27 @@ impl<'a> PaneCtx<'a> {
                     }
                 }
 
+                // Insert > Checkbox: TRUE and FALSE (or nothing) are a box.
+                if style.checkbox && !self.formulas && !hide_text {
+                    if let Value::Bool(_) | Value::Empty = value {
+                        if pass == 0 {
+                            let color = style
+                                .font
+                                .color
+                                .map(theme::engine_color)
+                                .unwrap_or(c(0x424242));
+                            let b = checkbox_box(style, (*x0, *y0, *x1, *y1), zoom);
+                            paint_checkbox(
+                                layout,
+                                &mut texts,
+                                b,
+                                value == Value::Bool(true),
+                                color,
+                            );
+                        }
+                        continue;
+                    }
+                }
                 if value.is_empty() || hide_text {
                     continue;
                 }
@@ -1527,6 +1657,8 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
     let (w, h) = (layout.width(), layout.height());
     let fx = hw + layout.frozen_w;
     let fy = hh + layout.frozen_h;
+    // Where the headings stop: the end of a limited grid.
+    let (end_x, end_y) = layout.cells_end();
 
     // Background.
     layers.push(Layer {
@@ -1646,8 +1778,8 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         };
 
         for (range, clip) in [
-            (s_cols.clone(), (fx, mh, w, hh)),
-            (f_cols.clone(), (hw, mh, fx, hh)),
+            (s_cols.clone(), (fx, mh, end_x, hh)),
+            (f_cols.clone(), (hw, mh, fx.min(end_x), hh)),
         ] {
             let mut items = vec![solid(layout, clip.0, mh, clip.2, hh, c(theme::HEADER_BG))];
             for col in range {
@@ -1699,8 +1831,8 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
             });
         }
         for (range, clip) in [
-            (s_rows.clone(), (mw, fy, hw, h)),
-            (f_rows.clone(), (mw, hh, hw, fy)),
+            (s_rows.clone(), (mw, fy, hw, end_y)),
+            (f_rows.clone(), (mw, hh, hw, fy.min(end_y))),
         ] {
             let mut items = vec![solid(layout, mw, clip.1, hw, clip.3, c(theme::HEADER_BG))];
             for row in range {

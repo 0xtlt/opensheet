@@ -182,7 +182,9 @@ fn push_xf(
             }
         }
     }
-    if alignment.is_empty() && !protection {
+    // A cell format may show its value as a checkbox.
+    let checkbox = style.checkbox && includes.is_none();
+    if alignment.is_empty() && !protection && !checkbox {
         xfs.push_str("/>");
         return;
     }
@@ -199,6 +201,9 @@ fn push_xf(
             xfs.push_str(" hidden=\"1\"");
         }
         xfs.push_str("/>");
+    }
+    if checkbox {
+        xfs.push_str(&super::checkbox::xf_extension());
     }
     xfs.push_str("</xf>");
 }
