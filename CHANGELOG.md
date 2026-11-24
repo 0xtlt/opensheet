@@ -3,7 +3,7 @@
 What changed in each version of OpenSheet, for someone who uses it. The section of a version
 is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
 
-## Unreleased
+## 0.3.0 - 2026-11-24
 
 - **Checkboxes in cells** (Insert ▸ Cell Controls ▸ Checkbox): TRUE shows as a ticked box and
   FALSE as an empty one; a click on the box or Space on the selection turns it over. They are
