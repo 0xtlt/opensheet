@@ -3,6 +3,12 @@
 What changed in each version of OpenSheet, for someone who uses it. The section of a version
 is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
 
+## Unreleased
+
+- **Limited grid** (View ▸ Show): a sheet can show only the rows and columns it uses, with a +
+  button after the last column and under the last row to add more (Option-click removes one). The
+  grid grows with what is typed and with the active cell; the file does not change.
+
 ## 0.2.3 - 2026-10-22
 
 - **Security update**: the dependencies are updated, which fixes the rustls and rustls-webpki

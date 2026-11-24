@@ -71,6 +71,7 @@ Excel utilise Aptos Narrow par défaut, qui n'est pas une police système. Sans 
 - Le ruban suit la largeur de la fenêtre comme dans Excel : un groupe passe sur trois lignes, puis en icônes, puis en un seul bouton.
 - Fenêtre étroite : le ruban replie ses groupes un à un (boutons sans libellé, puis un seul bouton qui ouvre le groupe), dans les cinq langues.
 - Affichages personnalisés : enregistrer et rappeler lignes et colonnes masquées, filtre, mise en page, zoom et sélection.
+- Grille limitée (Affichage ▸ Afficher) : la feuille ne montre que les lignes et colonnes qu'elle utilise, avec un bouton + après la dernière colonne et sous la dernière ligne pour en ajouter (Option-clic en retire une). La grille suit le contenu et la cellule active ; c'est un réglage d'affichage, le fichier ne change pas.
 
 **Saisie et sélection**
 - Saisie directe, F2, double-clic, barre de formule ; Entrée / Tab / Échap ; reconnaissance des nombres, pourcentages, montants, dates et heures.

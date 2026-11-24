@@ -843,15 +843,18 @@ impl ExcelApp {
         }
     }
 
-    /// Pixel size of the scrollable content (used range plus one screen).
+    /// Pixel size of the scrollable content (used range plus one screen,
+    /// no more than the sheet scrolls).
     pub fn content_size(&self, layout: &GridLayout) -> (f64, f64) {
         let (er, ec) = self.wb.sheets[self.sheet].content_extent();
         let sel = self.sel();
         let er = er.max(sel.active.0);
         let ec = ec.max(sel.active.1);
         (
-            layout.cols.end(ec.min(MAX_COLS - 1)) + layout.view_w() as f64,
-            layout.rows.end(er.min(MAX_ROWS - 1)) + layout.view_h() as f64,
+            (layout.cols.end(ec.min(MAX_COLS - 1)) + layout.view_w() as f64)
+                .min(layout.max_scroll_x() + layout.view_w() as f64),
+            (layout.rows.end(er.min(MAX_ROWS - 1)) + layout.view_h() as f64)
+                .min(layout.max_scroll_y() + layout.view_h() as f64),
         )
     }
 

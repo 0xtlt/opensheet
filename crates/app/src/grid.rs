@@ -153,6 +153,17 @@ impl Axis {
         self.start(self.count)
     }
 
+    /// Number of tracks along the axis.
+    pub fn count(&self) -> u32 {
+        self.count
+    }
+
+    /// Show only the first `count` tracks (the limited grid of the View
+    /// tab); at least one.
+    pub fn set_count(&mut self, count: u32) {
+        self.count = count.clamp(1, self.count);
+    }
+
     /// The track containing position `pos` (clamped to the axis).
     pub fn index_at(&self, pos: f64) -> u32 {
         if pos <= 0.0 {
@@ -228,6 +239,10 @@ pub struct GridLayout {
     /// include it.
     pub margin_w: f32,
     pub margin_h: f32,
+    /// Blank room the sheet scrolls to past its last column / row (where
+    /// a limited grid keeps its + buttons).
+    pub room_w: f32,
+    pub room_h: f32,
     pub scroll_x: f64,
     pub scroll_y: f64,
     pub frozen_rows: u32,
@@ -295,6 +310,8 @@ impl GridLayout {
             header_h,
             margin_w: 0.0,
             margin_h: 0.0,
+            room_w: 0.0,
+            room_h: 0.0,
             scroll_x,
             scroll_y,
             frozen_rows: sheet.frozen_rows,
@@ -332,11 +349,11 @@ impl GridLayout {
     }
 
     pub fn max_scroll_x(&self) -> f64 {
-        (self.cols.total() - self.view_w() as f64).max(0.0)
+        (self.cols.total() + self.room_w as f64 - self.view_w() as f64).max(0.0)
     }
 
     pub fn max_scroll_y(&self) -> f64 {
-        (self.rows.total() - self.view_h() as f64).max(0.0)
+        (self.rows.total() + self.room_h as f64 - self.view_h() as f64).max(0.0)
     }
 
     /// Left edge of a column in element coordinates (may be off-screen).
@@ -390,15 +407,17 @@ impl GridLayout {
     pub fn rect_px(&self, rect: Rect) -> (f32, f32, f32, f32) {
         let x0 = self.col_x(rect.c0);
         let y0 = self.row_y(rect.r0);
-        let x1 = if rect.c1 + 1 >= MAX_COLS {
+        let x1 = if rect.c1 + 1 >= MAX_COLS && self.cols.count() >= MAX_COLS {
             1.0e7
         } else {
-            self.col_x(rect.c1) + self.col_w(rect.c1)
+            let c1 = rect.c1.min(self.cols.count() - 1);
+            self.col_x(c1) + self.col_w(c1)
         };
-        let y1 = if rect.r1 + 1 >= MAX_ROWS {
+        let y1 = if rect.r1 + 1 >= MAX_ROWS && self.rows.count() >= MAX_ROWS {
             1.0e7
         } else {
-            self.row_y(rect.r1) + self.row_h(rect.r1)
+            let r1 = rect.r1.min(self.rows.count() - 1);
+            self.row_y(r1) + self.row_h(r1)
         };
         // A range straddling the frozen boundary keeps its frozen start.
         (x0.max(-1.0e6), y0.max(-1.0e6), x1.min(1.0e7), y1.min(1.0e7))
@@ -429,7 +448,7 @@ impl GridLayout {
             .index_at(self.frozen_w as f64 + self.scroll_x)
             .max(self.frozen_cols);
         let last = self.cols.index_at(self.view_w() as f64 + self.scroll_x);
-        first..(last + 1).min(MAX_COLS)
+        first..(last + 1).min(self.cols.count())
     }
 
     pub fn scrolled_rows(&self) -> Range<u32> {
@@ -438,7 +457,37 @@ impl GridLayout {
             .index_at(self.frozen_h as f64 + self.scroll_y)
             .max(self.frozen_rows);
         let last = self.rows.index_at(self.view_h() as f64 + self.scroll_y);
-        first..(last + 1).min(MAX_ROWS)
+        first..(last + 1).min(self.rows.count())
+    }
+
+    /// Right edge of the last column and bottom edge of the last row, in
+    /// element coordinates: past the width / height of the element unless
+    /// the grid is limited (`Axis::set_count`).
+    pub fn cells_end(&self) -> (f32, f32) {
+        let end = |count: u32, max: u32, at: f32, size: f32, view: f32| {
+            if count >= max {
+                view
+            } else {
+                (at + size).min(view)
+            }
+        };
+        let (c, r) = (self.cols.count() - 1, self.rows.count() - 1);
+        (
+            end(
+                self.cols.count(),
+                MAX_COLS,
+                self.col_x(c),
+                self.col_w(c),
+                self.width(),
+            ),
+            end(
+                self.rows.count(),
+                MAX_ROWS,
+                self.row_y(r),
+                self.row_h(r),
+                self.height(),
+            ),
+        )
     }
 
     /// Number of fully visible scrolled rows (for Page Up / Down).
@@ -864,6 +913,9 @@ impl<'a> PaneCtx<'a> {
         let sheet = self.sheet;
         let wb = self.input.wb;
         let zoom = layout.zoom;
+        // A limited grid ends after its last row and column.
+        let (end_x, end_y) = layout.cells_end();
+        let clip = (clip.0, clip.1, clip.2.min(end_x), clip.3.min(end_y));
         let clip_bounds = layout.bounds_px(clip.0, clip.1, clip.2, clip.3);
         let mut items: Vec<Draw> = Vec::new();
         if rows.is_empty() || cols.is_empty() || clip.2 <= clip.0 || clip.3 <= clip.1 {
@@ -1527,6 +1579,8 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
     let (w, h) = (layout.width(), layout.height());
     let fx = hw + layout.frozen_w;
     let fy = hh + layout.frozen_h;
+    // Where the headings stop: the end of a limited grid.
+    let (end_x, end_y) = layout.cells_end();
 
     // Background.
     layers.push(Layer {
@@ -1646,8 +1700,8 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
         };
 
         for (range, clip) in [
-            (s_cols.clone(), (fx, mh, w, hh)),
-            (f_cols.clone(), (hw, mh, fx, hh)),
+            (s_cols.clone(), (fx, mh, end_x, hh)),
+            (f_cols.clone(), (hw, mh, fx.min(end_x), hh)),
         ] {
             let mut items = vec![solid(layout, clip.0, mh, clip.2, hh, c(theme::HEADER_BG))];
             for col in range {
@@ -1699,8 +1753,8 @@ pub fn build_scene(input: &SceneInput, layout: &GridLayout, ts: &WindowTextSyste
             });
         }
         for (range, clip) in [
-            (s_rows.clone(), (mw, fy, hw, h)),
-            (f_rows.clone(), (mw, hh, hw, fy)),
+            (s_rows.clone(), (mw, fy, hw, end_y)),
+            (f_rows.clone(), (mw, hh, hw, fy.min(end_y))),
         ] {
             let mut items = vec![solid(layout, mw, clip.1, hw, clip.3, c(theme::HEADER_BG))];
             for row in range {

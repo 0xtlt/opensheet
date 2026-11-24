@@ -2291,6 +2291,7 @@ impl ExcelApp {
                         cx,
                         |this, _, cx| this.toggle_gridlines(cx),
                     ),
+                    self.cmd_check("vw-limited", features::limited_grid::Cmd::Toggle, cx),
                 ]))
                 .child(rows(vec![
                     self.check(

@@ -238,6 +238,7 @@ pub mod filters;
 pub mod format_cells;
 pub mod help;
 pub mod ink;
+pub mod limited_grid;
 pub mod misc;
 pub mod names;
 pub mod outline;
@@ -263,7 +264,7 @@ pub type Cx<'a> = Context<'a, ExcelApp>;
 /// charts, pictures and shapes, which share one stacking order
 /// (`objects::stack`).
 pub fn all() -> &'static [&'static dyn Feature] {
-    static ALL: [&dyn Feature; 28] = [
+    static ALL: [&dyn Feature; 29] = [
         &format_cells::FormatCells,
         &filters::Filters,
         &tables::Tables,
@@ -287,6 +288,7 @@ pub fn all() -> &'static [&'static dyn Feature] {
         &data_tools::DataTools,
         &themes::Themes,
         &outline::Outline,
+        &limited_grid::LimitedGrid,
         &sparklines::Sparklines,
         &automate::Automate,
         &proofing::Proofing,

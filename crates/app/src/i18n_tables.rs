@@ -602,6 +602,15 @@ pub static ES: &[(&str, &str)] = &[
     ("Gridlines", "Líneas de cuadrícula"),
     ("Headings", "Encabezados"),
     ("Formula Bar", "Barra de fórmulas"),
+    ("Limited Grid", "Cuadrícula limitada"),
+    (
+        "Add a column (Option-click removes one)",
+        "Agregar una columna (Opción-clic quita una)",
+    ),
+    (
+        "Add a row (Option-click removes one)",
+        "Agregar una fila (Opción-clic quita una)",
+    ),
     ("Zoom", "Zoom"),
     ("Window", "Ventana"),
     ("Freeze Panes", "Inmovilizar paneles"),
@@ -5985,6 +5994,15 @@ pub static DE: &[(&str, &str)] = &[
     ("Gridlines", "Gitternetzlinien"),
     ("Headings", "Überschriften"),
     ("Formula Bar", "Bearbeitungsleiste"),
+    ("Limited Grid", "Begrenztes Raster"),
+    (
+        "Add a column (Option-click removes one)",
+        "Spalte hinzufügen (Wahltaste-Klick entfernt eine)",
+    ),
+    (
+        "Add a row (Option-click removes one)",
+        "Zeile hinzufügen (Wahltaste-Klick entfernt eine)",
+    ),
     ("Zoom", "Zoom"),
     ("Window", "Fenster"),
     ("Freeze Panes", "Fenster fixieren"),
@@ -11346,6 +11364,15 @@ pub static IT: &[(&str, &str)] = &[
     ("Gridlines", "Griglia"),
     ("Headings", "Intestazioni"),
     ("Formula Bar", "Barra della formula"),
+    ("Limited Grid", "Griglia limitata"),
+    (
+        "Add a column (Option-click removes one)",
+        "Aggiungi una colonna (Opzione-clic ne rimuove una)",
+    ),
+    (
+        "Add a row (Option-click removes one)",
+        "Aggiungi una riga (Opzione-clic ne rimuove una)",
+    ),
     ("Zoom", "Zoom"),
     ("Window", "Finestra"),
     ("Freeze Panes", "Blocca riquadri"),
