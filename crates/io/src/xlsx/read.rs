@@ -317,6 +317,8 @@ struct RawXf {
     rotation: i16,
     locked: bool,
     hidden: bool,
+    /// `i` of the `xfComplement` extension (a checkbox, see `checkbox.rs`).
+    complement: Option<usize>,
     /// The cell style of a cell format (`xfId`).
     xf_id: usize,
     /// For the format of a cell style: the parts it includes (those not
@@ -496,6 +498,7 @@ fn parse_xf<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawXf {
         rotation: 0,
         locked: true,
         hidden: false,
+        complement: None,
         xf_id: tag.attr_u32("xfId").unwrap_or(0) as usize,
         parts: StyleParts {
             number: tag.attr_bool("applyNumberFormat").unwrap_or(true),
@@ -542,6 +545,26 @@ fn parse_xf<'a>(r: &mut Reader<'a>, tag: &Tag<'a>) -> RawXf {
                     "protection" => {
                         xf.locked = t.attr_bool("locked").unwrap_or(true);
                         xf.hidden = t.attr_bool("hidden").unwrap_or(false);
+                    }
+                    "extLst" if !t.empty => {
+                        // `<ext><xfpb:xfComplement i=".."/></ext>`
+                        let mut depth = 1usize;
+                        while depth > 0 {
+                            match r.next() {
+                                Event::Open(e) => {
+                                    if e.name.rsplit(':').next() == Some("xfComplement") {
+                                        xf.complement = e.attr_u32("i").map(|i| i as usize);
+                                    }
+                                    if !e.empty {
+                                        depth += 1;
+                                    }
+                                }
+                                Event::Close(_) => depth -= 1,
+                                Event::Eof => break,
+                                _ => {}
+                            }
+                        }
+                        continue;
                     }
                     _ => {}
                 }
@@ -638,7 +661,13 @@ struct StylesPart {
 
 // `Style` values are built field by field so the engine can add fields.
 #[allow(clippy::field_reassign_with_default)]
-fn parse_styles(xml: Option<&str>, locale: &Locale, table: &mut StyleTable) -> StylesPart {
+/// `checkboxes`: for each `xfComplement` index, whether it is a checkbox.
+fn parse_styles(
+    xml: Option<&str>,
+    checkboxes: &[bool],
+    locale: &Locale,
+    table: &mut StyleTable,
+) -> StylesPart {
     // The theme of the workbook, which the table already has.
     let theme = table.theme().clone();
     let mut palette = Palette {
@@ -789,6 +818,9 @@ fn parse_styles(xml: Option<&str>, locale: &Locale, table: &mut StyleTable) -> S
         style.borders = borders.get(xf.border).copied().unwrap_or_default();
         style.locked = xf.locked;
         style.hidden = xf.hidden;
+        style.checkbox = xf
+            .complement
+            .is_some_and(|i| checkboxes.get(i).copied().unwrap_or(false));
         style
     };
     let style_formats: Vec<(Style, StyleParts)> = style_xfs
@@ -1662,7 +1694,14 @@ pub(crate) fn read_workbook<R: Read + Seek>(
     wb.init_theme(theme);
     wb.protection = info.protection;
     let styles_xml = pkg.read(&part_of("styles", "styles.xml"))?;
-    let mut styles = parse_styles(styles_xml.as_deref(), locale, &mut wb.styles);
+    let checkboxes = match rels.iter().find(|r| r.kind == "FeaturePropertyBag") {
+        Some(rel) => pkg
+            .read(&rel.target)?
+            .map(|xml| super::checkbox::parse(&xml))
+            .unwrap_or_default(),
+        None => Vec::new(),
+    };
+    let mut styles = parse_styles(styles_xml.as_deref(), &checkboxes, locale, &mut wb.styles);
     wb.cell_styles = std::mem::take(&mut styles.cell_styles);
     let style_lookup =
         super::stylerefs::StyleLookup::read(styles_xml.as_deref(), &styles.palette, locale);

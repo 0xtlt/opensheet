@@ -603,6 +603,8 @@ pub static ES: &[(&str, &str)] = &[
     ("Headings", "Encabezados"),
     ("Formula Bar", "Barra de fórmulas"),
     ("Limited Grid", "Cuadrícula limitada"),
+    ("Checkbox", "Casilla"),
+    ("Cell Controls", "Controles de celda"),
     (
         "Add a column (Option-click removes one)",
         "Agregar una columna (Opción-clic quita una)",
@@ -5995,6 +5997,8 @@ pub static DE: &[(&str, &str)] = &[
     ("Headings", "Überschriften"),
     ("Formula Bar", "Bearbeitungsleiste"),
     ("Limited Grid", "Begrenztes Raster"),
+    ("Checkbox", "Kontrollkästchen"),
+    ("Cell Controls", "Zellsteuerelemente"),
     (
         "Add a column (Option-click removes one)",
         "Spalte hinzufügen (Wahltaste-Klick entfernt eine)",
@@ -11365,6 +11369,8 @@ pub static IT: &[(&str, &str)] = &[
     ("Headings", "Intestazioni"),
     ("Formula Bar", "Barra della formula"),
     ("Limited Grid", "Griglia limitata"),
+    ("Checkbox", "Casella di controllo"),
+    ("Cell Controls", "Controlli cella"),
     (
         "Add a column (Option-click removes one)",
         "Aggiungi una colonna (Opzione-clic ne rimuove una)",

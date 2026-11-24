@@ -2040,6 +2040,16 @@ impl ExcelApp {
             )
             .into_any_element(),
             group(
+                t("Cell Controls", "Contrôles de cellule"),
+                row(vec![self.cmd_large(
+                    "in-checkbox",
+                    features::checkboxes::Cmd::Insert,
+                    false,
+                    cx,
+                )]),
+            )
+            .into_any_element(),
+            group(
                 t("Filters", "Filtres"),
                 row(vec![
                     self.cmd_large("in-slicer", slicers::Cmd::InsertSlicer, false, cx),

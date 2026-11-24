@@ -214,6 +214,7 @@ impl Extras {
         super::hyperlink::add_parts(wb, &mut extras);
         super::datatools::add_parts(wb, &mut extras);
         super::background::add_parts(wb, &mut extras);
+        super::checkbox::add_parts(wb, &mut extras);
         extras.add_part(
             "xl/theme/theme1.xml".to_string(),
             Some(theme::CT_THEME),

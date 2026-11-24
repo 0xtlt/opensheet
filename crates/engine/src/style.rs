@@ -366,6 +366,9 @@ pub struct Style {
     /// The cell style the cell was given (`None` = Normal), see
     /// `cell_style.rs`.
     pub cell_style: Option<Arc<str>>,
+    /// The cell shows its value as a checkbox (Insert > Checkbox): TRUE
+    /// ticked, FALSE or nothing unticked; a click turns it over.
+    pub checkbox: bool,
 }
 
 impl Default for Style {
@@ -384,6 +387,7 @@ impl Default for Style {
             locked: true,
             hidden: false,
             cell_style: None,
+            checkbox: false,
         }
     }
 }

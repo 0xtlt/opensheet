@@ -767,6 +767,63 @@ struct PaneCtx<'a> {
     zones: RefCell<Vec<Zone>>,
 }
 
+/// Where the box of a checkbox cell goes in the cell box (x0, y0, x1, y1):
+/// a square the size of the text, placed as the cell aligns its value
+/// (centred unless told otherwise, as TRUE and FALSE are).
+pub fn checkbox_box(style: &Style, cell: (f32, f32, f32, f32), zoom: f32) -> (f32, f32, f32, f32) {
+    let (x0, y0, x1, y1) = cell;
+    let side = (pt_to_px(style.font.size_pt()) * zoom)
+        .round()
+        .clamp(8.0, (y1 - y0 - 2.0).max(8.0));
+    let pad = (3.0 * zoom).round();
+    let indent = style.indent as f32 * 9.0 * zoom;
+    let x = match style.h_align {
+        HAlign::Left | HAlign::Fill | HAlign::Justify => x0 + pad + indent,
+        HAlign::Right => x1 - pad - indent - side,
+        _ => x0 + ((x1 - x0 - side) / 2.0).round(),
+    };
+    let y = match style.v_align {
+        VAlign::Top => y0 + pad.min(2.0),
+        VAlign::Center => y0 + ((y1 - y0 - side) / 2.0).round(),
+        VAlign::Bottom => y1 - side - (2.0 * zoom).round().max(2.0),
+    };
+    (x, y, x + side, y + side)
+}
+
+/// A ticked box is filled with the colour of the font and holds a white
+/// tick; an empty one is an outline of it.
+fn paint_checkbox(
+    layout: &GridLayout,
+    items: &mut Vec<Draw>,
+    b: (f32, f32, f32, f32),
+    ticked: bool,
+    color: Hsla,
+) {
+    let radius = ((b.2 - b.0) * 0.18).round().max(2.0);
+    let bounds = layout.bounds_px(b.0, b.1, b.2, b.3);
+    if !ticked {
+        items.push(Draw::Quad(quad(
+            bounds,
+            px(radius),
+            gpui::transparent_black(),
+            px(1.0),
+            color,
+            BorderStyle::Solid,
+        )));
+        return;
+    }
+    items.push(Draw::Quad(fill(bounds, color).corner_radii(px(radius))));
+    let s = b.2 - b.0;
+    let at = |fx: f32, fy: f32| layout.to_window(b.0 + s * fx, b.1 + s * fy);
+    let mut path = gpui::PathBuilder::stroke(px((s * 0.13).max(1.5)));
+    path.move_to(at(0.24, 0.52));
+    path.line_to(at(0.43, 0.71));
+    path.line_to(at(0.77, 0.30));
+    if let Ok(path) = path.build() {
+        items.push(Draw::Path(path, c(0xFFFFFF)));
+    }
+}
+
 fn solid(layout: &GridLayout, x0: f32, y0: f32, x1: f32, y1: f32, color: Hsla) -> Draw {
     Draw::Quad(fill(layout.bounds_px(x0, y0, x1, y1), color))
 }
@@ -1189,6 +1246,27 @@ impl<'a> PaneCtx<'a> {
                     }
                 }
 
+                // Insert > Checkbox: TRUE and FALSE (or nothing) are a box.
+                if style.checkbox && !self.formulas && !hide_text {
+                    if let Value::Bool(_) | Value::Empty = value {
+                        if pass == 0 {
+                            let color = style
+                                .font
+                                .color
+                                .map(theme::engine_color)
+                                .unwrap_or(c(0x424242));
+                            let b = checkbox_box(style, (*x0, *y0, *x1, *y1), zoom);
+                            paint_checkbox(
+                                layout,
+                                &mut texts,
+                                b,
+                                value == Value::Bool(true),
+                                color,
+                            );
+                        }
+                        continue;
+                    }
+                }
                 if value.is_empty() || hide_text {
                     continue;
                 }

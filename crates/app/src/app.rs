@@ -3706,6 +3706,10 @@ impl EntityInputHandler for ExcelApp {
             editor.update(cx, |input, cx| input.insert(text, window, cx));
             return;
         }
+        // Space on a checkbox ticks it rather than typing a space.
+        if text == " " && features::checkboxes::space(self, cx) {
+            return;
+        }
         self.start_edit(Some(text), EditMode::Enter, EditSource::Cell, window, cx);
         self.sync_other_editor(cx);
     }

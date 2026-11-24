@@ -5,6 +5,9 @@ is what its [GitHub release](https://github.com/0xtlt/opensheet/releases) says.
 
 ## Unreleased
 
+- **Checkboxes in cells** (Insert ▸ Cell Controls ▸ Checkbox): TRUE shows as a ticked box and
+  FALSE as an empty one; a click on the box or Space on the selection turns it over. They are
+  saved as Excel saves them and come back from Excel files.
 - **Limited grid** (View ▸ Show): a sheet can show only the rows and columns it uses, with a +
   button after the last column and under the last row to add more (Option-click removes one). The
   grid grows with what is typed and with the active cell; the file does not change.

@@ -31,6 +31,7 @@ macro_rules! w {
 mod background;
 mod cell_style;
 mod chart;
+mod checkbox;
 mod color;
 mod comments;
 mod condfmt;
